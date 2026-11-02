@@ -129,6 +129,15 @@ public struct TournamentResult: Hashable, Codable, Sendable {
     public let points: Int
     public let recordedAt: Date
 
+    public init(tournamentId: ID<Tournament>, studentId: UserID, place: Int, medal: Medal, points: Int, recordedAt: Date) {
+        self.tournamentId = tournamentId
+        self.studentId = studentId
+        self.place = place
+        self.medal = medal
+        self.points = points
+        self.recordedAt = recordedAt
+    }
+
     /// Очки рейтинга клуба за место.
     public static func points(for place: Int) -> Int {
         switch place {
