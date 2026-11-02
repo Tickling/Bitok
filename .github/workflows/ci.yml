@@ -83,3 +83,28 @@ jobs:
           xcodebuild -project Bitok.xcodeproj -scheme Bitok \
             -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO build
+
+  ios-ipa:
+    name: iOS IPA для установки (Sideloadly / AltStore)
+    runs-on: macos-15
+    needs: ios-app
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - name: Build unsigned IPA
+        working-directory: ios
+        run: |
+          set -e
+          xcodegen generate
+          xcodebuild -project Bitok.xcodeproj -scheme Bitok -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/*.app Payload/
+          zip -qry Bitok.ipa Payload
+          ls -la Bitok.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Bitok-ipa
+          path: ios/Bitok.ipa
+          retention-days: 30
