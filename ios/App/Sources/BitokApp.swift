@@ -11,7 +11,11 @@ struct BitokApp: App {
     var body: some Scene {
         WindowGroup {
             ThemedRoot {
-                RootTabView(container: container)
+                if container.account == nil {
+                    DemoLoginView(container: container)
+                } else {
+                    RootTabView(container: container)
+                }
             }
             .environment(themes)
             .onOpenURL { url in

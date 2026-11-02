@@ -12,6 +12,8 @@ import ChatDomain
 final class AppContainer {
     var role: UserRole
     var flags: ClientFlags
+    /// Текущая демо-учётка; nil — показывается экран входа.
+    private(set) var account: DemoAccount? = nil
     let currentUserId: UserID
     let coachId: UserID
 
@@ -31,6 +33,23 @@ final class AppContainer {
         self.slots = slots
         self.bookings = bookings
         self.progress = progress
+        if let saved = UserDefaults.standard.string(forKey: Self.accountKey), let restored = DemoAccount(rawValue: saved) {
+            self.account = restored
+            self.role = restored.role
+        }
+    }
+
+    private static let accountKey = "demoAccount"
+
+    func signIn(_ account: DemoAccount) {
+        self.account = account
+        role = account.role
+        UserDefaults.standard.set(account.rawValue, forKey: Self.accountKey)
+    }
+
+    func signOut() {
+        account = nil
+        UserDefaults.standard.removeObject(forKey: Self.accountKey)
     }
 
     /// Демо-сборка: локальные данные без backend (для симулятора и демонстраций).

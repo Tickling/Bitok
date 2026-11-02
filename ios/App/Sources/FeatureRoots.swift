@@ -198,7 +198,7 @@ struct ProfileRootView: View {
                     HStack {
                         Spacer()
                         ProfileFrameView(style: .gold) {
-                            Text("ИП").font(.largeTitle.bold()).frame(width: 96, height: 96).background(.tint)
+                            Text(container.account == .coach ? "АВ" : "ИП").font(.largeTitle.bold()).frame(width: 96, height: 96).background(.tint)
                         }
                         Spacer()
                     }
@@ -212,11 +212,14 @@ struct ProfileRootView: View {
                     .labelsHidden()
                 }
                 Section("Демо") {
-                    Picker("Роль", selection: $container.role) {
-                        Text("Ученик").tag(UserRole.student)
-                        Text("Тренер").tag(UserRole.trainer)
-                    }
                     Toggle("Магазин (shopEnabled)", isOn: $container.flags.shopEnabled)
+                }
+                if let account = container.account {
+                    Section("Аккаунт") {
+                        LabeledContent(account.roleTitle, value: account.displayName)
+                        LabeledContent("Телефон", value: account.phone)
+                        Button("Выйти", role: .destructive) { container.signOut() }
+                    }
                 }
             }
             .navigationTitle("Профиль")
