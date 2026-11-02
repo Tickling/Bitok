@@ -1,0 +1,64 @@
+# XcodeGen: `brew install xcodegen && xcodegen generate` → Bitok.xcodeproj
+name: Bitok
+options:
+  bundleIdPrefix: app.bitok
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+packages:
+  CoreDomain: { path: Packages/CoreDomain }
+  CoreNetwork: { path: Packages/CoreNetwork }
+  CorePersistence: { path: Packages/CorePersistence }
+  DesignSystem: { path: Packages/DesignSystem }
+  IdentityKit: { path: Packages/IdentityKit }
+  BookingKit: { path: Packages/BookingKit }
+  PaymentKit: { path: Packages/PaymentKit }
+  ProgressKit: { path: Packages/ProgressKit }
+  AchievementKit: { path: Packages/AchievementKit }
+  ChatKit: { path: Packages/ChatKit }
+  ContentKit: { path: Packages/ContentKit }
+  ShopKit: { path: Packages/ShopKit }
+targets:
+  Bitok:
+    type: application
+    platform: iOS
+    sources: [App/Sources]
+    resources: [App/Resources]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.bitok.ios
+        PRODUCT_NAME: Биток
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Биток
+        INFOPLIST_KEY_NSCalendarsWriteOnlyAccessUsageDescription: "Добавляем подтверждённые тренировки в ваш календарь"
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+    dependencies:
+      - package: CoreDomain
+      - package: CoreNetwork
+      - package: CorePersistence
+      - package: DesignSystem
+      - package: IdentityKit
+        product: IdentityDomain
+      - package: BookingKit
+        product: BookingDomain
+      - package: BookingKit
+        product: BookingUI
+      - package: PaymentKit
+        product: PaymentUI
+      - package: ProgressKit
+        product: ProgressDomain
+      - package: ProgressKit
+        product: ProgressUI
+      - package: AchievementKit
+        product: AchievementDomain
+      - package: AchievementKit
+        product: AchievementUI
+      - package: ChatKit
+        product: ChatDomain
+      - package: ContentKit
+        product: ContentDomain
+      - package: ShopKit
+        product: ShopUI

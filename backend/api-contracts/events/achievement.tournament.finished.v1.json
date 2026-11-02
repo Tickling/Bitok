@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.bitok.app/achievement/tournament/finished/v1.json",
+  "title": "TournamentFinished",
+  "description": "data для CloudEvent type = achievement.tournament.finished",
+  "type": "object",
+  "required": [
+    "tournamentId",
+    "results"
+  ],
+  "properties": {
+    "tournamentId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "studentId",
+          "place",
+          "medal"
+        ],
+        "properties": {
+          "studentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "place": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "medal": {
+            "enum": [
+              "GOLD",
+              "SILVER",
+              "BRONZE",
+              "PARTICIPANT"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": true
+}

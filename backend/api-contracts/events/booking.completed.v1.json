@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.bitok.app/booking/completed/v1.json",
+  "title": "BookingCompleted",
+  "description": "data для CloudEvent type = booking.completed",
+  "type": "object",
+  "required": [
+    "bookingId",
+    "studentId",
+    "trainerId",
+    "completedAt"
+  ],
+  "properties": {
+    "bookingId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "studentId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "trainerId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "completedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": true
+}

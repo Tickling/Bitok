@@ -17,8 +17,9 @@
 bitok/
 ├── ANALYTICS.md            # Аналитика и архитектура (источник правды)
 ├── docs/design/            # Макеты и дизайн-решения
-├── ios/                    # iOS-клиент: Swift Packages по доменам
-└── backend/                # Контракты, shared-kernel, сервисы, docker-compose
+├── ios/                    # iOS-клиент: 12 Swift Packages по доменам + приложение (XcodeGen)
+├── backend/                # Контракты (OpenAPI, JSON Schema событий), shared-kernel, сервисы, docker-compose
+└── .github/workflows/      # CI: контракты, backend (TS), messaging (Go), iOS-пакеты и сборка приложения
 ```
 
 Подробности — в README каждого раздела: [ios/README.md](ios/README.md), [backend/README.md](backend/README.md).

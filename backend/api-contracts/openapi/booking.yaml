@@ -1,0 +1,782 @@
+openapi: 3.0.3
+info:
+  title: Bitok Booking Service API
+  version: 1.0.0
+  description: |
+    Каталог тренеров, слоты и бронирования тренировок.
+    Реализует FR-003 — FR-008. Состояния бронирования — раздел 4.4.
+servers:
+  - url: https://api.bitok.app/v1
+    description: Production
+  - url: https://api.staging.bitok.app/v1
+    description: Staging
+security:
+  - bearerAuth: []
+tags:
+  - name: Trainers
+  - name: Bookings
+paths:
+  /trainers:
+    get:
+      tags: [Trainers]
+      summary: Каталог верифицированных тренеров (FR-003)
+      operationId: listTrainers
+      parameters:
+        - name: clubId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: discipline
+          in: query
+          schema: { $ref: '#/components/schemas/Discipline' }
+        - name: maxPrice
+          in: query
+          description: Максимальная цена за час в копейках
+          schema: { type: integer, format: int64, minimum: 0 }
+        - name: availableFrom
+          in: query
+          description: Только тренеры со свободным слотом начиная с этого момента
+          schema: { type: string, format: date-time }
+        - name: q
+          in: query
+          description: Поиск по имени
+          schema: { type: string, maxLength: 100 }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Страница тренеров
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TrainerPage' }
+              example:
+                items:
+                  - id: e3b0c442-98fc-1c14-9afb-f4c8996fb924
+                    displayName: Алексей Воронов
+                    avatarUrl: https://cdn.bitok.app/avatars/e3b0c442.jpg
+                    rank: Мастер спорта
+                    disciplines: [RUSSIAN_PYRAMID, POOL]
+                    clubs:
+                      - id: 0f8fad5b-d9cb-469f-a165-70867728950e
+                        name: Престиж
+                        address: Москва, ул. Тверская, 10
+                        timeZone: Europe/Moscow
+                    pricePerHour: { amountMinor: 250000, currency: RUB }
+                    rating: 4.9
+                    reviewsCount: 87
+                    experienceYears: 12
+                    nextAvailableSlotAt: '2026-11-03T15:00:00Z'
+                nextCursor: eyJpZCI6ImUzYjBjNDQyIn0
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /trainers/{id}/slots:
+    get:
+      tags: [Trainers]
+      summary: Слоты тренера за период (FR-004, FR-005)
+      operationId: listTrainerSlots
+      parameters:
+        - $ref: '#/components/parameters/TrainerId'
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          required: true
+          description: Не более 31 дня от `from`
+          schema: { type: string, format: date-time }
+        - name: status
+          in: query
+          description: Фильтр по статусу. По умолчанию — только AVAILABLE
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/SlotStatus' }
+          style: form
+          explode: false
+      responses:
+        '200':
+          description: Слоты, отсортированные по времени начала
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Slot' }
+              example:
+                items:
+                  - id: 9a1d0c11-3b7e-4b22-8f0e-5d7b4c6a2e10
+                    trainerId: e3b0c442-98fc-1c14-9afb-f4c8996fb924
+                    clubId: 0f8fad5b-d9cb-469f-a165-70867728950e
+                    tableNumber: 4
+                    startsAt: '2026-11-05T15:00:00Z'
+                    durationMinutes: 60
+                    price: { amountMinor: 250000, currency: RUB }
+                    type: INDIVIDUAL
+                    capacity: 1
+                    status: AVAILABLE
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /trainers/{id}/schedule:
+    get:
+      tags: [Trainers]
+      summary: Расписание тренера — календарь день/неделя/месяц (FR-026)
+      description: |
+        Только сам тренер. Свободные слоты, бронирования и блокировки за период одним запросом.
+        Телефон ученика добавляет BFF (`GET /bff/coach/schedule`) из Identity — Booking телефоны не хранит.
+      operationId: getTrainerSchedule
+      parameters:
+        - $ref: '#/components/parameters/TrainerId'
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          required: true
+          description: Не более 42 дней (месячная сетка)
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Записи расписания по возрастанию времени
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/ScheduleEntry' }
+              example:
+                items:
+                  - kind: BOOKING
+                    slotId: 9a1d0c11-3b7e-4b22-8f0e-5d7b4c6a2e10
+                    bookingId: 1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed
+                    startsAt: '2026-11-05T15:00:00Z'
+                    durationMinutes: 60
+                    status: AWAITING_COACH_APPROVAL
+                    club: { id: 0f8fad5b-d9cb-469f-a165-70867728950e, name: Престиж }
+                    tableNumber: 4
+                    student:
+                      id: c56a4180-65aa-42ec-a945-5fd21dec0538
+                      displayName: Иван Петров
+                      avatarUrl: null
+                      phone: '+79991234567'
+                      level: Любитель
+                  - kind: FREE_SLOT
+                    slotId: 2d3e4f5a-6b7c-4d8e-9f0a-1b2c3d4e5f6a
+                    startsAt: '2026-11-05T16:00:00Z'
+                    durationMinutes: 60
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /trainers/{id}/bookings:
+    post:
+      tags: [Bookings]
+      summary: Тренер назначает тренировку своему ученику (FR-028)
+      description: Создаёт бронь сразу в `CONFIRMED` (или `AWAITING_PAYMENT` по `PaymentPolicy`). Идемпотентно.
+      operationId: assignBooking
+      parameters:
+        - $ref: '#/components/parameters/TrainerId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssignBookingRequest' }
+            example:
+              slotId: 2d3e4f5a-6b7c-4d8e-9f0a-1b2c3d4e5f6a
+              studentId: c56a4180-65aa-42ec-a945-5fd21dec0538
+              note: Как договорились в чате — отрабатываем выход
+      responses:
+        '201':
+          description: Бронь создана
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Booking' }
+        '403':
+          description: Не тренер слота или ученик не занимался у тренера (NOT_COACHES_STUDENT)
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '409':
+          description: Слот занят или пересечение у ученика
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+
+  /bookings:
+    post:
+      tags: [Bookings]
+      summary: Забронировать слот (FR-005)
+      description: |
+        Создаёт бронирование в статусе `AWAITING_COACH_APPROVAL` (или `CONFIRMED` при автоподтверждении тренера).
+        При `mode = DRAFT` создаётся черновик `DRAFT` с удержанием слота на 5 минут (двухшаговый UX),
+        далее `PUT /bookings/{id}/status` с `action = SUBMIT`.
+        Операция идемпотентна по `Idempotency-Key`: повтор с тем же ключом и телом вернёт исходный ответ
+        с заголовком `Idempotent-Replayed: true`. Цена берётся из слота на сервере.
+      operationId: createBooking
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateBookingRequest' }
+            example:
+              slotId: 9a1d0c11-3b7e-4b22-8f0e-5d7b4c6a2e10
+              comment: Хочу поработать над выходом на дальний борт
+      responses:
+        '201':
+          description: Бронирование создано
+          headers:
+            ETag:
+              schema: { type: string }
+              description: Версия бронирования
+            Location:
+              schema: { type: string }
+            Idempotent-Replayed:
+              schema: { type: boolean }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Booking' }
+              example:
+                id: 1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed
+                slotId: 9a1d0c11-3b7e-4b22-8f0e-5d7b4c6a2e10
+                studentId: c56a4180-65aa-42ec-a945-5fd21dec0538
+                trainerId: e3b0c442-98fc-1c14-9afb-f4c8996fb924
+                startsAt: '2026-11-05T15:00:00Z'
+                durationMinutes: 60
+                price: { amountMinor: 250000, currency: RUB }
+                status: AWAITING_COACH_APPROVAL
+                paymentRequired: false
+                approvalExpiresAt: '2026-11-03T12:00:00Z'
+                comment: Хочу поработать над выходом на дальний борт
+                lateCancellation: false
+                rescheduleCount: 0
+                createdAt: '2026-11-02T12:00:00Z'
+                updatedAt: '2026-11-02T12:00:00Z'
+                version: 0
+                allowedActions: [CANCEL]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Слот занят или пересечение с другим бронированием ученика
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+              examples:
+                taken:
+                  value:
+                    type: https://docs.bitok.app/errors/slot-already-taken
+                    title: Слот уже занят
+                    status: 409
+                    code: SLOT_ALREADY_TAKEN
+                    traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+                overlap:
+                  value:
+                    type: https://docs.bitok.app/errors/overlapping-booking
+                    title: У вас уже есть тренировка в это время
+                    status: 409
+                    code: OVERLAPPING_BOOKING
+                    traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+        '422':
+          description: Нарушение бизнес-правил
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+              examples:
+                leadTime:
+                  value:
+                    type: https://docs.bitok.app/errors/lead-time-violation
+                    title: Слишком поздно для записи
+                    status: 422
+                    code: LEAD_TIME_VIOLATION
+                    detail: Записаться можно не позднее чем за 2 ч до начала
+                    traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+                pendingLimit:
+                  value:
+                    type: https://docs.bitok.app/errors/pending-limit-exceeded
+                    title: Слишком много заявок
+                    status: 422
+                    code: PENDING_LIMIT_EXCEEDED
+                    traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+                keyReused:
+                  value:
+                    type: https://docs.bitok.app/errors/idempotency-key-reused
+                    title: Ключ идемпотентности использован с другим запросом
+                    status: 422
+                    code: IDEMPOTENCY_KEY_REUSED
+                    traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+        '428': { $ref: '#/components/responses/PreconditionRequired' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /bookings/{id}:
+    get:
+      tags: [Bookings]
+      summary: Получить бронирование
+      description: Доступно ученику-владельцу и тренеру слота.
+      operationId: getBooking
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+      responses:
+        '200':
+          description: Бронирование
+          headers:
+            ETag:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Booking' }
+              example:
+                id: 1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed
+                slotId: 9a1d0c11-3b7e-4b22-8f0e-5d7b4c6a2e10
+                studentId: c56a4180-65aa-42ec-a945-5fd21dec0538
+                trainerId: e3b0c442-98fc-1c14-9afb-f4c8996fb924
+                startsAt: '2026-11-05T15:00:00Z'
+                durationMinutes: 60
+                price: { amountMinor: 250000, currency: RUB }
+                status: AWAITING_PAYMENT
+                paymentRequired: true
+                payment:
+                  paymentId: 5d1f0c3e-7a2b-4e8f-9c61-0b2a4d6e8f10
+                  paymentUrl: https://qr.nspk.ru/AS1000670LSS7DN18SJQDNP4B05KLJL2
+                  paymentDeadline: '2026-11-02T13:15:00Z'
+                lateCancellation: false
+                rescheduleCount: 0
+                createdAt: '2026-11-02T12:00:00Z'
+                updatedAt: '2026-11-02T13:00:00Z'
+                version: 1
+                allowedActions: [CANCEL]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /bookings/{id}/status:
+    put:
+      tags: [Bookings]
+      summary: Изменить статус бронирования (FR-006, FR-007)
+      description: |
+        Команда перехода state machine. Допустимые действия по ролям:
+        - Тренер: `APPROVE`, `REJECT` (reason обязателен), `CANCEL` (reason обязателен), `COMPLETE`, `NO_SHOW`
+        - Ученик: `SUBMIT` (черновик → заявка), `CANCEL`
+
+        Требует `If-Match` с текущим ETag. Результат `APPROVE` выбирает `PaymentPolicy` на сервере:
+        `CONFIRMED` (paymentsEnabled = false) или `AWAITING_PAYMENT` с данными платежа (paymentsEnabled = true).
+      operationId: changeBookingStatus
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+        - name: If-Match
+          in: header
+          required: true
+          schema: { type: string }
+          example: '"0"'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangeStatusRequest' }
+            examples:
+              confirm:
+                value: { action: APPROVE }
+              reject:
+                value:
+                  action: REJECT
+                  reason: { code: SCHEDULE_CONFLICT, text: В это время у меня турнир, выберите четверг }
+              cancelByStudent:
+                value:
+                  action: CANCEL
+                  reason: { code: ILLNESS }
+      responses:
+        '200':
+          description: Новое состояние бронирования
+          headers:
+            ETag:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Booking' }
+              example:
+                id: 1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed
+                slotId: 9a1d0c11-3b7e-4b22-8f0e-5d7b4c6a2e10
+                studentId: c56a4180-65aa-42ec-a945-5fd21dec0538
+                trainerId: e3b0c442-98fc-1c14-9afb-f4c8996fb924
+                startsAt: '2026-11-05T15:00:00Z'
+                durationMinutes: 60
+                price: { amountMinor: 250000, currency: RUB }
+                status: CONFIRMED
+                paymentRequired: false
+                lateCancellation: false
+                rescheduleCount: 0
+                createdAt: '2026-11-02T12:00:00Z'
+                updatedAt: '2026-11-02T12:40:00Z'
+                version: 1
+                allowedActions: [CANCEL, COMPLETE, NO_SHOW]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Недопустимый переход
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+              example:
+                type: https://docs.bitok.app/errors/invalid-state-transition
+                title: Действие недоступно в текущем статусе
+                status: 409
+                code: INVALID_STATE_TRANSITION
+                detail: 'Переход EXPIRED → CONFIRMED запрещён'
+                traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+        '412':
+          description: ETag устарел — бронирование изменилось
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '422':
+          description: Не указана причина / нарушены правила отмены
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '428': { $ref: '#/components/responses/PreconditionRequired' }
+
+  /students/{id}/bookings/history:
+    get:
+      tags: [Bookings]
+      summary: История бронирований ученика (FR-008)
+      description: Чтение из CQRS read-модели. Ученик видит только свою историю, тренер — бронирования у себя.
+      operationId: getStudentBookingHistory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: scope
+          in: query
+          schema:
+            type: string
+            enum: [UPCOMING, PAST, ALL]
+            default: ALL
+        - name: trainerId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/BookingStatus' }
+          style: form
+          explode: false
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Страница истории
+          headers:
+            X-Projection-Lag-Ms:
+              description: Отставание read-модели от write-модели (для диагностики)
+              schema: { type: integer }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BookingHistoryPage' }
+              example:
+                items:
+                  - bookingId: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                    startsAt: '2026-10-28T15:00:00Z'
+                    durationMinutes: 60
+                    status: COMPLETED
+                    trainer:
+                      id: e3b0c442-98fc-1c14-9afb-f4c8996fb924
+                      displayName: Алексей Воронов
+                      avatarUrl: https://cdn.bitok.app/avatars/e3b0c442.jpg
+                    club: { id: 0f8fad5b-d9cb-469f-a165-70867728950e, name: Престиж }
+                    price: { amountMinor: 250000, currency: RUB }
+                    hasEvaluation: true
+                    evaluationId: 3f2504e0-4f89-11d3-9a0c-0305e82c3301
+                nextCursor: null
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    TrainerId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    BookingId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: UUID v4, уникальный для намерения пользователя. Хранится 24 часа.
+      schema: { type: string, format: uuid }
+      example: 6f1e3a52-8c0d-4a7b-b1f2-9d3c4e5f6a7b
+  responses:
+    BadRequest:
+      description: Некорректный запрос
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Нет или недействителен токен
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: Нет прав на ресурс
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Ресурс не найден
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    PreconditionRequired:
+      description: Отсутствует обязательный заголовок (Idempotency-Key / If-Match)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    TooManyRequests:
+      description: Превышен лимит запросов
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string, description: Машинный код ошибки }
+        traceId: { type: string }
+        errors:
+          type: array
+          description: Ошибки валидации полей
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              message: { type: string }
+    Money:
+      type: object
+      required: [amountMinor, currency]
+      properties:
+        amountMinor: { type: integer, format: int64, description: Сумма в копейках }
+        currency: { type: string, enum: [RUB] }
+    Discipline:
+      type: string
+      enum: [RUSSIAN_PYRAMID, POOL, SNOOKER, CAROM]
+    ClubRef:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        address: { type: string }
+        timeZone: { type: string, example: Europe/Moscow }
+    TrainerSummary:
+      type: object
+      required: [id, displayName, disciplines, clubs, pricePerHour]
+      properties:
+        id: { type: string, format: uuid }
+        displayName: { type: string }
+        avatarUrl: { type: string, format: uri, nullable: true }
+        rank: { type: string, nullable: true }
+        disciplines:
+          type: array
+          items: { $ref: '#/components/schemas/Discipline' }
+        clubs:
+          type: array
+          items: { $ref: '#/components/schemas/ClubRef' }
+        pricePerHour: { $ref: '#/components/schemas/Money' }
+        rating: { type: number, format: float, minimum: 0, maximum: 5, nullable: true }
+        reviewsCount: { type: integer }
+        experienceYears: { type: integer }
+        nextAvailableSlotAt: { type: string, format: date-time, nullable: true }
+    TrainerPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/TrainerSummary' }
+        nextCursor: { type: string, nullable: true }
+    SlotStatus:
+      type: string
+      enum: [AVAILABLE, HELD, BOOKED, BLOCKED, CANCELLED]
+    Slot:
+      type: object
+      required: [id, trainerId, clubId, startsAt, durationMinutes, price, type, capacity, status]
+      properties:
+        id: { type: string, format: uuid }
+        trainerId: { type: string, format: uuid }
+        clubId: { type: string, format: uuid }
+        tableNumber: { type: integer, nullable: true }
+        startsAt: { type: string, format: date-time }
+        durationMinutes: { type: integer, minimum: 30, maximum: 180, multipleOf: 15 }
+        price: { $ref: '#/components/schemas/Money' }
+        type: { type: string, enum: [INDIVIDUAL, GROUP] }
+        capacity: { type: integer, minimum: 1 }
+        status: { $ref: '#/components/schemas/SlotStatus' }
+    BookingStatus:
+      type: string
+      description: Клиент обязан обрабатывать неизвестные значения как UNKNOWN (forward compatibility)
+      enum: [DRAFT, AWAITING_COACH_APPROVAL, AWAITING_PAYMENT, CONFIRMED, COMPLETED, REJECTED_BY_COACH, CANCELLED_BY_STUDENT, CANCELLED_BY_COACH, EXPIRED, RESCHEDULED, NO_SHOW]
+    BookingAction:
+      type: string
+      enum: [SUBMIT, APPROVE, REJECT, CANCEL, COMPLETE, NO_SHOW, RESCHEDULE, PAY]
+    CancellationReason:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+          enum: [ILLNESS, SCHEDULE_CONFLICT, COACH_UNAVAILABLE, CLUB_CLOSED, OTHER]
+        text: { type: string, maxLength: 200 }
+    PaymentInfo:
+      type: object
+      description: Присутствует только при paymentRequired = true (v1.0)
+      properties:
+        paymentId: { type: string, format: uuid }
+        paymentUrl: { type: string, format: uri, description: Ссылка/QR СБП }
+        paymentDeadline: { type: string, format: date-time }
+        paymentStatus:
+          type: string
+          enum: [CREATED, PENDING, SUCCEEDED, FAILED, EXPIRED, REFUND_PENDING, PARTIALLY_REFUNDED, REFUNDED]
+    Booking:
+      type: object
+      required: [id, slotId, studentId, trainerId, startsAt, durationMinutes, price, status, paymentRequired, createdAt, updatedAt, version, allowedActions]
+      properties:
+        id: { type: string, format: uuid }
+        slotId: { type: string, format: uuid }
+        studentId: { type: string, format: uuid }
+        trainerId: { type: string, format: uuid }
+        initiatedBy: { type: string, enum: [STUDENT, COACH] }
+        startsAt: { type: string, format: date-time }
+        durationMinutes: { type: integer }
+        price: { $ref: '#/components/schemas/Money' }
+        status: { $ref: '#/components/schemas/BookingStatus' }
+        draftExpiresAt: { type: string, format: date-time, nullable: true }
+        paymentRequired: { type: boolean }
+        payment: { $ref: '#/components/schemas/PaymentInfo' }
+        approvalExpiresAt: { type: string, format: date-time, nullable: true }
+        comment: { type: string, maxLength: 500, nullable: true }
+        cancellationReason: { $ref: '#/components/schemas/CancellationReason' }
+        lateCancellation: { type: boolean }
+        rescheduledFromId: { type: string, format: uuid, nullable: true }
+        rescheduleCount: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer }
+        allowedActions:
+          type: array
+          description: Действия, доступные текущему пользователю (сервер — источник правды для UI)
+          items: { $ref: '#/components/schemas/BookingAction' }
+    CreateBookingRequest:
+      type: object
+      required: [slotId]
+      additionalProperties: false
+      properties:
+        slotId: { type: string, format: uuid }
+        comment: { type: string, maxLength: 500 }
+        mode:
+          type: string
+          enum: [REQUEST, DRAFT]
+          default: REQUEST
+    AssignBookingRequest:
+      type: object
+      required: [slotId, studentId]
+      additionalProperties: false
+      properties:
+        slotId: { type: string, format: uuid }
+        studentId: { type: string, format: uuid }
+        note: { type: string, maxLength: 500 }
+    ScheduleEntry:
+      type: object
+      required: [kind, startsAt, durationMinutes]
+      properties:
+        kind: { type: string, enum: [BOOKING, FREE_SLOT, BLOCKED] }
+        slotId: { type: string, format: uuid }
+        bookingId: { type: string, format: uuid, nullable: true }
+        startsAt: { type: string, format: date-time }
+        durationMinutes: { type: integer }
+        status: { $ref: '#/components/schemas/BookingStatus' }
+        club: { $ref: '#/components/schemas/ClubRef' }
+        tableNumber: { type: integer, nullable: true }
+        student:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string, format: uuid }
+            displayName: { type: string }
+            avatarUrl: { type: string, format: uri, nullable: true }
+            phone:
+              type: string
+              nullable: true
+              description: Только для тренера этого ученика; заполняется BFF из Identity (ContactAccessGrant)
+            level: { type: string }
+    ChangeStatusRequest:
+      type: object
+      required: [action]
+      additionalProperties: false
+      properties:
+        action: { $ref: '#/components/schemas/BookingAction' }
+        reason: { $ref: '#/components/schemas/CancellationReason' }
+    BookingHistoryItem:
+      type: object
+      required: [bookingId, startsAt, durationMinutes, status, trainer, price, hasEvaluation]
+      properties:
+        bookingId: { type: string, format: uuid }
+        startsAt: { type: string, format: date-time }
+        durationMinutes: { type: integer }
+        status: { $ref: '#/components/schemas/BookingStatus' }
+        trainer:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            displayName: { type: string }
+            avatarUrl: { type: string, format: uri, nullable: true }
+        club: { $ref: '#/components/schemas/ClubRef' }
+        price: { $ref: '#/components/schemas/Money' }
+        hasEvaluation: { type: boolean }
+        evaluationId: { type: string, format: uuid, nullable: true }
+    BookingHistoryPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/BookingHistoryItem' }
+        nextCursor: { type: string, nullable: true }

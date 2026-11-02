@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.bitok.app/payment/failed/v1.json",
+  "title": "PaymentFailed",
+  "description": "data для CloudEvent type = payment.failed",
+  "type": "object",
+  "required": [
+    "paymentId",
+    "reasonCode"
+  ],
+  "properties": {
+    "paymentId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "bookingId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "reasonCode": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": true
+}

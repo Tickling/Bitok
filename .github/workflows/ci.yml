@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  contracts:
+    name: API-контракты и схемы событий
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install openapi-spec-validator jsonschema pyyaml
+      - name: Validate OpenAPI
+        run: |
+          python - <<'PY'
+          import glob, yaml
+          from openapi_spec_validator import validate
+          for f in sorted(glob.glob("backend/api-contracts/openapi/*.yaml")):
+              validate(yaml.safe_load(open(f))); print("valid", f)
+          PY
+      - name: Validate event schemas
+        run: |
+          python - <<'PY'
+          import glob, json
+          from jsonschema import Draft202012Validator
+          for f in sorted(glob.glob("backend/api-contracts/events/*.json")):
+              Draft202012Validator.check_schema(json.load(open(f))); print("valid", f)
+          PY
+
+  backend:
+    name: Backend (TypeScript)
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: backend } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22", cache: npm, cache-dependency-path: backend/package-lock.json }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  messaging:
+    name: Messaging (Go)
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: backend/services/messaging } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: "1.24" }
+      - run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - run: go test -race ./...
+
+  ios-packages:
+    name: iOS Swift Packages
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test packages
+        working-directory: ios
+        run: |
+          set -e
+          for p in CoreDomain CoreNetwork BookingKit ProgressKit AchievementKit ChatKit ShopKit; do
+            echo "::group::$p"
+            swift test --package-path Packages/$p
+            echo "::endgroup::"
+          done
+
+  ios-app:
+    name: iOS App build
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - working-directory: ios
+        run: |
+          xcodegen generate
+          xcodebuild -project Bitok.xcodeproj -scheme Bitok \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO build
