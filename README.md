@@ -9,6 +9,7 @@
 | Документ | Содержание |
 |----------|------------|
 | [ANALYTICS.md](ANALYTICS.md) | Единый аналитический документ: требования (FR/NFR), архитектура (C4, bounded contexts, события, Saga, Outbox), доменные модели, OpenAPI-контракты, sequence- и BPMN-диаграммы, дизайн-система, ADR, roadmap |
+| [docs/design/showcase.html](docs/design/showcase.html) | **Итоговый дизайн**: иконка, все экраны ученика и тренера, чат, «Игроки клуба», уведомления, задел оплаты и магазина (PNG: [светлое](docs/design/showcase-ivory.png), [тёмное](docs/design/showcase-midnight.png)) |
 | [docs/design/](docs/design/) | Интерактивные макеты, по которым принимались дизайн-решения: стили, иконки, концепции K1–K4, чат и списки учеников |
 
 ## Структура репозитория
