@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Биток — варианты дизайна</title>
+<style>
+  :root { --page-bg:#f3f3f6; --page-fg:#16161a; --muted:#666; --card:#fff; --line:#e3e3ea; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --page-bg:#0e0e12; --page-fg:#ececf1; --muted:#9a9aa6; --card:#17171d; --line:#2a2a33; }
+  }
+  :root[data-theme="dark"] { --page-bg:#0e0e12; --page-fg:#ececf1; --muted:#9a9aa6; --card:#17171d; --line:#2a2a33; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--page-bg); color:var(--page-fg); font:15px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width:1500px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { font-size:28px; margin:0 0 4px; }
+  h2 { font-size:22px; margin:48px 0 6px; padding-top:16px; border-top:1px solid var(--line); }
+  h3 { margin:0; font-size:18px; }
+  .lead { color:var(--muted); margin:0 0 16px; max-width:900px; }
+  .tag { display:inline-block; font-weight:700; font-size:13px; padding:3px 10px; border-radius:99px; background:var(--page-fg); color:var(--page-bg); margin-right:8px; }
+  .style-head { display:flex; flex-wrap:wrap; gap:16px; align-items:flex-start; justify-content:space-between; margin:28px 0 12px; }
+  .style-head p { margin:4px 0 0; color:var(--muted); max-width:760px; }
+  .swatches { display:flex; gap:6px; flex-wrap:wrap; }
+  .sw { width:34px; height:34px; border-radius:10px; border:1px solid rgba(127,127,127,.3); position:relative; }
+  .sw span { position:absolute; top:38px; left:50%; transform:translateX(-50%); font-size:9px; color:var(--muted); white-space:nowrap; }
+  .row { display:flex; gap:20px; overflow-x:auto; padding:8px 4px 28px; scroll-snap-type:x mandatory; }
+  .cap { text-align:center; font-size:13px; color:var(--muted); margin-top:8px; }
+  .shot { scroll-snap-align:start; flex:0 0 auto; }
+
+  /* ---------- phone ---------- */
+  .phone { width:270px; height:560px; border-radius:42px; padding:10px; background:#0b0b0d; box-shadow:0 20px 50px rgba(0,0,0,.25); }
+  .screen { position:relative; width:100%; height:100%; border-radius:33px; overflow:hidden; background:var(--bg); color:var(--fg); font-family:var(--font); }
+  .screen::before { content:""; position:absolute; inset:0; background:var(--bgfx); pointer-events:none; }
+  .status { position:relative; display:flex; justify-content:space-between; padding:10px 22px 0; font-size:11px; font-weight:600; }
+  .island { position:absolute; top:8px; left:50%; transform:translateX(-50%); width:78px; height:22px; background:#000; border-radius:20px; }
+  .content { position:relative; padding:10px 14px 90px; height:100%; overflow:hidden; }
+  .title { font-family:var(--hfont); font-size:24px; font-weight:var(--hweight); margin:14px 0 8px; letter-spacing:var(--hls); }
+  .sub { font-size:11px; color:var(--fg2); }
+  .glass { background:var(--glass); border:1px solid var(--glassline); border-radius:18px; backdrop-filter:blur(18px) saturate(1.6); -webkit-backdrop-filter:blur(18px) saturate(1.6); box-shadow:var(--glassshadow); }
+  .pill { display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:600; padding:3px 8px; border-radius:99px; }
+  .tabbar { position:absolute; left:12px; right:12px; bottom:12px; height:58px; display:flex; justify-content:space-around; align-items:center; border-radius:29px; }
+  .tab { display:flex; flex-direction:column; align-items:center; gap:2px; font-size:8.5px; color:var(--fg2); }
+  .tab.on { color:var(--accent); }
+  .tab i { font-style:normal; font-size:16px; line-height:1; }
+
+  .trainer { display:flex; gap:8px; align-items:center; padding:8px; margin-bottom:8px; }
+  .ava { width:34px; height:34px; border-radius:50%; background:var(--ava); flex:0 0 auto; display:grid; place-items:center; font-weight:700; font-size:12px; color:#fff; }
+  .week { display:flex; gap:4px; margin:6px 0 10px; }
+  .day { flex:1; text-align:center; padding:6px 0; border-radius:12px; font-size:9px; color:var(--fg2); }
+  .day b { display:block; font-size:14px; color:var(--fg); }
+  .day.on { background:var(--accent); color:var(--onaccent); }
+  .day.on b { color:var(--onaccent); }
+  .slots { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-bottom:10px; }
+  .slot { text-align:center; padding:8px 0; border-radius:12px; font-size:12px; font-weight:600; }
+  .slot.taken { opacity:.35; text-decoration:line-through; }
+  .slot.sel { background:var(--accent); color:var(--onaccent); border-color:transparent; }
+  .cta { display:block; text-align:center; padding:11px; border-radius:16px; font-weight:700; font-size:13px; background:var(--accent); color:var(--onaccent); box-shadow:0 6px 18px var(--accentglow); }
+  .bk { padding:10px; margin-top:10px; font-size:11px; }
+  .bk .row2 { display:flex; justify-content:space-between; align-items:center; }
+
+  .month { display:grid; grid-template-columns:repeat(7,1fr); gap:3px; padding:8px; font-size:10px; text-align:center; margin-bottom:8px; }
+  .month .h { color:var(--fg2); font-size:8px; }
+  .month .d { padding:5px 0; border-radius:8px; position:relative; }
+  .month .d.dot::after { content:""; position:absolute; bottom:1px; left:50%; width:4px; height:4px; margin-left:-2px; border-radius:50%; background:var(--accent); }
+  .month .d.on { background:var(--accent); color:var(--onaccent); }
+
+  .metric { margin:6px 0; font-size:10.5px; }
+  .bar { height:6px; border-radius:6px; background:var(--track); overflow:hidden; margin-top:3px; }
+  .bar i { display:block; height:100%; border-radius:6px; background:var(--grad); }
+
+  .medals { display:flex; gap:8px; margin:8px 0; }
+  .medal { flex:1; text-align:center; padding:8px 0; font-size:10px; }
+  .coin { width:38px; height:38px; margin:0 auto 4px; border-radius:50%; display:grid; place-items:center; font-weight:800; font-size:14px; color:#2a1d00; }
+  .gold { background:radial-gradient(circle at 30% 30%, #fff6c8, #f2c94c 45%, #b8860b); }
+  .silver { background:radial-gradient(circle at 30% 30%, #ffffff, #c9ced6 45%, #8a929e); color:#222; }
+  .bronze { background:radial-gradient(circle at 30% 30%, #ffe0c2, #d08b4f 45%, #8a4f1f); }
+  .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; text-align:center; }
+  .stats div { padding:8px 0; font-size:9px; color:var(--fg2); }
+  .stats b { display:block; font-size:16px; color:var(--fg); }
+
+  .framewrap { display:grid; place-items:center; margin:8px 0 4px; }
+  .frame { width:96px; height:96px; border-radius:50%; padding:5px; background:conic-gradient(from 0deg, #fff6c8, #f2c94c, #b8860b, #f2c94c, #fff6c8); animation:spin 6s linear infinite; }
+  .frame .in { width:100%; height:100%; border-radius:50%; background:var(--ava); display:grid; place-items:center; font-size:28px; font-weight:800; color:#fff; animation:spin 6s linear infinite reverse; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .frame, .frame .in, .sparkle { animation:none !important; } }
+  .titleTxt { text-align:center; font-weight:700; font-size:15px; }
+  .badges { display:flex; justify-content:center; gap:6px; margin:6px 0 10px; }
+  .badge { width:30px; height:30px; border-radius:10px; display:grid; place-items:center; font-size:15px; }
+  .themes { display:flex; gap:6px; justify-content:center; margin-top:6px; }
+  .themes span { width:24px; height:24px; border-radius:50%; border:2px solid transparent; }
+  .themes span.on { border-color:var(--fg); }
+  .opts { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-top:8px; }
+  .opt { padding:6px 0; text-align:center; font-size:8.5px; }
+  .opt .r { width:30px; height:30px; margin:0 auto 3px; border-radius:50%; }
+  .lock { opacity:.4; }
+
+  .timeline { position:relative; margin-top:6px; }
+  .hour { display:flex; gap:6px; height:44px; font-size:9px; color:var(--fg2); border-top:1px dashed var(--track); }
+  .ev { position:absolute; left:34px; right:0; border-radius:12px; padding:6px 8px; font-size:10px; border-left:4px solid; }
+  .ev b { font-size:11px; }
+  .ev.free { border:1px dashed var(--fg2); border-left:4px dashed var(--fg2); background:transparent; color:var(--fg2); }
+  .seg { display:flex; padding:3px; border-radius:12px; margin-bottom:8px; }
+  .seg span { flex:1; text-align:center; font-size:10px; padding:5px 0; border-radius:9px; }
+  .seg span.on { background:var(--accent); color:var(--onaccent); font-weight:700; }
+
+  /* ---------- icons ---------- */
+  .icons { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:20px; }
+  .iconcard { background:var(--card); border:1px solid var(--line); border-radius:22px; padding:20px; }
+  .iconrow { display:flex; gap:14px; align-items:flex-end; margin:10px 0 14px; flex-wrap:wrap; }
+  .iconrow svg { border-radius:22.5%; box-shadow:0 8px 24px rgba(0,0,0,.18); }
+  .iconcard p { margin:6px 0; color:var(--muted); font-size:14px; }
+  .iconcard b { color:var(--page-fg); }
+  .home { width:100%; border-radius:18px; padding:14px; display:grid; grid-template-columns:repeat(4,1fr); gap:12px; justify-items:center; }
+  .home .ph { width:46px; height:46px; border-radius:11px; background:rgba(255,255,255,.25); }
+  .layouts { display:flex; gap:20px; flex-wrap:wrap; }
+  .note { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px 16px; margin:12px 0; color:var(--muted); }
+  .note b { color:var(--page-fg); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎱 Биток — варианты дизайна</h1>
+  <p class="lead">Ниже 3 стилистики, показанные на одних и тех же 5 экранах (календарь ученика, прогресс, достижения, уникализация профиля, календарь тренера), затем 3 концепции иконки и 2 варианта раскладки календаря. Выберите по одному варианту в каждом блоке — после этого я впишу выбранное в раздел 8 документа. Каждая строка экранов прокручивается горизонтально.</p>
+
+  <h2>1. Стилистика приложения</h2>
+  <div id="styles"></div>
+
+  <h2>2. Концепции иконки приложения</h2>
+  <p class="lead">Каждая иконка показана в трёх размерах (App Store, рабочий стол, Spotlight) и на обоях рабочего стола — чтобы оценить читаемость в маленьком размере.</p>
+  <div class="icons" id="icons"></div>
+
+  <h2>3. Раскладка календаря ученика</h2>
+  <p class="lead">Показано в нейтральном варианте; итоговые цвета будут из выбранной стилистики.</p>
+  <div class="layouts" id="layouts"></div>
+
+  <div class="note"><b>Что не требует выбора и войдёт в любой вариант:</b> Liquid Glass (полупрозрачные панели, размытие, плавающий таб-бар), светлая и тёмная темы, ролевой Tab Bar (ученик: Календарь · Прогресс · Чат · Контент · Профиль; тренер: Календарь · Ученики · Чат · Контент · Профиль), рамки за медали (золото/серебро/бронза), поддержка Reduce Motion и Reduce Transparency.</div>
+</div>
+
+<script>
+const THEMES = [
+  {
+    id: 'A', name: 'Midnight Chalk', mood: 'Ночной клуб премиум-класса: глубокий чернильно-синий, свечение «мелового» голубого и тёплая латунь. Спокойно, сосредоточенно, дорого. Тёмная тема — основная.',
+    vars: {
+      '--bg': 'linear-gradient(160deg,#0b1020 0%,#111a33 55%,#0a0f1d 100%)',
+      '--bgfx': 'radial-gradient(120% 60% at 80% 0%, rgba(77,163,255,.28), transparent 60%), radial-gradient(80% 50% at 0% 100%, rgba(201,162,92,.18), transparent 60%)',
+      '--fg': '#eef3ff', '--fg2': 'rgba(222,231,255,.62)',
+      '--glass': 'rgba(255,255,255,.08)', '--glassline': 'rgba(255,255,255,.14)', '--glassshadow': '0 8px 24px rgba(0,0,0,.35)',
+      '--accent': '#4DA3FF', '--onaccent': '#06122a', '--accentglow': 'rgba(77,163,255,.45)',
+      '--accent2': '#C9A25C', '--track': 'rgba(255,255,255,.1)', '--grad': 'linear-gradient(90deg,#4DA3FF,#9DD3FF)',
+      '--ava': 'linear-gradient(135deg,#2b4c8c,#4DA3FF)',
+      '--font': '-apple-system, "SF Pro Text", system-ui, sans-serif', '--hfont': '-apple-system, "SF Pro Display", system-ui, sans-serif', '--hweight': '700', '--hls': '-0.02em'
+    },
+    swatches: [['#0b1020','Ink'],['#111a33','Navy'],['#4DA3FF','Chalk'],['#9DD3FF','Ice'],['#C9A25C','Brass'],['#eef3ff','Ivory']],
+    status: { pending:'#F5B544', payment:'#A78BFA', confirmed:'#4DA3FF', completed:'#7BD88F', cancelled:'#FF6B6B' },
+    radar: ['#4DA3FF','rgba(77,163,255,.25)','#C9A25C']
+  },
+  {
+    id: 'B', name: 'Ivory & Oxblood', mood: 'Классический клуб и редакционная элегантность: тёплая слоновая кость, клён, кожа цвета бычьей крови и латунь. Светлая тема — основная, заголовки антиквой (New York). Солидно, «по-взрослому».',
+    vars: {
+      '--bg': 'linear-gradient(170deg,#fbf6ee 0%,#f3e9da 100%)',
+      '--bgfx': 'radial-gradient(90% 50% at 100% 0%, rgba(122,28,43,.12), transparent 60%), radial-gradient(70% 40% at 0% 100%, rgba(176,137,70,.18), transparent 60%)',
+      '--fg': '#2a1a14', '--fg2': 'rgba(42,26,20,.58)',
+      '--glass': 'rgba(255,255,255,.55)', '--glassline': 'rgba(122,28,43,.12)', '--glassshadow': '0 8px 22px rgba(90,50,30,.12)',
+      '--accent': '#7A1C2B', '--onaccent': '#fff7ef', '--accentglow': 'rgba(122,28,43,.30)',
+      '--accent2': '#B08946', '--track': 'rgba(42,26,20,.1)', '--grad': 'linear-gradient(90deg,#7A1C2B,#B08946)',
+      '--ava': 'linear-gradient(135deg,#7A1C2B,#B08946)',
+      '--font': '-apple-system, "SF Pro Text", system-ui, sans-serif', '--hfont': '"New York", "Iowan Old Style", Georgia, serif', '--hweight': '600', '--hls': '0'
+    },
+    swatches: [['#fbf6ee','Ivory'],['#e8d5b5','Maple'],['#7A1C2B','Oxblood'],['#B08946','Brass'],['#2f4858','Slate'],['#2a1a14','Walnut']],
+    status: { pending:'#C98A1A', payment:'#6B4FA0', confirmed:'#2F5D8A', completed:'#4E7D4A', cancelled:'#B23A3A' },
+    radar: ['#7A1C2B','rgba(122,28,43,.18)','#B08946']
+  },
+  {
+    id: 'C', name: 'Neon Break', mood: 'Энергия ночного пул-холла: графит, неоновые вывески, электрический фуксин и циан с градиентами. Спортивно, игровое, сильная геймификация — для молодой аудитории.',
+    vars: {
+      '--bg': 'linear-gradient(160deg,#0d0d12 0%,#15121f 60%,#0b0b10 100%)',
+      '--bgfx': 'radial-gradient(90% 45% at 100% 0%, rgba(255,46,151,.30), transparent 60%), radial-gradient(80% 45% at 0% 100%, rgba(0,229,255,.22), transparent 60%)',
+      '--fg': '#f6f3ff', '--fg2': 'rgba(240,235,255,.6)',
+      '--glass': 'rgba(255,255,255,.07)', '--glassline': 'rgba(255,255,255,.16)', '--glassshadow': '0 8px 26px rgba(255,46,151,.15)',
+      '--accent': '#FF2E97', '--onaccent': '#fff', '--accentglow': 'rgba(255,46,151,.55)',
+      '--accent2': '#00E5FF', '--track': 'rgba(255,255,255,.1)', '--grad': 'linear-gradient(90deg,#FF2E97,#00E5FF)',
+      '--ava': 'linear-gradient(135deg,#FF2E97,#7B2CFF)',
+      '--font': '-apple-system, "SF Pro Rounded", system-ui, sans-serif', '--hfont': '-apple-system, "SF Pro Rounded", system-ui, sans-serif', '--hweight': '800', '--hls': '-0.01em'
+    },
+    swatches: [['#0d0d12','Graphite'],['#15121f','Plum'],['#FF2E97','Magenta'],['#00E5FF','Cyan'],['#7B2CFF','Violet'],['#FFE45E','Volt']],
+    status: { pending:'#FFE45E', payment:'#B07CFF', confirmed:'#00E5FF', completed:'#5CFF9D', cancelled:'#FF5470' },
+    radar: ['#00E5FF','rgba(255,46,151,.28)','#FF2E97']
+  }
+];
+
+const tabbar = (role, active) => {
+  const tabs = role === 'coach'
+    ? [['📅','Календарь'],['👥','Ученики'],['💬','Чат'],['📰','Контент'],['👤','Профиль']]
+    : [['📅','Календарь'],['📈','Прогресс'],['💬','Чат'],['📰','Контент'],['👤','Профиль']];
+  return `<div class="tabbar glass">${tabs.map((t,i)=>`<div class="tab ${i===active?'on':''}"><i>${t[0]}</i>${t[1]}</div>`).join('')}</div>`;
+};
+const frameTop = () => `<div class="island"></div><div class="status"><span>9:41</span><span>●●● 100%</span></div>`;
+
+function radarSVG(t) {
+  const n=5, cx=110, cy=100, R=72;
+  const labels=['Стойка и удар','Прицеливание','Позиц. игра','Контроль битка','Тактика'];
+  const now=[63,74,52,44,58], prev=[59,61,48,39,52];
+  const pt=(i,v)=>{const a=-Math.PI/2+i*2*Math.PI/n;return [cx+Math.cos(a)*R*v/100, cy+Math.sin(a)*R*v/100];};
+  let g='';
+  for (const lvl of [25,50,75,100]) g+=`<polygon points="${[...Array(n)].map((_,i)=>pt(i,lvl).join(',')).join(' ')}" fill="none" stroke="var(--track)" stroke-width="1"/>`;
+  for (let i=0;i<n;i++){const [x,y]=pt(i,100);g+=`<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="var(--track)"/>`;
+    const [lx,ly]=pt(i,128); g+=`<text x="${lx}" y="${ly+3}" font-size="8" text-anchor="middle" fill="var(--fg2)">${labels[i]}</text>`;}
+  g+=`<polygon points="${prev.map((v,i)=>pt(i,v).join(',')).join(' ')}" fill="none" stroke="${t.radar[2]}" stroke-width="1.5" stroke-dasharray="3 3"/>`;
+  g+=`<polygon points="${now.map((v,i)=>pt(i,v).join(',')).join(' ')}" fill="${t.radar[1]}" stroke="${t.radar[0]}" stroke-width="2"/>`;
+  now.forEach((v,i)=>{const [x,y]=pt(i,v);g+=`<circle cx="${x}" cy="${y}" r="3" fill="${t.radar[0]}"/>`;});
+  return `<svg viewBox="0 0 220 200" width="100%" height="190">${g}</svg>`;
+}
+
+function screens(t) {
+  const s=t.status;
+  const pill=(c,txt)=>`<span class="pill" style="background:${c}22;color:${c};border:1px solid ${c}55">${txt}</span>`;
+  const studentCal = `${frameTop()}<div class="content">
+    <div class="title">Календарь</div>
+    <div class="trainer glass"><div class="ava">АВ</div><div style="flex:1"><b style="font-size:12px">Алексей Воронов</b><div class="sub">МС · Престиж · 2 500 ₽/ч</div></div><span class="sub">›</span></div>
+    <div class="week">${['Пн 3','Вт 4','Ср 5','Чт 6','Пт 7','Сб 8','Вс 9'].map((d,i)=>{const [w,n]=d.split(' ');return `<div class="day ${i===2?'on':'glass'}">${w}<b>${n}</b></div>`}).join('')}</div>
+    <div class="sub" style="margin-bottom:6px">Свободно в среду</div>
+    <div class="slots">${['16:00','17:00','18:00','19:00','20:00','21:00'].map((x,i)=>`<div class="slot glass ${i===2?'sel':''} ${i===1?'taken':''}">${x}</div>`).join('')}</div>
+    <span class="cta">Записаться на 18:00</span>
+    <div class="bk glass"><div class="row2"><b>Пт, 7 ноября · 19:00</b>${pill(s.pending,'⏳ Ждёт тренера')}</div><div class="sub" style="margin-top:4px">Престиж, стол 4 · 60 мин</div></div>
+    </div>${tabbar('student',0)}`;
+
+  const progress = `${frameTop()}<div class="content">
+    <div class="title">Прогресс</div>
+    <div class="glass" style="padding:8px 10px;display:flex;justify-content:space-between;align-items:center"><div><div class="sub">Уровень</div><b style="font-size:15px">Продвинутый</b></div><div style="text-align:right"><b style="font-size:24px;color:var(--accent)">58</b><div class="sub">+6 за месяц</div></div></div>
+    <div class="glass" style="margin-top:8px;padding:2px">${radarSVG(t)}</div>
+    <div class="sub" style="margin:4px 2px">— сейчас &nbsp; ┅ месяц назад</div>
+    <div class="glass" style="padding:6px 10px;margin-top:4px">
+      ${[['Прицеливание',74],['Стойка и удар',63],['Тактика',58]].map(m=>`<div class="metric">${m[0]} <b style="float:right">${m[1]}</b><div class="bar"><i style="width:${m[1]}%"></i></div></div>`).join('')}
+    </div></div>${tabbar('student',1)}`;
+
+  const ach = `${frameTop()}<div class="content">
+    <div class="title">Достижения</div>
+    <div class="medals">${[['gold','1','Золото'],['silver','0','Серебро'],['bronze','2','Бронза']].map(m=>`<div class="medal glass"><div class="coin ${m[0]}">${m[1]}</div>${m[2]}</div>`).join('')}</div>
+    <div class="glass" style="padding:10px;margin-bottom:8px">
+      <div style="display:flex;gap:8px;align-items:center"><div class="coin bronze" style="width:44px;height:44px;margin:0">3</div><div><span class="pill" style="background:var(--accent);color:var(--onaccent)">Первая медаль</span><div style="font-weight:700;font-size:12px;margin-top:3px">Осенний кубок «Престижа»</div><div class="sub">22 ноября 2026 · 3 место</div></div></div>
+      <div class="sub" style="margin-top:6px">4 матча · 3 победы · 48 шаров · обыграл: Сергей К., Дмитрий Л., Олег М.</div>
+    </div>
+    <div class="stats">${[['5','турниров'],['214','шаров'],['65%','побед']].map(x=>`<div class="glass"><b>${x[0]}</b>${x[1]}</div>`).join('')}</div>
+    <div class="sub" style="margin:10px 2px 4px">В процессе</div>
+    <div class="glass" style="padding:8px 10px"><div class="metric">Завсегдатай · 7/10 <div class="bar"><i style="width:70%"></i></div></div></div>
+    </div>${tabbar('student',1)}`;
+
+  const custom = `${frameTop()}<div class="content">
+    <div class="title">Мой профиль</div>
+    <div class="framewrap"><div class="frame"><div class="in">ИП</div></div></div>
+    <div class="titleTxt">Иван Петров</div>
+    <div style="text-align:center"><span class="pill" style="background:linear-gradient(90deg,#f2c94c,#b8860b);color:#2a1d00">👑 Чемпион клуба</span></div>
+    <div class="badges">${['🔥','🎯','🎱'].map(b=>`<div class="badge glass">${b}</div>`).join('')}</div>
+    <div class="sub">Рамка</div>
+    <div class="opts">
+      <div class="opt glass"><div class="r gold"></div>Золото</div>
+      <div class="opt glass"><div class="r silver"></div>Серебро</div>
+      <div class="opt glass"><div class="r bronze"></div>Бронза</div>
+      <div class="opt glass lock"><div class="r" style="background:conic-gradient(${t.radar[0]},${t.radar[2]},${t.radar[0]})"></div>🔒 Аура</div>
+    </div>
+    <div class="sub" style="margin-top:8px">Тема профиля</div>
+    <div class="themes">${t.swatches.slice(1,6).map((c,i)=>`<span class="${i===1?'on':''}" style="background:${c[0]}"></span>`).join('')}</div>
+    </div>${tabbar('student',4)}`;
+
+  const coach = `${frameTop()}<div class="content">
+    <div class="title">Сегодня, ср 5</div>
+    <div class="seg glass"><span class="on">День</span><span>Неделя</span><span>Месяц</span></div>
+    <div class="timeline">
+      ${['16:00','17:00','18:00','19:00','20:00','21:00'].map(h=>`<div class="hour">${h}</div>`).join('')}
+      <div class="ev" style="top:2px;height:40px;background:${s.completed}22;border-color:${s.completed}"><b>Мария С.</b> · завершена<div class="sub">☎ +7 916 ***-**-21</div></div>
+      <div class="ev free" style="top:46px;height:40px">+ свободный слот</div>
+      <div class="ev" style="top:90px;height:40px;background:${s.pending}22;border-color:${s.pending}"><b>Иван П.</b> · ждёт подтверждения<div class="sub">☎ +7 999 123-45-67 · Любитель</div></div>
+      <div class="ev" style="top:134px;height:40px;background:${s.confirmed}22;border-color:${s.confirmed}"><b>Олег М.</b> · подтверждена<div class="sub">☎ +7 903 555-01-02 · стол 2</div></div>
+      <div class="ev" style="top:178px;height:40px;background:${s.cancelled}18;border-color:${s.cancelled};text-decoration:line-through;opacity:.8"><b>Дмитрий Л.</b> · отменена</div>
+    </div>
+    </div>${tabbar('coach',0)}`;
+
+  return [['Календарь ученика',studentCal],['Прогресс: радар + история',progress],['Достижения: медали + статистика',ach],['Уникализация профиля',custom],['Календарь тренера (телефоны видит только тренер)',coach]];
+}
+
+const stylesEl=document.getElementById('styles');
+for (const t of THEMES) {
+  const vars=Object.entries(t.vars).map(([k,v])=>`${k}:${v}`).join(';');
+  stylesEl.insertAdjacentHTML('beforeend', `
+    <div class="style-head"><div><h3><span class="tag">${t.id}</span>${t.name}</h3><p>${t.mood}</p></div>
+    <div class="swatches">${t.swatches.map(s=>`<div class="sw" style="background:${s[0]}"><span>${s[1]}</span></div>`).join('')}</div></div>
+    <div class="row">${screens(t).map(([cap,html])=>`<div class="shot"><div class="phone"><div class="screen" style="${vars}">${html}</div></div><div class="cap">${cap}</div></div>`).join('')}</div>`);
+}
+
+/* ---------- icons ---------- */
+const ICONS = [
+  { id:'1', name:'Cue Ball Glass', sym:'Биток — «белый шар», с которого начинается каждый удар и каждая тренировка. Стеклянный объём в духе Liquid Glass, голубая точка — мел и прицел.',
+    colors:'Глубокий синий фон → светлый биток с отражением, акцент «меловой» голубой. Подходит к стилю A, нейтрален к B и C.',
+    svg:(s)=>`<svg width="${s}" height="${s}" viewBox="0 0 100 100"><defs>
+      <linearGradient id="i1bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1b2b55"/><stop offset="1" stop-color="#0a1022"/></linearGradient>
+      <radialGradient id="i1b" cx=".35" cy=".3" r=".75"><stop offset="0" stop-color="#ffffff"/><stop offset=".55" stop-color="#e6ecf7"/><stop offset="1" stop-color="#9fb0cc"/></radialGradient>
+      <radialGradient id="i1g" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#4DA3FF" stop-opacity=".55"/><stop offset="1" stop-color="#4DA3FF" stop-opacity="0"/></radialGradient></defs>
+      <rect width="100" height="100" fill="url(#i1bg)"/><circle cx="50" cy="54" r="40" fill="url(#i1g)"/>
+      <ellipse cx="50" cy="83" rx="22" ry="4" fill="#000" opacity=".35"/>
+      <circle cx="50" cy="50" r="28" fill="url(#i1b)"/><circle cx="56" cy="47" r="5" fill="#4DA3FF"/>
+      <ellipse cx="41" cy="38" rx="10" ry="6" fill="#fff" opacity=".85" transform="rotate(-25 41 38)"/></svg>`,
+    wall:'linear-gradient(135deg,#3a4f7a,#121a30)' },
+  { id:'2', name:'Rising Rack', sym:'Пирамида из трёх шаров выстроена как восходящий график: рост навыков — главная идея продукта (прогресс + запись).',
+    colors:'Слоновая кость, бычья кровь и латунь. Лучше всего подходит к стилю B; в стилях A и C — синие или неоновые шары.',
+    svg:(s)=>`<svg width="${s}" height="${s}" viewBox="0 0 100 100"><defs>
+      <linearGradient id="i2bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fbf6ee"/><stop offset="1" stop-color="#ead9bd"/></linearGradient>
+      <radialGradient id="i2a" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#c2485c"/><stop offset="1" stop-color="#5e1220"/></radialGradient>
+      <radialGradient id="i2c" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#e3c27f"/><stop offset="1" stop-color="#8a6526"/></radialGradient></defs>
+      <rect width="100" height="100" fill="url(#i2bg)"/>
+      <path d="M18 78 L82 78" stroke="#7A1C2B" stroke-opacity=".25" stroke-width="2" stroke-linecap="round"/>
+      <circle cx="27" cy="66" r="11" fill="url(#i2c)"/><circle cx="50" cy="52" r="13" fill="url(#i2a)"/><circle cx="73" cy="35" r="15" fill="url(#i2a)"/>
+      <circle cx="73" cy="35" r="6" fill="#fff7ef"/><text x="73" y="38.5" font-size="8" font-weight="700" text-anchor="middle" fill="#5e1220" font-family="Georgia">8</text></svg>`,
+    wall:'linear-gradient(135deg,#c9b08a,#6d4b33)' },
+  { id:'3', name:'Break Monogram', sym:'Буква «C» (от cue — кий), образованная траекторией битка после удара, кий — короткий штрих. Минималистичный знак, хорошо читается в маленьком размере и на Apple Watch.',
+    colors:'Графит + неоновый градиент фуксин → циан. Лучше всего подходит к стилю C; в монохроме — к A.',
+    svg:(s)=>`<svg width="${s}" height="${s}" viewBox="0 0 100 100"><defs>
+      <linearGradient id="i3bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1a1424"/><stop offset="1" stop-color="#0b0b10"/></linearGradient>
+      <linearGradient id="i3s" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF2E97"/><stop offset="1" stop-color="#00E5FF"/></linearGradient></defs>
+      <rect width="100" height="100" fill="url(#i3bg)"/>
+      <path d="M70 30 A26 26 0 1 0 70 70" stroke="url(#i3s)" stroke-width="9" fill="none" stroke-linecap="round"/>
+      <path d="M70 30 A26 26 0 1 0 70 70" stroke="#fff" stroke-opacity=".25" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <circle cx="74" cy="72" r="7" fill="#fff"/>
+      <line x1="84" y1="82" x2="94" y2="92" stroke="#FFE45E" stroke-width="4" stroke-linecap="round"/></svg>`,
+    wall:'linear-gradient(135deg,#3b1340,#0b2a3a)' }
+];
+const iconsEl=document.getElementById('icons');
+for (const ic of ICONS) {
+  iconsEl.insertAdjacentHTML('beforeend', `<div class="iconcard">
+    <h3><span class="tag">${ic.id}</span>${ic.name}</h3>
+    <div class="iconrow">${ic.svg(120)}${ic.svg(60)}${ic.svg(30)}</div>
+    <div class="home" style="background:${ic.wall}"><div class="ph"></div>${ic.svg(46).replace('<svg','<svg style="border-radius:11px"')}<div class="ph"></div><div class="ph"></div></div>
+    <p><b>Символизм:</b> ${ic.sym}</p><p><b>Цвета:</b> ${ic.colors}</p></div>`);
+}
+
+/* ---------- calendar layouts ---------- */
+const neutral = THEMES[0];
+const nv = Object.entries(neutral.vars).map(([k,v])=>`${k}:${v}`).join(';');
+const layoutA = `${frameTop()}<div class="content"><div class="title">Календарь</div>
+  <div class="week">${['Пн 3','Вт 4','Ср 5','Чт 6','Пт 7','Сб 8','Вс 9'].map((d,i)=>{const [w,n]=d.split(' ');return `<div class="day ${i===2?'on':'glass'}">${w}<b>${n}</b></div>`}).join('')}</div>
+  <div class="sub" style="margin-bottom:6px">Тренеры со свободным временем в среду</div>
+  ${[['АВ','Алексей Воронов',['16:00','18:00','20:00']],['МК','Марина Котова',['12:00','13:00']],['ДС','Денис Савин',['19:00']]].map(r=>`<div class="glass" style="padding:8px;margin-bottom:6px"><div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><div class="ava" style="width:26px;height:26px;font-size:10px">${r[0]}</div><b style="font-size:12px">${r[1]}</b></div><div style="display:flex;gap:4px">${r[2].map(x=>`<span class="slot glass" style="padding:5px 8px;font-size:11px">${x}</span>`).join('')}</div></div>`).join('')}
+  </div>${tabbar('student',0)}`;
+const layoutB = `${frameTop()}<div class="content"><div class="title">Ноябрь 2026</div>
+  <div class="month glass">${['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].map(h=>`<div class="h">${h}</div>`).join('')}${[...Array(30)].map((_,i)=>`<div class="d ${i===4?'on':''} ${[6,11,13,18,20,25].includes(i)?'dot':''}">${i+1}</div>`).join('')}</div>
+  <div class="sub" style="margin-bottom:6px">Ср, 5 ноября · Алексей Воронов</div>
+  <div class="slots">${['16:00','17:00','18:00','19:00','20:00','21:00'].map((x,i)=>`<div class="slot glass ${i===2?'sel':''} ${i===1?'taken':''}">${x}</div>`).join('')}</div>
+  <span class="cta">Записаться на 18:00</span></div>${tabbar('student',0)}`;
+document.getElementById('layouts').innerHTML = [
+  ['<b>Вариант 1 — «Лента недели»</b>: полоса из 7 дней сверху, ниже — тренеры со свободным временем на выбранный день. Быстрее всего записаться «на ближайшее время», тренера можно выбрать по ходу.', layoutA],
+  ['<b>Вариант 2 — «Месячная сетка»</b>: сначала выбирается тренер, затем день в сетке месяца (точки — дни со своими тренировками), затем слот. Привычно для тех, кто планирует заранее.', layoutB]
+].map(([cap,html])=>`<div class="shot" style="max-width:300px"><div class="phone"><div class="screen" style="${nv}">${html}</div></div><div class="cap" style="text-align:left">${cap}</div></div>`).join('');
+</script>
+</body>
+</html>

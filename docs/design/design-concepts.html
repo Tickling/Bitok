@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Биток — концепции</title>
+<style>
+  :root { --page-bg:#f3f3f6; --page-fg:#16161a; --muted:#666; --card:#fff; --line:#e3e3ea; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --page-bg:#0e0e12; --page-fg:#ececf1; --muted:#9a9aa6; --card:#17171d; --line:#2a2a33; }
+  }
+  :root[data-theme="dark"] { --page-bg:#0e0e12; --page-fg:#ececf1; --muted:#9a9aa6; --card:#17171d; --line:#2a2a33; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--page-bg); color:var(--page-fg); font:15px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width:1500px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { font-size:28px; margin:0 0 4px; }
+  h2 { font-size:21px; margin:0; }
+  .lead { color:var(--muted); margin:0 0 16px; max-width:950px; }
+  .tag { display:inline-block; font-weight:700; font-size:13px; padding:3px 10px; border-radius:99px; background:var(--page-fg); color:var(--page-bg); margin-right:8px; }
+  .switch { position:sticky; top:0; z-index:5; display:flex; gap:8px; flex-wrap:wrap; align-items:center; padding:12px 0; background:var(--page-bg); border-bottom:1px solid var(--line); margin-bottom:8px; }
+  .switch button { font:inherit; font-weight:600; padding:8px 14px; border-radius:99px; border:1px solid var(--line); background:var(--card); color:var(--page-fg); cursor:pointer; }
+  .switch button.on { background:var(--page-fg); color:var(--page-bg); }
+  .concept { margin:28px 0 8px; padding-top:20px; border-top:1px solid var(--line); }
+  .concept .meta { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:10px 24px; margin:8px 0 6px; color:var(--muted); font-size:14px; }
+  .concept .meta b { color:var(--page-fg); }
+  .row { display:flex; gap:20px; overflow-x:auto; padding:8px 4px 24px; }
+  .shot { flex:0 0 auto; }
+  .cap { text-align:center; font-size:13px; color:var(--muted); margin-top:8px; max-width:270px; }
+
+  .phone { width:270px; height:560px; border-radius:42px; padding:10px; background:#0b0b0d; box-shadow:0 20px 50px rgba(0,0,0,.25); }
+  .screen { position:relative; width:100%; height:100%; border-radius:33px; overflow:hidden; background:var(--bg); color:var(--fg); font-family:var(--font); transition:background .4s, color .4s; }
+  .screen::before { content:""; position:absolute; inset:0; background:var(--bgfx); pointer-events:none; }
+  .status { position:relative; display:flex; justify-content:space-between; padding:10px 22px 0; font-size:11px; font-weight:600; }
+  .island { position:absolute; top:8px; left:50%; transform:translateX(-50%); width:78px; height:22px; background:#000; border-radius:20px; z-index:3; }
+  .content { position:relative; padding:8px 14px 90px; height:100%; overflow:hidden; }
+  .title { font-family:var(--hfont); font-size:23px; font-weight:var(--hweight); margin:12px 0 8px; }
+  .sub { font-size:10.5px; color:var(--fg2); }
+  .glass { background:var(--glass); border:1px solid var(--glassline); border-radius:18px; backdrop-filter:blur(18px) saturate(1.6); -webkit-backdrop-filter:blur(18px) saturate(1.6); box-shadow:var(--glassshadow); }
+  .pill { display:inline-flex; align-items:center; gap:4px; font-size:9.5px; font-weight:600; padding:3px 8px; border-radius:99px; }
+  .tabbar { position:absolute; left:12px; right:12px; bottom:12px; height:56px; display:flex; justify-content:space-around; align-items:center; border-radius:28px; z-index:2; }
+  .tab { display:flex; flex-direction:column; align-items:center; gap:2px; font-size:8.5px; color:var(--fg2); }
+  .tab.on { color:var(--accent); }
+  .tab i { font-style:normal; font-size:16px; line-height:1; }
+  .ava { width:32px; height:32px; border-radius:50%; background:var(--ava); flex:0 0 auto; display:grid; place-items:center; font-weight:700; font-size:11px; color:#fff; }
+  .cta { display:block; text-align:center; padding:10px; border-radius:16px; font-weight:700; font-size:12.5px; background:var(--accent); color:var(--onaccent); box-shadow:0 6px 18px var(--accentglow); }
+  .slots { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin:6px 0 8px; }
+  .slot { text-align:center; padding:7px 0; border-radius:12px; font-size:11.5px; font-weight:600; }
+  .slot.taken { opacity:.35; text-decoration:line-through; }
+  .slot.sel { background:var(--accent); color:var(--onaccent); }
+  .month { display:grid; grid-template-columns:repeat(7,1fr); gap:2px; padding:8px; font-size:10px; text-align:center; }
+  .month .h { color:var(--fg2); font-size:8px; }
+  .month .d { padding:4px 0; border-radius:8px; position:relative; }
+  .month .d.dot::after { content:""; position:absolute; bottom:0; left:50%; width:4px; height:4px; margin-left:-2px; border-radius:50%; background:var(--accent); }
+  .month .d.on { background:var(--accent); color:var(--onaccent); }
+  .bar { height:5px; border-radius:5px; background:var(--track); overflow:hidden; margin-top:3px; }
+  .bar i { display:block; height:100%; border-radius:5px; background:var(--grad); }
+  .coin { width:34px; height:34px; border-radius:50%; display:grid; place-items:center; font-weight:800; font-size:13px; color:#2a1d00; flex:0 0 auto; }
+  .gold { background:radial-gradient(circle at 30% 30%, #fff6c8, #f2c94c 45%, #b8860b); }
+  .silver { background:radial-gradient(circle at 30% 30%, #ffffff, #c9ced6 45%, #8a929e); color:#222; }
+  .bronze { background:radial-gradient(circle at 30% 30%, #ffe0c2, #d08b4f 45%, #8a4f1f); }
+  .fab { position:absolute; right:18px; bottom:80px; height:46px; padding:0 18px; border-radius:23px; display:flex; align-items:center; gap:6px; font-weight:700; font-size:12.5px; background:var(--accent); color:var(--onaccent); box-shadow:0 10px 24px var(--accentglow); z-index:2; }
+  .tl { position:relative; padding-left:16px; }
+  .tl::before { content:""; position:absolute; left:5px; top:4px; bottom:0; width:2px; background:var(--track); }
+  .tli { position:relative; margin-bottom:8px; padding:8px 10px; font-size:10.5px; }
+  .tli::before { content:""; position:absolute; left:-15px; top:12px; width:10px; height:10px; border-radius:50%; background:var(--dotc, var(--accent)); border:2px solid var(--bgsolid); }
+  .day-h { font-size:9px; letter-spacing:.06em; text-transform:uppercase; color:var(--fg2); margin:6px 0 4px; }
+  .sheet { position:absolute; left:0; right:0; bottom:0; top:150px; border-radius:26px 26px 0 0; padding:14px; z-index:3; background:var(--sheet); border-top:1px solid var(--glassline); backdrop-filter:blur(24px); -webkit-backdrop-filter:blur(24px); }
+  .grab { width:36px; height:4px; border-radius:2px; background:var(--fg2); opacity:.5; margin:0 auto 10px; }
+  .dim { position:absolute; inset:0; background:rgba(0,0,0,.35); z-index:2; }
+  .chips { display:flex; gap:6px; overflow:hidden; margin:6px 0; }
+  .chip { flex:0 0 auto; display:flex; align-items:center; gap:5px; padding:4px 8px 4px 4px; border-radius:99px; font-size:10px; font-weight:600; }
+  .chip.on { background:var(--accent); color:var(--onaccent); }
+  .chip .ava { width:20px; height:20px; font-size:8px; }
+
+  .pcard { position:relative; border-radius:22px; padding:14px; overflow:hidden; background:var(--cardgrad); color:#fff; box-shadow:0 14px 30px var(--accentglow); }
+  .pcard::after { content:""; position:absolute; inset:-40% -60%; background:linear-gradient(115deg, transparent 40%, rgba(255,255,255,.28) 50%, transparent 60%); animation:shine 4.5s ease-in-out infinite; }
+  @keyframes shine { 0%,60% { transform:translateX(-40%); } 100% { transform:translateX(40%); } }
+  @media (prefers-reduced-motion: reduce) { .pcard::after, .ring { animation:none !important; } }
+  .pcard .ovr { font-family:var(--hfont); font-size:40px; font-weight:800; line-height:1; }
+  .ring { width:74px; height:74px; border-radius:50%; padding:4px; background:conic-gradient(#fff6c8,#f2c94c,#b8860b,#f2c94c,#fff6c8); animation:spin 6s linear infinite; }
+  .ring > div { width:100%; height:100%; border-radius:50%; background:rgba(0,0,0,.25); display:grid; place-items:center; font-weight:800; font-size:22px; animation:spin 6s linear infinite reverse; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .attrs { display:grid; grid-template-columns:repeat(5,1fr); gap:4px; margin-top:10px; text-align:center; font-size:8px; letter-spacing:.04em; }
+  .attrs b { display:block; font-size:15px; }
+  .ticket { display:flex; align-items:stretch; overflow:hidden; border-radius:16px; font-size:10.5px; }
+  .ticket .l { padding:9px 10px; flex:1; }
+  .ticket .r { width:62px; display:grid; place-items:center; border-left:2px dashed var(--glassline); font-weight:800; font-size:16px; color:var(--accent); }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+  .mini { padding:8px; border-radius:16px; font-size:10px; }
+  .mini .n { font-family:var(--hfont); font-size:20px; font-weight:800; color:var(--accent); }
+
+  .wallet { position:relative; height:330px; margin-top:6px; }
+  .pass { position:absolute; left:0; right:0; height:170px; border-radius:20px; padding:12px; color:#fff; box-shadow:0 -6px 20px rgba(0,0,0,.25); font-size:10.5px; }
+  .pass .big { font-family:var(--hfont); font-size:20px; font-weight:700; margin-top:4px; }
+  .qr { width:120px; height:120px; margin:8px auto; border-radius:12px; background:#fff; padding:8px; }
+  .steps { display:flex; justify-content:space-between; margin:10px 0; position:relative; }
+  .steps::before { content:""; position:absolute; left:8px; right:8px; top:8px; height:2px; background:var(--track); }
+  .st { position:relative; text-align:center; font-size:8px; color:var(--fg2); width:50px; }
+  .st i { display:block; width:18px; height:18px; margin:0 auto 3px; border-radius:50%; background:var(--track); font-style:normal; font-size:10px; line-height:18px; color:var(--onaccent); }
+  .st.done i { background:var(--accent); }
+  .st.now i { background:var(--bgsolid); border:2px solid var(--accent); }
+  .collect { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+  .cc { aspect-ratio:3/4; border-radius:12px; padding:6px; display:flex; flex-direction:column; justify-content:flex-end; font-size:8.5px; color:#fff; position:relative; overflow:hidden; }
+  .cc .e { position:absolute; top:8px; left:0; right:0; text-align:center; font-size:22px; }
+  .cc.lock { filter:grayscale(1); opacity:.45; }
+  .roster { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+  .rc { border-radius:14px; padding:8px; font-size:9.5px; color:#fff; background:var(--cardgrad); position:relative; }
+  .rc b { font-size:18px; font-family:var(--hfont); }
+  .note { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px 16px; margin:16px 0; color:var(--muted); }
+  .note b { color:var(--page-fg); }
+  table { border-collapse:collapse; width:100%; font-size:14px; margin:8px 0; }
+  th, td { border:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
+  th { background:var(--card); }
+  .tablewrap { overflow-x:auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎱 Биток — концепции приложения</h1>
+  <p class="lead">Четыре концепции различаются главным экраном, навигацией и сценарием записи, а не только цветом. Все показаны в двух выбранных оформлениях: переключатель ниже меняет тему во всех макетах сразу, как это будет работать в приложении (Профиль → Оформление). Концепции можно комбинировать: например, взять за основу одну и добавить из другой главный экран.</p>
+
+  <div class="switch" role="group" aria-label="Оформление">
+    <b style="margin-right:4px">Оформление:</b>
+    <button data-t="B" class="on">Ivory &amp; Oxblood (светлая)</button>
+    <button data-t="A">Midnight Chalk (тёмная)</button>
+    <button data-t="auto">Авто (как в системе)</button>
+  </div>
+
+  <div id="concepts"></div>
+
+  <div class="note">
+    <b>Сравнение концепций</b>
+    <div class="tablewrap"><table>
+      <tr><th></th><th>K1 Классика</th><th>K2 Дневник игрока</th><th>K3 Карточка игрока</th><th>K4 Билеты</th></tr>
+      <tr><td>Главный экран</td><td>Календарь</td><td>Лента событий</td><td>Карточка игрока</td><td>Стопка «билетов»</td></tr>
+      <tr><td>Вкладок</td><td>5</td><td>4</td><td>4</td><td>4</td></tr>
+      <tr><td>Запись</td><td>Тренер → месяц → слот</td><td>Нижний лист поверх ленты</td><td>Вкладка «Запись» (месяц → слот)</td><td>Вкладка «Запись», результат — билет</td></tr>
+      <tr><td>Сильная сторона</td><td>Привычно, предсказуемо, быстрее всего в разработке</td><td>История прогресса: оценки, достижения и тренировки в одном месте</td><td>Максимальная геймификация и мотивация</td><td>Офлайн-доступ и отметка прихода в клубе по QR</td></tr>
+      <tr><td>Риск</td><td>«Ещё одно приложение записи»</td><td>Лента разрастается, нужны фильтры</td><td>Тренерам и взрослым ученикам может быть «слишком игрово»</td><td>Меньше внимания прогрессу</td></tr>
+      <tr><td>Трудоёмкость UI (отн.)</td><td>1.0×</td><td>1.2×</td><td>1.3×</td><td>1.15×</td></tr>
+    </table></div>
+  </div>
+</div>
+
+<script>
+const THEMES = {
+  A: { '--bg':'linear-gradient(160deg,#0b1020 0%,#111a33 55%,#0a0f1d 100%)', '--bgsolid':'#0f1730',
+       '--bgfx':'radial-gradient(120% 60% at 80% 0%, rgba(77,163,255,.26), transparent 60%), radial-gradient(80% 50% at 0% 100%, rgba(201,162,92,.16), transparent 60%)',
+       '--fg':'#eef3ff','--fg2':'rgba(222,231,255,.62)','--glass':'rgba(255,255,255,.08)','--glassline':'rgba(255,255,255,.14)','--glassshadow':'0 8px 24px rgba(0,0,0,.35)',
+       '--accent':'#4DA3FF','--onaccent':'#06122a','--accentglow':'rgba(77,163,255,.40)','--accent2':'#C9A25C','--track':'rgba(255,255,255,.12)',
+       '--grad':'linear-gradient(90deg,#4DA3FF,#9DD3FF)','--ava':'linear-gradient(135deg,#2b4c8c,#4DA3FF)','--sheet':'rgba(16,24,48,.86)',
+       '--cardgrad':'linear-gradient(145deg,#1d3b78 0%,#2c5fb3 45%,#C9A25C 140%)',
+       '--font':'-apple-system,"SF Pro Text",system-ui,sans-serif','--hfont':'-apple-system,"SF Pro Display",system-ui,sans-serif','--hweight':'700',
+       pending:'#F5B544', confirmed:'#4DA3FF', completed:'#7BD88F', cancelled:'#FF6B6B',
+       passes:['linear-gradient(135deg,#2c5fb3,#1d3b78)','linear-gradient(135deg,#8a6a35,#C9A25C)','linear-gradient(135deg,#334155,#1e293b)'] },
+  B: { '--bg':'linear-gradient(170deg,#fbf6ee 0%,#f3e9da 100%)', '--bgsolid':'#f7efe3',
+       '--bgfx':'radial-gradient(90% 50% at 100% 0%, rgba(122,28,43,.10), transparent 60%), radial-gradient(70% 40% at 0% 100%, rgba(176,137,70,.16), transparent 60%)',
+       '--fg':'#2a1a14','--fg2':'rgba(42,26,20,.58)','--glass':'rgba(255,255,255,.58)','--glassline':'rgba(122,28,43,.12)','--glassshadow':'0 8px 22px rgba(90,50,30,.12)',
+       '--accent':'#7A1C2B','--onaccent':'#fff7ef','--accentglow':'rgba(122,28,43,.28)','--accent2':'#B08946','--track':'rgba(42,26,20,.10)',
+       '--grad':'linear-gradient(90deg,#7A1C2B,#B08946)','--ava':'linear-gradient(135deg,#7A1C2B,#B08946)','--sheet':'rgba(251,246,238,.92)',
+       '--cardgrad':'linear-gradient(145deg,#5e1220 0%,#7A1C2B 45%,#B08946 130%)',
+       '--font':'-apple-system,"SF Pro Text",system-ui,sans-serif','--hfont':'"New York","Iowan Old Style",Georgia,serif','--hweight':'600',
+       pending:'#C98A1A', confirmed:'#2F5D8A', completed:'#4E7D4A', cancelled:'#B23A3A',
+       passes:['linear-gradient(135deg,#7A1C2B,#5e1220)','linear-gradient(135deg,#B08946,#8a6526)','linear-gradient(135deg,#2f4858,#1f3240)'] }
+};
+
+const topBar = () => `<div class="island"></div><div class="status"><span>9:41</span><span>●●● 100%</span></div>`;
+const tabbar = (tabs, active) => `<div class="tabbar glass">${tabs.map((t,i)=>`<div class="tab ${i===active?'on':''}"><i>${t[0]}</i>${t[1]}</div>`).join('')}</div>`;
+const pill = (c,txt) => `<span class="pill" style="background:${c}22;color:${c};border:1px solid ${c}55">${txt}</span>`;
+const month = (sel=4) => `<div class="month glass">${['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].map(h=>`<div class="h">${h}</div>`).join('')}${[...Array(30)].map((_,i)=>`<div class="d ${i===sel?'on':''} ${[6,11,13,18,20,25].includes(i)?'dot':''}">${i+1}</div>`).join('')}</div>`;
+const slots = () => `<div class="slots">${['16:00','17:00','18:00','19:00','20:00','21:00'].map((x,i)=>`<div class="slot glass ${i===2?'sel':''} ${i===1?'taken':''}">${x}</div>`).join('')}</div>`;
+
+function radar(t, size=170) {
+  const n=5,cx=110,cy=95,R=66, now=[63,74,52,44,58], prev=[59,61,48,39,52];
+  const L=['Стойка','Прицел','Позиция','Биток','Тактика'];
+  const p=(i,v)=>{const a=-Math.PI/2+i*2*Math.PI/n;return [cx+Math.cos(a)*R*v/100,cy+Math.sin(a)*R*v/100];};
+  let g=''; for (const l of [33,66,100]) g+=`<polygon points="${[...Array(n)].map((_,i)=>p(i,l).join(',')).join(' ')}" fill="none" stroke="var(--track)"/>`;
+  for (let i=0;i<n;i++){const [x,y]=p(i,124);g+=`<text x="${x}" y="${y+3}" font-size="8.5" text-anchor="middle" fill="var(--fg2)">${L[i]}</text>`;}
+  g+=`<polygon points="${prev.map((v,i)=>p(i,v).join(',')).join(' ')}" fill="none" stroke="var(--accent2)" stroke-dasharray="3 3" stroke-width="1.5"/>`;
+  g+=`<polygon points="${now.map((v,i)=>p(i,v).join(',')).join(' ')}" fill="var(--accentglow)" stroke="var(--accent)" stroke-width="2"/>`;
+  return `<svg viewBox="0 0 220 190" width="100%" height="${size}">${g}</svg>`;
+}
+
+const STUDENT5=[['📅','Календарь'],['📈','Прогресс'],['💬','Чат'],['📰','Контент'],['👤','Профиль']];
+const COACH5=[['📅','Календарь'],['👥','Ученики'],['💬','Чат'],['📰','Контент'],['👤','Профиль']];
+
+const CONCEPTS = [
+ { id:'K1', name:'Классика', idea:'Привычная структура «по разделам»: календарь — главный экран, остальные функции на отдельных вкладках. То, что показано в прошлом раунде, с выбранной месячной сеткой.',
+   student:'Календарь · Прогресс · Чат · Контент · Профиль', coach:'Календарь · Ученики · Чат · Контент · Профиль',
+   screens:(t)=>[
+    ['Календарь ученика: тренер → месяц → слот', `${topBar()}<div class="content"><div class="title">Ноябрь</div>
+      <div class="chips">${[['АВ','Воронов',1],['МК','Котова',0],['ДС','Савин',0]].map(c=>`<div class="chip ${c[2]?'on':'glass'}"><div class="ava">${c[0]}</div>${c[1]}</div>`).join('')}</div>
+      ${month()}<div class="sub" style="margin-top:6px">Ср, 5 ноября</div>${slots()}<span class="cta">Записаться на 18:00</span></div>${tabbar(STUDENT5,0)}`],
+    ['Прогресс: радар + история', `${topBar()}<div class="content"><div class="title">Прогресс</div>
+      <div class="glass" style="padding:8px 10px;display:flex;justify-content:space-between"><div><div class="sub">Уровень</div><b>Продвинутый</b></div><b style="font-size:24px;color:var(--accent)">58</b></div>
+      <div class="glass" style="margin-top:8px">${radar(t)}</div>
+      <div class="glass" style="padding:8px 10px;margin-top:8px;font-size:10.5px">Прицеливание <b style="float:right">74 · +13</b><div class="bar"><i style="width:74%"></i></div></div></div>${tabbar(STUDENT5,1)}`],
+    ['Тренер: день с цветными статусами', `${topBar()}<div class="content"><div class="title">Ср, 5 ноября</div>
+      ${[[t.completed,'16:00','Мария С.','завершена · оценить'],[t.pending,'18:00','Иван П.','ждёт подтверждения'],[t.confirmed,'19:00','Олег М.','подтверждена']].map(e=>`<div class="glass" style="padding:8px 10px;margin-bottom:6px;border-left:4px solid ${e[0]};font-size:10.5px"><b>${e[1]} · ${e[2]}</b><div class="sub">${e[3]} · ☎ +7 999 123-45-67</div></div>`).join('')}
+      <div class="glass" style="padding:8px 10px;border:1px dashed var(--fg2);font-size:10.5px;color:var(--fg2)">20:00 · + свободный слот</div></div>${tabbar(COACH5,0)}`]
+   ]},
+ { id:'K2', name:'Дневник игрока', idea:'Главный экран — единая лента: ближайшие тренировки сверху, ниже прошедшие с оценками тренера, полученные достижения и новости. Ученик видит свою историю роста. Запись открывается нижним листом поверх ленты.',
+   student:'Дневник · Тренеры · Чат · Профиль (прогресс внутри дневника и профиля)', coach:'Сегодня · Ученики · Чат · Профиль',
+   screens:(t)=>{ const tabs=[['📖','Дневник'],['🎯','Тренеры'],['💬','Чат'],['👤','Профиль']];
+    return [
+    ['Лента: тренировки, оценки, достижения', `${topBar()}<div class="content"><div class="title">Дневник</div>
+      <div class="day-h">Скоро</div>
+      <div class="tl"><div class="tli glass"><b>Чт, 6 ноября · 18:00</b> ${pill(t.confirmed,'подтверждена')}<div class="sub">Воронов · Престиж, стол 4</div></div></div>
+      <div class="day-h">На прошлой неделе</div>
+      <div class="tl">
+        <div class="tli glass" style="--dotc:${t.completed}"><b>Оценка тренера</b><div class="sub">Прицеливание 74 <span style="color:${t.completed}">+6</span> · Биток 44 <span style="color:${t.completed}">+3</span></div><div class="sub" style="margin-top:2px">«Выход пока нестабилен — упражнение “Лесенка”»</div></div>
+        <div class="tli glass" style="--dotc:#d08b4f"><div style="display:flex;gap:8px;align-items:center"><div class="coin bronze" style="width:28px;height:28px">3</div><div><b>Первая медаль!</b><div class="sub">Осенний кубок · 48 шаров</div></div></div></div>
+        <div class="tli glass" style="--dotc:var(--accent2)"><b>Новость клуба</b><div class="sub">Регистрация на декабрьский турнир открыта</div></div>
+      </div></div><div class="fab">＋ Записаться</div>${tabbar(tabs,0)}`],
+    ['Запись — нижний лист поверх ленты', `${topBar()}<div class="content"><div class="title">Дневник</div></div><div class="dim"></div>
+      <div class="sheet"><div class="grab"></div><b style="font-family:var(--hfont);font-size:16px">Новая тренировка</b>
+      <div class="chips">${[['АВ','Воронов',1],['МК','Котова',0],['ДС','Савин',0]].map(c=>`<div class="chip ${c[2]?'on':'glass'}"><div class="ava">${c[0]}</div>${c[1]}</div>`).join('')}</div>
+      ${month()}${slots()}<span class="cta">Записаться на 18:00</span></div>`],
+    ['Тренер: «Сегодня» — задачи дня', `${topBar()}<div class="content"><div class="title">Сегодня</div>
+      <div class="glass" style="padding:10px;font-size:11px"><b>4 тренировки · 1 заявка · 2 оценки</b><div class="bar" style="margin-top:6px"><i style="width:40%"></i></div></div>
+      <div class="day-h">Нужно сделать</div>
+      ${[['⏳','Подтвердить заявку','Иван П. · чт 18:00',t.pending],['✍️','Оценить тренировку','Мария С. · сегодня 16:00',t.completed],['✍️','Оценить тренировку','Олег М. · вчера',t.completed]].map(x=>`<div class="glass" style="padding:8px 10px;margin-bottom:6px;font-size:10.5px;display:flex;gap:8px;align-items:center"><span style="font-size:16px">${x[0]}</span><div style="flex:1"><b>${x[1]}</b><div class="sub">${x[2]}</div></div><span style="color:${x[3]};font-weight:700">›</span></div>`).join('')}
+      <div class="day-h">Дальше</div><div class="glass" style="padding:8px 10px;font-size:10.5px">19:00 · Олег М. ${pill(t.confirmed,'подтверждена')}</div></div>${tabbar([['☀️','Сегодня'],['👥','Ученики'],['💬','Чат'],['👤','Профиль']],0)}`]
+   ];}},
+ { id:'K3', name:'Карточка игрока', idea:'В центре — коллекционная «карточка игрока» как в спортивных играх: рейтинг, 5 атрибутов, рамка за медали, титул. Прогресс подаётся как развитие персонажа, тренировки — как сезон с целями. Максимум мотивации.',
+   student:'Игрок · Запись · Чат · Клуб (новости, уроки, турниры)', coach:'Состав · Расписание · Чат · Клуб',
+   screens:(t)=>{ const tabs=[['🃏','Игрок'],['📅','Запись'],['💬','Чат'],['🏛️','Клуб']];
+    return [
+    ['Главная: карточка игрока', `${topBar()}<div class="content"><div class="title">Игрок</div>
+      <div class="pcard"><div style="display:flex;justify-content:space-between;align-items:center"><div><div class="ovr">58</div><div style="font-size:10px;opacity:.85">ПРОДВИНУТЫЙ</div><div style="margin-top:6px;font-weight:700">Иван Петров</div><div style="font-size:10px;opacity:.85">👑 Чемпион клуба</div></div><div class="ring"><div>ИП</div></div></div>
+      <div class="attrs">${[['СТО',63],['ПРЦ',74],['ПОЗ',52],['БИТ',44],['ТАК',58]].map(a=>`<div><b>${a[1]}</b>${a[0]}</div>`).join('')}</div></div>
+      <div class="ticket glass" style="margin-top:10px"><div class="l"><div class="sub">Следующая тренировка</div><b>Чт, 6 ноября · 18:00</b><div class="sub">Воронов · Престиж</div></div><div class="r">18:00</div></div>
+      <div class="glass" style="padding:8px 10px;margin-top:8px;font-size:10.5px"><b>Сезон «Осень»</b> · 7 / 10 тренировок<div class="bar"><i style="width:70%"></i></div><div class="sub" style="margin-top:3px">Награда: тема «Графит»</div></div>
+      </div>${tabbar(tabs,0)}`],
+    ['Обратная сторона карточки: медали и статистика', `${topBar()}<div class="content"><div class="title">Трофеи</div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">${[['gold',1],['silver',0],['bronze',2]].map(m=>`<div class="glass" style="flex:1;padding:8px;text-align:center"><div class="coin ${m[0]}" style="margin:0 auto">${m[1]}</div></div>`).join('')}</div>
+      <div class="grid2">${[['5','турниров'],['214','забито шаров'],['65%','побед'],['12','соперников']].map(x=>`<div class="mini glass"><div class="n">${x[0]}</div>${x[1]}</div>`).join('')}</div>
+      <div class="glass" style="padding:8px 10px;margin-top:8px;font-size:10.5px"><b>Личные встречи</b>${[['Сергей К.','2–1'],['Дмитрий Л.','1–0'],['Олег М.','0–2']].map(o=>`<div style="display:flex;justify-content:space-between;margin-top:4px"><span>${o[0]}</span><b>${o[1]}</b></div>`).join('')}</div>
+      </div>${tabbar(tabs,0)}`],
+    ['Тренер: состав учеников как карточки', `${topBar()}<div class="content"><div class="title">Состав</div>
+      <div class="sub" style="margin-bottom:6px">23 ученика · 3 ждут оценки</div>
+      <div class="roster">${[['Иван П.',58,'Продвинутый','✍️'],['Мария С.',71,'Профессионал',''],['Олег М.',44,'Любитель','✍️'],['Анна Р.',33,'Любитель',''],['Денис В.',82,'Профессионал','✍️'],['Ксения Л.',19,'Новичок','']].map(r=>`<div class="rc"><b>${r[1]}</b> ${r[3]}<div style="font-weight:700;margin-top:2px">${r[0]}</div><div style="opacity:.8">${r[2]}</div></div>`).join('')}</div>
+      </div>${tabbar([['👥','Состав'],['📅','Расписание'],['💬','Чат'],['🏛️','Клуб']],0)}`]
+   ];}},
+ { id:'K4', name:'Билеты', idea:'Каждая тренировка — «билет» в стиле Apple Wallet: стопка ближайших занятий, статус в виде шкалы этапов, QR для отметки прихода в клубе (работает офлайн). Достижения — коллекция карточек. Подходит под будущую оплату: оплаченный билет = подтверждённая бронь.',
+   student:'Билеты · Запись · Чат · Профиль (прогресс и коллекция)', coach:'Расписание · Ученики · Чат · Профиль (сканер QR при входе)',
+   screens:(t)=>{ const tabs=[['🎟️','Билеты'],['📅','Запись'],['💬','Чат'],['👤','Профиль']];
+    return [
+    ['Стопка билетов', `${topBar()}<div class="content"><div class="title">Билеты</div>
+      <div class="wallet">
+        <div class="pass" style="top:0;background:${t.passes[2]}"><div style="display:flex;justify-content:space-between"><b>ПРЕСТИЖ</b><span>сб 8 ноя</span></div></div>
+        <div class="pass" style="top:42px;background:${t.passes[1]}"><div style="display:flex;justify-content:space-between"><b>ПРЕСТИЖ</b><span>пт 7 ноя</span></div></div>
+        <div class="pass" style="top:84px;height:220px;background:${t.passes[0]}"><div style="display:flex;justify-content:space-between"><b>ПРЕСТИЖ · СТОЛ 4</b><span>чт 6 ноя</span></div>
+          <div class="big">18:00 – 19:00</div><div style="opacity:.85">Тренер: Алексей Воронов</div>
+          <div style="display:flex;gap:6px;margin-top:10px"><span class="pill" style="background:rgba(255,255,255,.2);color:#fff">✓ Подтверждена</span><span class="pill" style="background:rgba(255,255,255,.2);color:#fff">Русский бильярд</span></div>
+          <div style="margin-top:14px;display:flex;gap:6px"><span class="pill" style="background:#fff;color:#111">📅 В календарь</span><span class="pill" style="background:#fff;color:#111">QR для входа</span></div></div>
+      </div></div>${tabbar(tabs,0)}`],
+    ['Билет: этапы и QR для отметки', `${topBar()}<div class="content"><div class="title">Чт, 6 ноября</div>
+      <div class="steps">${[['✓','Заявка','done'],['✓','Тренер','done'],['₽','Оплата',''],['●','Тренировка','now'],['★','Оценка','']].map(s=>`<div class="st ${s[2]}"><i>${s[0]}</i>${s[1]}</div>`).join('')}</div>
+      <div class="sub" style="text-align:center">Шаг «Оплата» появится при включении СБП</div>
+      <div class="glass" style="padding:10px;margin-top:8px;text-align:center"><div class="qr"><svg viewBox="0 0 21 21" width="104" height="104" shape-rendering="crispEdges">${[...Array(21*21)].map((_,k)=>{const x=k%21,y=Math.floor(k/21);const f=(x<7&&y<7)||(x>13&&y<7)||(x<7&&y>13);const on=f?((x%6===0||y%6===0||(x>=2&&x<=4&&y>=2&&y<=4)||(x>=16&&x<=18&&y>=2&&y<=4)||(x>=2&&x<=4&&y>=16&&y<=18)||(x===20)||(y===20))&&!(x===20&&y<14)&&!(y===20&&x<14&&x>6)):((x*7+y*13+x*y)%5<2);return on?`<rect x="${x}" y="${y}" width="1" height="1" fill="#111"/>`:''}).join('')}</svg></div>
+      <div class="sub">Покажите тренеру при входе — отметка прихода</div></div>
+      <span class="cta" style="margin-top:8px">Отменить или перенести</span></div>${tabbar(tabs,0)}`],
+    ['Коллекция достижений-карточек', `${topBar()}<div class="content"><div class="title">Коллекция</div>
+      <div class="sub" style="margin-bottom:6px">9 из 24 · редкие подсвечены</div>
+      <div class="collect">${[['🥉','Первая медаль','linear-gradient(160deg,#d08b4f,#8a4f1f)',0],['🎯','Снайпер','var(--cardgrad)',0],['🔥','Серия 4 нед.','linear-gradient(160deg,#c2485c,#5e1220)',0],['🥇','Чемпион','linear-gradient(160deg,#f2c94c,#b8860b)',0],['🎱','Первый разбой','linear-gradient(160deg,#64748b,#334155)',0],['💯','Сотня','linear-gradient(160deg,#64748b,#334155)',1],['🌟','Восходящая звезда','linear-gradient(160deg,#64748b,#334155)',1],['🧠','Тактик','linear-gradient(160deg,#64748b,#334155)',1],['🥈','Вице-чемпион','linear-gradient(160deg,#c9ced6,#8a929e)',1]].map(c=>`<div class="cc ${c[3]?'lock':''}" style="background:${c[2]}"><div class="e">${c[0]}</div><b>${c[1]}</b></div>`).join('')}</div>
+      </div>${tabbar(tabs,3)}`]
+   ];}}
+];
+
+const root=document.getElementById('concepts');
+function render(mode){
+  let key=mode;
+  if (mode==='auto') key = matchMedia('(prefers-color-scheme: dark)').matches ? 'A' : 'B';
+  const t=THEMES[key]; const vars=Object.entries(t).filter(([k])=>k.startsWith('--')).map(([k,v])=>`${k}:${v}`).join(';');
+  root.innerHTML = CONCEPTS.map(c=>`<section class="concept"><h2><span class="tag">${c.id}</span>${c.name}</h2>
+    <p class="lead" style="margin:6px 0">${c.idea}</p>
+    <div class="meta"><div><b>Вкладки ученика:</b> ${c.student}</div><div><b>Вкладки тренера:</b> ${c.coach}</div></div>
+    <div class="row">${c.screens(t).map(([cap,html])=>`<div class="shot"><div class="phone"><div class="screen" style="${vars}">${html}</div></div><div class="cap">${cap}</div></div>`).join('')}</div></section>`).join('');
+}
+let mode='B';
+document.querySelectorAll('.switch button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.switch button').forEach(x=>x.classList.toggle('on',x===b)); mode=b.dataset.t; render(mode);
+}));
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{ if(mode==='auto') render(mode); });
+render(mode);
+</script>
+</body>
+</html>
