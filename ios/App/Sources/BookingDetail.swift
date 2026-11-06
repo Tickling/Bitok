@@ -104,6 +104,7 @@ struct BookingDetailView: View {
     @State private var showReject = false
     @State private var showCancel = false
     @State private var showEvaluation = false
+    @State private var showSwap = false
 
     private var backend: DemoBackend { container.backend }
     private var isCoach: Bool { container.role == .trainer }
@@ -136,6 +137,9 @@ struct BookingDetailView: View {
             }
             .navigationDestination(isPresented: $showEvaluation) {
                 EvaluationView(bookingId: bookingId, container: container)
+            }
+            .sheet(isPresented: $showSwap) {
+                SwapStudentsSheet(container: container, bookingId: bookingId) { dismiss() }
             }
             .errorAlert($errorText)
         }
@@ -244,6 +248,12 @@ struct BookingDetailView: View {
                 }
                 if allowed.contains(.reject) {
                     Button("Отклонить…", role: .destructive) { showReject = true }.buttonStyle(.bordered)
+                }
+                if !backend.swapCandidates(for: booking.id).isEmpty {
+                    Button { showSwap = true } label: {
+                        Label("Поменять местами с другим учеником", systemImage: "arrow.left.arrow.right")
+                    }
+                    .buttonStyle(.bordered)
                 }
                 if booking.status == .confirmed {
                     Button("Завершить тренировку (демо)") { run { try backend.complete(booking.id) } }
@@ -402,6 +412,86 @@ struct EvaluationView: View {
             dismiss()
         } catch {
             errorText = DemoBackend.message(for: error)
+        }
+    }
+}
+
+// MARK: - Обмен учеников местами
+
+/// Тренер выбирает, с чьей тренировкой поменять текущую: ученики меняются временем.
+struct SwapStudentsSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.palette) private var palette
+    let container: AppContainer
+    let bookingId: BookingID
+    var onSwapped: () -> Void = {}
+    @State private var selected: BookingID?
+    @State private var errorText: String?
+
+    private var backend: DemoBackend { container.backend }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: Space.m) {
+                    if let source = backend.booking(bookingId) {
+                        let candidates = backend.swapCandidates(for: bookingId)
+                        Text("\(backend.name(source.studentId)) · \(Fmt.shortDay(source.startsAt)) \(Fmt.time(source.startsAt))")
+                            .font(.headline)
+                        Text("Выберите, с кем поменять время. Оба ученика получат сообщение в чате, записи останутся подтверждёнными.")
+                            .font(.callout).foregroundStyle(palette.textSecondary)
+                        if candidates.isEmpty {
+                            Text("Нет других подтверждённых тренировок для обмена").foregroundStyle(palette.textSecondary)
+                        }
+                        ForEach(candidates) { other in
+                            Button { selected = other.id } label: {
+                                HStack(spacing: Space.m) {
+                                    Avatar(initials: backend.person(other.studentId)?.initials ?? "?", size: 40)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(backend.name(other.studentId)).font(.headline)
+                                        Text("\(Fmt.shortDay(other.startsAt)) · \(Fmt.time(other.startsAt))")
+                                            .font(.callout).foregroundStyle(palette.textSecondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: selected == other.id ? "checkmark.circle.fill" : "circle")
+                                        .font(.title3).foregroundStyle(palette.accent)
+                                }
+                                .padding(Space.m)
+                                .glassCard()
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        if let selected, let other = backend.booking(selected) {
+                            VStack(alignment: .leading, spacing: Space.xs) {
+                                Text("После обмена").font(.caption).foregroundStyle(palette.textSecondary)
+                                Text("\(backend.name(source.studentId)) → \(Fmt.time(other.startsAt))").font(.callout.weight(.semibold))
+                                Text("\(backend.name(other.studentId)) → \(Fmt.time(source.startsAt))").font(.callout.weight(.semibold))
+                            }
+                            .padding(Space.m)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .glassCard()
+                            Button("Поменять местами") {
+                                do {
+                                    try backend.swap(bookingId, with: selected, by: container.currentUserId)
+                                    dismiss()
+                                    onSwapped()
+                                } catch {
+                                    errorText = DemoBackend.message(for: error)
+                                }
+                            }
+                            .buttonStyle(.cueGlassProminent)
+                        }
+                    }
+                }
+                .padding(Space.l)
+            }
+            .background(ThemedBackground())
+            .navigationTitle("Поменять местами")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } }
+            }
+            .errorAlert($errorText)
         }
     }
 }

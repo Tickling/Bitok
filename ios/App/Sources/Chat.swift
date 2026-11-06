@@ -137,6 +137,7 @@ struct ChatThreadView: View {
     @State private var showPropose = false
     @State private var cancelBooking: BookingRef?
     @State private var showProfile = false
+    @State private var swapBooking: BookingRef?
 
     private var backend: DemoBackend { container.backend }
     private var me: UserID { container.currentUserId }
@@ -183,6 +184,9 @@ struct ChatThreadView: View {
         }
         .sheet(isPresented: $showPropose) {
             ProposeSlotSheet(container: container, studentId: otherId)
+        }
+        .sheet(item: $swapBooking) { ref in
+            SwapStudentsSheet(container: container, bookingId: ref.id)
         }
         .confirmationDialog("Отменить тренировку?", isPresented: Binding(get: { cancelBooking != nil },
                                                                        set: { if !$0 { cancelBooking = nil } }),
@@ -262,6 +266,13 @@ struct ChatThreadView: View {
             HStack {
                 Button("Подробнее") { openedBooking = BookingRef(id: booking.id) }.font(.caption)
                 Spacer()
+                // Тренер может поменять ученика местами с другим (например, Иван 17:00 ↔ Наталья 18:00).
+                if isCoach && !backend.swapCandidates(for: booking.id).isEmpty {
+                    Button { swapBooking = BookingRef(id: booking.id) } label: {
+                        Label("Поменять", systemImage: "arrow.left.arrow.right")
+                    }
+                    .font(.caption.weight(.semibold))
+                }
                 // Ученик может отменить запись прямо из чата.
                 if !isCoach && booking.allowedActions(for: .student(me), now: Date()).contains(.cancel) {
                     Button("Отменить", role: .destructive) { cancelBooking = BookingRef(id: booking.id) }

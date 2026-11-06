@@ -63,7 +63,19 @@ struct DemoInvitation: Codable, Hashable, Sendable {
     var bookingId: BookingID?
 }
 
+/// Редактируемые данные профиля (FR-002).
+struct DemoProfile: Codable, Hashable, Sendable {
+    var firstName: String
+    var lastName: String
+    var city: String
+    var discipline: String
+    var about: String
+
+    var fullName: String { [firstName, lastName].filter { !$0.isEmpty }.joined(separator: " ") }
+}
+
 private struct DemoSnapshot: Codable {
+    var profiles: [UserID: DemoProfile]? = nil
     var slots: [BookingSlot]
     var bookings: [Booking]
     var records: [ProgressRecord]
@@ -79,6 +91,7 @@ final class DemoBackend {
     static let alexeyId = UserID(UUID(uuidString: "00000000-0000-0000-0000-0000000000C1")!)
     static let veronikaId = UserID(UUID(uuidString: "00000000-0000-0000-0000-0000000000C2")!)
     static let ivanId = UserID(UUID(uuidString: "00000000-0000-0000-0000-000000000001")!)
+    static let natashaId = UserID(UUID(uuidString: "00000000-0000-0000-0000-000000000005")!)
 
     let coaches: [DemoCoach] = [
         DemoCoach(person: DemoPerson(id: DemoBackend.alexeyId, name: "Алексей Воронов", phone: "+7 900 000-00-01"),
@@ -96,6 +109,7 @@ final class DemoBackend {
         DemoPerson(id: UserID(UUID(uuidString: "00000000-0000-0000-0000-000000000002")!), name: "Мария Соколова", phone: "+7 916 555-01-21"),
         DemoPerson(id: UserID(UUID(uuidString: "00000000-0000-0000-0000-000000000003")!), name: "Олег Морозов", phone: "+7 903 555-01-02"),
         DemoPerson(id: UserID(UUID(uuidString: "00000000-0000-0000-0000-000000000004")!), name: "Анна Романова", phone: "+7 925 555-03-04"),
+        DemoPerson(id: DemoBackend.natashaId, name: "Наталья Белова", phone: "+7 900 000-00-04"),
     ]
 
     private(set) var slots: [BookingSlot] = []
@@ -104,11 +118,14 @@ final class DemoBackend {
     private(set) var events: [DemoEvent] = []
     private(set) var messages: [DemoMessage] = []
     private(set) var privacy = PrivacySettings()
+    private(set) var profiles: [UserID: DemoProfile] = [:]
 
-    private static let storageKey = "demoBackend.v2"
+    private static let storageKey = "demoBackend.v3"
 
     init() {
-        UserDefaults.standard.removeObject(forKey: "demoBackend.v1")   // данные старой версии с одним тренером
+        // Данные прошлых версий (v1 — один тренер, v2 — без Натальи) пересоздаются.
+        UserDefaults.standard.removeObject(forKey: "demoBackend.v1")
+        UserDefaults.standard.removeObject(forKey: "demoBackend.v2")
         if let data = UserDefaults.standard.data(forKey: Self.storageKey),
            let snapshot = try? JSONDecoder().decode(DemoSnapshot.self, from: data) {
             apply(snapshot)
@@ -124,7 +141,23 @@ final class DemoBackend {
     func isCoach(_ id: UserID) -> Bool { coach(id) != nil }
 
     func person(_ id: UserID) -> DemoPerson? {
-        coach(id)?.person ?? students.first { $0.id == id }
+        guard let base = coaches.first(where: { $0.id == id })?.person ?? students.first(where: { $0.id == id }) else { return nil }
+        guard let edited = profiles[id], !edited.fullName.isEmpty else { return base }
+        return DemoPerson(id: base.id, name: edited.fullName, phone: base.phone)
+    }
+
+    /// Данные профиля для редактирования (по умолчанию — из демо-данных).
+    func profile(for id: UserID) -> DemoProfile {
+        if let edited = profiles[id] { return edited }
+        let parts = (coaches.first { $0.id == id }?.name ?? students.first { $0.id == id }?.name ?? "").split(separator: " ")
+        return DemoProfile(firstName: parts.first.map(String.init) ?? "", lastName: parts.dropFirst().joined(separator: " "),
+                           city: "Москва", discipline: isCoach(id) && id == DemoBackend.veronikaId ? "Пул" : "Русский бильярд",
+                           about: "")
+    }
+
+    func updateProfile(_ profile: DemoProfile, for id: UserID) {
+        profiles[id] = profile
+        save()
     }
 
     func name(_ id: UserID) -> String { person(id)?.name ?? "Ученик" }
@@ -348,6 +381,78 @@ final class DemoBackend {
         return created
     }
 
+    // MARK: - Обмен учеников местами (тренер)
+
+    /// С кем можно поменять запись: другие подтверждённые будущие тренировки того же тренера с другими учениками.
+    /// Сначала — тренировки в тот же день.
+    func swapCandidates(for bookingId: BookingID, now: Date = Date()) -> [Booking] {
+        guard let source = booking(bookingId), source.status == .confirmed, source.startsAt > now else { return [] }
+        let calendar = Calendar.current
+        return bookings.filter {
+            $0.id != source.id && $0.trainerId == source.trainerId && $0.studentId != source.studentId
+                && $0.status == .confirmed && $0.startsAt > now
+        }
+        .sorted { lhs, rhs in
+            let lhsSame = calendar.isDate(lhs.startsAt, inSameDayAs: source.startsAt)
+            let rhsSame = calendar.isDate(rhs.startsAt, inSameDayAs: source.startsAt)
+            return lhsSame != rhsSame ? lhsSame : lhs.startsAt < rhs.startsAt
+        }
+    }
+
+    /// Тренер меняет двух учеников местами: старые брони → RESCHEDULED, слоты пересобираются,
+    /// каждому ученику создаётся подтверждённая бронь на время другого. Оба получают сообщение в чат.
+    func swap(_ firstId: BookingID, with secondId: BookingID, by coachId: UserID) throws {
+        let now = Date()
+        guard let first = booking(firstId), let second = booking(secondId) else { throw BookingError.slotNotAvailable }
+        guard first.trainerId == coachId, second.trainerId == coachId else { throw BookingError.forbidden }
+        guard first.studentId != second.studentId else { throw BookingError.overlappingBooking }
+        for item in [first, second] where item.status != .confirmed || item.startsAt <= now {
+            throw BookingError.invalidStateTransition(from: item.status, to: .rescheduled)
+        }
+        // У ученика не должно быть другой тренировки, пересекающейся с новым временем.
+        func overlaps(_ studentId: UserID, _ start: Date, minutes: Int, ignoring: BookingID) -> Bool {
+            let end = start.addingTimeInterval(TimeInterval(minutes * 60))
+            return bookings.contains { other in
+                other.id != ignoring && other.studentId == studentId && other.status.holdsSlot
+                    && other.startsAt < end
+                    && start < other.startsAt.addingTimeInterval(TimeInterval(other.durationMinutes * 60))
+            }
+        }
+        guard !overlaps(first.studentId, second.startsAt, minutes: second.durationMinutes, ignoring: first.id),
+              !overlaps(second.studentId, first.startsAt, minutes: first.durationMinutes, ignoring: second.id)
+        else { throw BookingError.overlappingBooking }
+
+        // Проверяем лимит переносов до любых изменений, чтобы не оставить данные наполовину.
+        var firstOld = first, secondOld = second
+        try firstOld.markRescheduled(now: now)
+        try secondOld.markRescheduled(now: now)
+        guard let firstSlotIndex = slots.firstIndex(where: { $0.id == first.slotId }),
+              let secondSlotIndex = slots.firstIndex(where: { $0.id == second.slotId }) else { throw BookingError.slotNotAvailable }
+        var firstSlot = slots[firstSlotIndex], secondSlot = slots[secondSlotIndex]
+        firstSlot.release()
+        secondSlot.release()
+        // Ученик первой брони получает слот второй и наоборот.
+        let firstNew = try Booking.assignByCoach(id: BookingID(), slot: secondSlot, studentId: first.studentId, coachId: coachId,
+                                                 isCoachesStudent: true, decision: .notRequired, now: now)
+        let secondNew = try Booking.assignByCoach(id: BookingID(), slot: firstSlot, studentId: second.studentId, coachId: coachId,
+                                                  isCoachesStudent: true, decision: .notRequired, now: now)
+        firstSlot.markBooked()
+        secondSlot.markBooked()
+        slots[firstSlotIndex] = firstSlot
+        slots[secondSlotIndex] = secondSlot
+        if let index = bookings.firstIndex(where: { $0.id == first.id }) { bookings[index] = firstOld }
+        if let index = bookings.firstIndex(where: { $0.id == second.id }) { bookings[index] = secondOld }
+        bookings.append(contentsOf: [firstNew, secondNew])
+
+        for (old, new, partner) in [(first, firstNew, second.studentId), (second, secondNew, first.studentId)] {
+            let partnerName = name(partner).split(separator: " ").first.map(String.init) ?? name(partner)
+            let text = "Поменял вас местами с \(partnerName): теперь \(Self.when(new.startsAt)) вместо \(Fmt.time(old.startsAt))"
+            post(from: coachId, to: old.studentId, text: text, bookingId: new.id)
+            notify(old.studentId, "Время тренировки изменено", "\(Self.when(new.startsAt)) вместо \(Fmt.time(old.startsAt))")
+        }
+        save()
+    }
+
     // MARK: - Прогресс
 
     func progress(for studentId: UserID) -> StudentProgress {
@@ -422,6 +527,7 @@ final class DemoBackend {
         events = []
         messages = []
         privacy = PrivacySettings()
+        profiles = [:]
         seed()
     }
 
@@ -450,7 +556,7 @@ final class DemoBackend {
     }
 
     private func save() {
-        let snapshot = DemoSnapshot(slots: slots, bookings: bookings, records: records, events: events,
+        let snapshot = DemoSnapshot(profiles: profiles, slots: slots, bookings: bookings, records: records, events: events,
                                     messages: messages, privacy: privacy)
         if let data = try? JSONEncoder().encode(snapshot) {
             UserDefaults.standard.set(data, forKey: Self.storageKey)
@@ -464,6 +570,7 @@ final class DemoBackend {
         events = snapshot.events
         messages = snapshot.messages
         privacy = snapshot.privacy
+        profiles = snapshot.profiles ?? [:]
     }
 
     /// Начальные данные: расписания двух тренеров на 3 недели, история Ивана, заявки других учеников.
@@ -487,6 +594,7 @@ final class DemoBackend {
 
         let alexey = coaches[0].id, veronika = coaches[1].id
         let ivan = students[0].id, maria = students[1].id, oleg = students[2].id, anna = students[3].id
+        let natasha = DemoBackend.natashaId
         // История Ивана у Алексея: 4 завершённые тренировки с оценками — радар и графики сразу заполнены.
         let ivanHistory: [(Int, [MetricKey: Int])] = [
             (-40, [.stanceAndStroke: 55, .aiming: 50, .positionPlay: 42, .cueBallControl: 35, .tacticalThinking: 45]),
@@ -506,6 +614,9 @@ final class DemoBackend {
         // Ученики Алексея
         seedBooking(coach: alexey, student: maria, dayOffset: -1, finalStatus: .completed)        // ждёт оценки
         seedBooking(coach: alexey, student: oleg, dayOffset: 1, finalStatus: .confirmed)
+        // Иван и Наталья подряд в один день (16:00 — Олег, 17:00 — Иван, 18:00 — Наталья): можно поменять местами.
+        let ivanNext = seedBooking(coach: alexey, student: ivan, dayOffset: 1, finalStatus: .confirmed)
+        let natashaNext = seedBooking(coach: alexey, student: natasha, dayOffset: 1, finalStatus: .confirmed)
         seedBooking(coach: alexey, student: anna, dayOffset: 2, finalStatus: .awaitingCoachApproval)
         // Ученики Вероники
         seedBooking(coach: veronika, student: anna, dayOffset: -2, finalStatus: .completed)       // ждёт оценки
@@ -515,10 +626,20 @@ final class DemoBackend {
         messages = [
             DemoMessage(id: UUID(), from: alexey, to: ivan, text: "Привет! Жду на тренировке, поработаем над выходом на дальний борт 🎱",
                         date: Date().addingTimeInterval(-3 * 3600)),
+            DemoMessage(id: UUID(), from: natasha, to: alexey, text: "Алексей, добрый день! А можно завтра пораньше? В 18:00 не очень удобно",
+                        date: Date().addingTimeInterval(-2 * 3600)),
             DemoMessage(id: UUID(), from: veronika, to: ivan, text: "Здравствуйте! Если захотите попробовать пул — записывайтесь на утро 🙂",
                         date: Date().addingTimeInterval(-5 * 3600)),
         ]
-        notify(ivan, "Добро пожаловать в «Биток»", "Выберите тренера и запишитесь во вкладке «Календарь»")
+        // Карточки подтверждённых тренировок в чатах — из них тренер меняет учеников местами.
+        for (student, booking) in [(ivan, ivanNext), (natasha, natashaNext)] {
+            guard let booking else { continue }
+            messages.append(DemoMessage(id: UUID(), from: alexey, to: student, text: "Тренировка подтверждена ✓ Жду вас!",
+                                        date: Date().addingTimeInterval(-4 * 3600), bookingId: booking.id))
+        }
+        for student in [ivan, natasha] {
+            notify(student, "Добро пожаловать в «Биток»", "Выберите тренера и запишитесь во вкладке «Календарь»")
+        }
         for coach in coaches {
             notify(coach.id, "Добро пожаловать в «Биток»", "Новые заявки появятся в «Календаре» и в чате")
         }

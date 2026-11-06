@@ -10,6 +10,7 @@ enum DemoAccount: String, CaseIterable, Identifiable {
     case coach
     case veronica
     case student
+    case natasha
 
     var id: Self { self }
 
@@ -18,6 +19,7 @@ enum DemoAccount: String, CaseIterable, Identifiable {
         case .coach: "Алексей Воронов"
         case .veronica: "Вероника Смирнова"
         case .student: "Иван Петров"
+        case .natasha: "Наталья Белова"
         }
     }
 
@@ -26,12 +28,15 @@ enum DemoAccount: String, CaseIterable, Identifiable {
         case .coach: "+7 900 000-00-01"
         case .veronica: "+7 900 000-00-03"
         case .student: "+7 900 000-00-02"
+        case .natasha: "+7 900 000-00-04"
         }
     }
 
-    var role: UserRole { self == .student ? .student : .trainer }
+    var isStudent: Bool { self == .student || self == .natasha }
 
-    var roleTitle: String { self == .student ? "Ученик" : "Тренер" }
+    var role: UserRole { isStudent ? .student : .trainer }
+
+    var roleTitle: String { isStudent ? "Ученик" : "Тренер" }
 
     /// ID пользователя в демо-данных.
     var userId: UserID {
@@ -39,6 +44,7 @@ enum DemoAccount: String, CaseIterable, Identifiable {
         case .coach: DemoBackend.alexeyId
         case .veronica: DemoBackend.veronikaId
         case .student: DemoBackend.ivanId
+        case .natasha: DemoBackend.natashaId
         }
     }
 

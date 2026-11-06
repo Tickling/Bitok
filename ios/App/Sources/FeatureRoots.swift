@@ -1,4 +1,5 @@
-// App/Sources/FeatureRoots.swift — корневые экраны вкладок «Прогресс», «Ученики», «Контент», «Профиль».
+// App/Sources/FeatureRoots.swift — корневые экраны вкладок «Прогресс», «Ученики», «Контент».
+// «Профиль» — ProfileScreen.swift.
 // «Календарь» — StudentBooking.swift / CoachSchedule.swift, «Чат» — Chat.swift.
 import SwiftUI
 import CoreDomain
@@ -216,65 +217,6 @@ struct ContentRootView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(ThemedBackground())
             .navigationTitle("Контент")
-        }
-    }
-}
-
-// MARK: - Профиль: аккаунт, оформление, демо-настройки
-
-struct ProfileRootView: View {
-    @Environment(ThemeManager.self) private var themes
-    @Bindable var container: AppContainer
-    @State private var confirmReset = false
-
-    var body: some View {
-        @Bindable var themeSettings = themes
-        NavigationStack {
-            Form {
-                Section {
-                    HStack {
-                        Spacer()
-                        ProfileFrameView(style: container.role == .student ? .gold : nil) {
-                            Text(container.backend.person(container.currentUserId)?.initials ?? "?")
-                                .font(.largeTitle.bold())
-                                .foregroundStyle(.white)
-                                .frame(width: 96, height: 96)
-                                .background(.tint)
-                        }
-                        Spacer()
-                    }
-                    .listRowBackground(Color.clear)
-                }
-                if let account = container.account {
-                    Section("Аккаунт") {
-                        LabeledContent(account.roleTitle, value: account.displayName)
-                        LabeledContent("Телефон", value: account.phone)
-                        Button("Выйти") { container.signOut() }
-                    }
-                }
-                Section("Оформление") {
-                    Picker("Оформление", selection: $themeSettings.mode) {
-                        ForEach(AppearanceMode.allCases) { Text($0.title).tag($0) }
-                    }
-                    .pickerStyle(.inline)
-                    .labelsHidden()
-                }
-                Section {
-                    Toggle("Магазин (shopEnabled)", isOn: $container.flags.shopEnabled)
-                    Button("Сбросить демо-данные", role: .destructive) { confirmReset = true }
-                } header: {
-                    Text("Демо")
-                } footer: {
-                    Text("Данные общие для всех тестовых учёток на этом телефоне: запишитесь учеником, выйдите и подтвердите заявку тренером.")
-                }
-            }
-            .scrollContentBackground(.hidden)
-            .background(ThemedBackground())
-            .navigationTitle("Профиль")
-            .confirmationDialog("Удалить все записи, сообщения и оценки и вернуть начальные данные?",
-                                isPresented: $confirmReset, titleVisibility: .visible) {
-                Button("Сбросить", role: .destructive) { container.backend.reset() }
-            }
         }
     }
 }
