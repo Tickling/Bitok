@@ -167,7 +167,8 @@ struct ChatThreadView: View {
                         Avatar(initials: backend.person(otherId)?.initials ?? "?", size: 28)
                         VStack(alignment: .leading, spacing: 0) {
                             Text(backend.name(otherId)).font(.subheadline.weight(.semibold))
-                            Text(backend.isCoach(otherId) ? "Тренер · профиль" : "Ученик · профиль")
+                            Text(backend.isCoach(otherId) ? "Тренер · профиль"
+                                 : backend.phonesShared(me, otherId) ? (backend.person(otherId)?.phone ?? "") : "Ученик · профиль")
                                 .font(.caption2).foregroundStyle(palette.textSecondary)
                         }
                     }
@@ -205,7 +206,10 @@ struct ChatThreadView: View {
     @ViewBuilder
     private func messageView(_ message: DemoMessage) -> some View {
         let mine = message.from == me
-        if let invitation = message.invitation, let slot = backend.slot(invitation.slotId) {
+        if let request = message.peerRequest {
+            peerRequestCard(message: message, request: request)
+                .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
+        } else if let invitation = message.invitation, let slot = backend.slot(invitation.slotId) {
             invitationCard(message: message, invitation: invitation, slot: slot)
                 .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
         } else if let bookingId = message.bookingId, let booking = backend.booking(bookingId) {
@@ -333,6 +337,78 @@ struct ChatThreadView: View {
         .glassCard()
     }
 
+    /// Запрос другого ученика: сыграть или обменяться номерами. Номера появляются только после «Да».
+    private func peerRequestCard(message: DemoMessage, request: DemoPeerRequest) -> some View {
+        let mine = message.from == me
+        let isPlay = request.kind == .playInvite
+        return VStack(alignment: .leading, spacing: Space.s) {
+            Label(isPlay ? "Приглашение сыграть" : "Обмен номерами",
+                  systemImage: isPlay ? "circle.circle" : "phone.arrow.up.right")
+                .font(.callout.weight(.semibold))
+            Text(message.text).font(.callout)
+            switch request.status {
+            case .sent:
+                if mine {
+                    HStack(spacing: Space.s) {
+                        ProgressView()
+                        Text("Ждём ответа").font(.caption).foregroundStyle(palette.textSecondary)
+                    }
+                } else {
+                    HStack(spacing: Space.s) {
+                        Button(isPlay ? "Сыграем!" : "Да, обменяться") {
+                            run { try backend.answerPeerRequest(messageId: message.id, by: me, accept: true) }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        Button("Нет") {
+                            run { try backend.answerPeerRequest(messageId: message.id, by: me, accept: false) }
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(palette.statusCancelled)
+                    }
+                    .font(.caption.weight(.semibold))
+                }
+            case .accepted:
+                if isPlay {
+                    Label("Договорились сыграть ✓", systemImage: "checkmark.circle.fill")
+                        .font(.caption.weight(.semibold)).foregroundStyle(palette.statusConfirmed)
+                    if !backend.phonesShared(me, otherId) && !backend.hasPendingRequest(.phoneExchange, between: me, and: otherId) {
+                        Button {
+                            run { try backend.sendPeerRequest(.phoneExchange, from: me, to: otherId) }
+                        } label: {
+                            Label("Обменяться номерами", systemImage: "phone.arrow.up.right")
+                        }
+                        .buttonStyle(.bordered)
+                        .font(.caption.weight(.semibold))
+                    }
+                } else {
+                    Label("Номера открыты", systemImage: "checkmark.circle.fill")
+                        .font(.caption.weight(.semibold)).foregroundStyle(palette.statusConfirmed)
+                    ForEach([message.from, message.to], id: \.self) { id in
+                        if let person = backend.person(id) {
+                            phoneLink(person)
+                        }
+                    }
+                }
+            case .declined:
+                Label("Отклонено", systemImage: "xmark.circle").font(.caption).foregroundStyle(palette.statusCancelled)
+            }
+            Text(Fmt.time(message.date)).font(.caption2).foregroundStyle(palette.textSecondary)
+        }
+        .padding(Space.m)
+        .frame(maxWidth: 300, alignment: .leading)
+        .glassCard()
+    }
+
+    private func phoneLink(_ person: DemoPerson) -> some View {
+        HStack {
+            Text(person.id == me ? "Вы" : person.name).font(.caption)
+            Spacer()
+            if let url = URL(string: "tel:\(person.phone.filter { $0.isNumber || $0 == "+" })") {
+                Link(destination: url) { Label(person.phone, systemImage: "phone.fill") }.font(.caption.weight(.semibold))
+            }
+        }
+    }
+
     private func answer(_ message: DemoMessage, _ answer: DemoBackend.InvitationAnswer) {
         run {
             try backend.answerInvitation(messageId: message.id, by: me, answer)
@@ -354,6 +430,27 @@ struct ChatThreadView: View {
                     Image(systemName: "calendar.badge.plus").font(.system(size: 24))
                 }
                 .accessibilityLabel(container.role == .trainer ? "Предложить время" : "Записаться к тренеру")
+            } else if container.role == .student {
+                // Ученик ↔ ученик: пригласить сыграть или предложить обменяться номерами.
+                Menu {
+                    Button {
+                        run { try backend.sendPeerRequest(.playInvite, from: me, to: otherId) }
+                    } label: {
+                        Label("Предложить сыграть", systemImage: "circle.circle")
+                    }
+                    .disabled(backend.hasPendingRequest(.playInvite, between: me, and: otherId))
+                    if !backend.phonesShared(me, otherId) {
+                        Button {
+                            run { try backend.sendPeerRequest(.phoneExchange, from: me, to: otherId) }
+                        } label: {
+                            Label("Обменяться номерами", systemImage: "phone.arrow.up.right")
+                        }
+                        .disabled(backend.hasPendingRequest(.phoneExchange, between: me, and: otherId))
+                    }
+                } label: {
+                    Image(systemName: "plus.circle").font(.system(size: 26))
+                }
+                .accessibilityLabel("Предложить сыграть или обменяться номерами")
             }
             TextField("Сообщение", text: $draft, axis: .vertical)
                 .lineLimit(1...4)
@@ -604,8 +701,13 @@ struct PersonProfileSheet: View {
                         .glassCard()
                 }
 
-                Label("Телефон не показывается — связь через чат", systemImage: "phone.down")
-                    .font(.caption).foregroundStyle(palette.textSecondary)
+                if backend.phonesShared(container.currentUserId, personId), let phone = person?.phone,
+                   let url = URL(string: "tel:\(phone.filter { $0.isNumber || $0 == "+" })") {
+                    Link(destination: url) { Label(phone, systemImage: "phone.fill") }
+                } else {
+                    Label("Телефон откроется, если вы обменяетесь номерами в чате", systemImage: "phone.down")
+                        .font(.caption).foregroundStyle(palette.textSecondary)
+                }
 
                 Button("Написать") {
                     dismiss()

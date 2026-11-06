@@ -53,6 +53,16 @@ struct DemoMessage: Codable, Identifiable, Hashable, Sendable {
     var bookingId: BookingID? = nil
     /// Предложение тренера: конкретный слот, на который ученик может согласиться одной кнопкой.
     var invitation: DemoInvitation? = nil
+    /// Запрос между учениками: «сыграем?» или «обменяемся номерами?».
+    var peerRequest: DemoPeerRequest? = nil
+}
+
+/// Запрос одного ученика другому. Номера телефонов открываются только после согласия обоих (BR-030.2).
+struct DemoPeerRequest: Codable, Hashable, Sendable {
+    enum Kind: String, Codable, Sendable { case playInvite, phoneExchange }
+    enum Status: String, Codable, Sendable { case sent, accepted, declined }
+    let kind: Kind
+    var status: Status
 }
 
 struct DemoInvitation: Codable, Hashable, Sendable {
@@ -449,6 +459,48 @@ final class DemoBackend {
             let text = "Поменял вас местами с \(partnerName): теперь \(Self.when(new.startsAt)) вместо \(Fmt.time(old.startsAt))"
             post(from: coachId, to: old.studentId, text: text, bookingId: new.id)
             notify(old.studentId, "Время тренировки изменено", "\(Self.when(new.startsAt)) вместо \(Fmt.time(old.startsAt))")
+        }
+        save()
+    }
+
+    // MARK: - Ученик ↔ ученик: сыграть и обменяться номерами (FR-030)
+
+    /// Оба согласились обменяться номерами — телефоны видны друг другу.
+    func phonesShared(_ a: UserID, _ b: UserID) -> Bool {
+        conversation(between: a, and: b).contains { $0.peerRequest?.kind == .phoneExchange && $0.peerRequest?.status == .accepted }
+    }
+
+    /// Есть ли неотвеченный запрос такого типа в этом диалоге.
+    func hasPendingRequest(_ kind: DemoPeerRequest.Kind, between a: UserID, and b: UserID) -> Bool {
+        conversation(between: a, and: b).contains { $0.peerRequest?.kind == kind && $0.peerRequest?.status == .sent }
+    }
+
+    func sendPeerRequest(_ kind: DemoPeerRequest.Kind, from: UserID, to: UserID) throws {
+        guard from != to, !isCoach(from), !isCoach(to) else { throw BookingError.forbidden }
+        guard !hasPendingRequest(kind, between: from, and: to) else { return }
+        if kind == .phoneExchange && phonesShared(from, to) { return }
+        let text = kind == .playInvite ? "Давай сыграем партию? 🎱" : "Хотите обменяться номерами телефонов?"
+        messages.append(DemoMessage(id: UUID(), from: from, to: to, text: text, date: Date(),
+                                    peerRequest: DemoPeerRequest(kind: kind, status: .sent)))
+        notify(to, kind == .playInvite ? "\(name(from)) предлагает сыграть" : "\(name(from)) предлагает обменяться номерами", text)
+        save()
+    }
+
+    func answerPeerRequest(messageId: UUID, by userId: UserID, accept: Bool) throws {
+        guard let index = messages.firstIndex(where: { $0.id == messageId }),
+              var request = messages[index].peerRequest, messages[index].to == userId else { throw BookingError.forbidden }
+        guard request.status == .sent else { return }
+        request.status = accept ? .accepted : .declined
+        messages[index].peerRequest = request
+        let author = messages[index].from
+        switch (request.kind, accept) {
+        case (.playInvite, true):
+            post(from: userId, to: author, text: "Давай! Когда тебе удобно?", bookingId: nil)
+            notify(author, "\(name(userId)) согласна(ен) сыграть", "Договоритесь о времени в чате")
+        case (.phoneExchange, true):
+            notify(author, "Номера открыты 📞", "\(name(userId)): \(person(userId)?.phone ?? "")")
+        case (_, false):
+            notify(author, "\(name(userId)) отказался(ась)", request.kind == .playInvite ? "Приглашение сыграть" : "Обмен номерами")
         }
         save()
     }
