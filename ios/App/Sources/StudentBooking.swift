@@ -13,10 +13,10 @@ struct StudentBookingScreen: View {
     @State private var selectedSlotId: SlotID?
     @State private var showConfirm = false
     @State private var openedBooking: BookingRef?
-    @State private var coachId: UserID = DemoBackend.alexeyId
 
     private var backend: DemoBackend { container.backend }
     private var me: UserID { container.currentUserId }
+    private var coachId: UserID { container.selectedCoachId }
     private var coach: DemoCoach? { backend.coach(coachId) }
 
     var body: some View {
@@ -38,7 +38,7 @@ struct StudentBookingScreen: View {
             .background(ThemedBackground())
             .navigationTitle("Запись")
             .onChange(of: selectedDay) { _, _ in selectedSlotId = nil }
-            .onChange(of: coachId) { _, _ in
+            .onChange(of: container.selectedCoachId) { _, _ in
                 selectedSlotId = nil
                 selectedDay = nil
             }
@@ -68,7 +68,7 @@ struct StudentBookingScreen: View {
             ForEach(backend.coaches) { item in
                 let isSelected = item.id == coachId
                 Button {
-                    withAnimation(.spring(duration: 0.25)) { coachId = item.id }
+                    withAnimation(.spring(duration: 0.25)) { container.selectedCoachId = item.id }
                 } label: {
                     HStack(spacing: Space.xs) {
                         Avatar(initials: item.person.initials, size: 24)
@@ -169,6 +169,7 @@ struct StudentBookingScreen: View {
         let past = all.filter { !$0.status.holdsSlot }.prefix(5)
         if !upcoming.isEmpty {
             Text("Мои записи").font(.headline)
+            Text("Нажмите на запись, чтобы отменить или перенести").font(.caption).foregroundStyle(palette.textSecondary)
             ForEach(upcoming) { booking in
                 Button { openedBooking = BookingRef(id: booking.id) } label: {
                     BookingRow(booking: booking, title: backend.name(booking.trainerId))

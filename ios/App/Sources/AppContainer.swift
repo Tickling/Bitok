@@ -12,6 +12,8 @@ final class AppContainer {
     /// Выбранная вкладка и путь в чате — чтобы после записи сразу открыть диалог с тренером.
     var selectedTab: AppTab = .calendar
     var chatPath: [UserID] = []
+    /// Тренер, выбранный в календаре ученика (можно задать из чата: «Другое время»).
+    var selectedCoachId: UserID = DemoBackend.alexeyId
     /// Текущая демо-учётка; nil — показывается экран входа.
     private(set) var account: DemoAccount? = nil
 
@@ -52,6 +54,12 @@ final class AppContainer {
     func openChat(with userId: UserID) {
         chatPath = [userId]
         selectedTab = .chat
+    }
+
+    /// Открыть календарь записи к конкретному тренеру.
+    func openBooking(with coachId: UserID) {
+        selectedCoachId = coachId
+        selectedTab = .calendar
     }
 
     func signOut() {

@@ -5,6 +5,7 @@ import DesignSystem
 import BookingDomain
 import BookingUI
 import ChatDomain
+import ProgressDomain
 
 struct ChatRootView: View {
     enum Segment: String, CaseIterable, Identifiable {
@@ -15,6 +16,7 @@ struct ChatRootView: View {
     @Environment(\.palette) private var palette
     @Bindable var container: AppContainer
     @State private var segment: Segment = .chats
+    @State private var profilePerson: PersonRef?
 
     private var backend: DemoBackend { container.backend }
     private var me: UserID { container.currentUserId }
@@ -43,6 +45,9 @@ struct ChatRootView: View {
             .navigationTitle("Чат")
             .navigationDestination(for: UserID.self) { otherId in
                 ChatThreadView(container: container, otherId: otherId)
+            }
+            .sheet(item: $profilePerson) { ref in
+                PersonProfileSheet(container: container, personId: ref.id)
             }
         }
     }
@@ -74,24 +79,28 @@ struct ChatRootView: View {
     }
 
     private var playersList: some View {
-        ForEach(DemoContent.players) { player in
-            HStack(spacing: Space.m) {
-                Avatar(initials: String(player.displayName.prefix(1)), size: 40)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(player.displayName).font(.headline)
-                    Text([player.levelTitle, player.specialTitle].compactMap { $0 }.joined(separator: " · "))
-                        .font(.caption).foregroundStyle(palette.textSecondary)
+        ForEach(backend.players(for: me)) { player in
+            Button { profilePerson = PersonRef(id: player.id) } label: {
+                HStack(spacing: Space.m) {
+                    Avatar(initials: player.initials, size: 40)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(player.name).font(.headline)
+                        Text(backend.progress(for: player.id).current.level?.title ?? "Новичок")
+                            .font(.caption).foregroundStyle(palette.textSecondary)
+                    }
+                    Spacer()
+                    if let rating = backend.publicRating(of: player.id) {
+                        Text("\(rating)").font(.title3.bold().monospacedDigit()).foregroundStyle(palette.accent)
+                    } else {
+                        Image(systemName: "lock.fill").foregroundStyle(palette.textSecondary)
+                            .accessibilityLabel("Игрок скрыл прогресс")
+                    }
+                    Image(systemName: "chevron.right").foregroundStyle(palette.textSecondary)
                 }
-                Spacer()
-                if let rating = player.overallRating {
-                    Text("\(rating)").font(.title3.bold().monospacedDigit()).foregroundStyle(palette.accent)
-                } else {
-                    Image(systemName: "lock.fill").foregroundStyle(palette.textSecondary)
-                        .accessibilityLabel("Игрок скрыл прогресс")
-                }
+                .padding(Space.m)
+                .glassCard()
             }
-            .padding(Space.m)
-            .glassCard()
+            .buttonStyle(.plain)
         }
     }
 
@@ -125,6 +134,9 @@ struct ChatThreadView: View {
     @State private var draft = ""
     @State private var openedBooking: BookingRef?
     @State private var errorText: String?
+    @State private var showPropose = false
+    @State private var cancelBooking: BookingRef?
+    @State private var showProfile = false
 
     private var backend: DemoBackend { container.backend }
     private var me: UserID { container.currentUserId }
@@ -147,8 +159,41 @@ struct ChatThreadView: View {
         .background(ThemedBackground())
         .navigationTitle(backend.name(otherId))
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Button { showProfile = true } label: {
+                    HStack(spacing: Space.s) {
+                        Avatar(initials: backend.person(otherId)?.initials ?? "?", size: 28)
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(backend.name(otherId)).font(.subheadline.weight(.semibold))
+                            Text(backend.isCoach(otherId) ? "Тренер · профиль" : "Ученик · профиль")
+                                .font(.caption2).foregroundStyle(palette.textSecondary)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Профиль: \(backend.name(otherId))")
+            }
+        }
+        .sheet(isPresented: $showProfile) {
+            PersonProfileSheet(container: container, personId: otherId)
+        }
         .sheet(item: $openedBooking) { ref in
             BookingDetailView(bookingId: ref.id, container: container)
+        }
+        .sheet(isPresented: $showPropose) {
+            ProposeSlotSheet(container: container, studentId: otherId)
+        }
+        .confirmationDialog("Отменить тренировку?", isPresented: Binding(get: { cancelBooking != nil },
+                                                                       set: { if !$0 { cancelBooking = nil } }),
+                            titleVisibility: .visible, presenting: cancelBooking) { ref in
+            ForEach([CancellationReasonCode.scheduleConflict, .illness, .other], id: \.self) { code in
+                Button(code == .scheduleConflict ? "Изменились планы" : DemoBackend.reasonTitle(code), role: .destructive) {
+                    run { try backend.cancel(ref.id, by: me, reason: CancellationReason(code: code)) }
+                }
+            }
+        } message: { ref in
+            Text(BookingDetailView.cancelWarning(backend.booking(ref.id)))
         }
         .errorAlert($errorText)
     }
@@ -156,7 +201,10 @@ struct ChatThreadView: View {
     @ViewBuilder
     private func messageView(_ message: DemoMessage) -> some View {
         let mine = message.from == me
-        if let bookingId = message.bookingId, let booking = backend.booking(bookingId) {
+        if let invitation = message.invitation, let slot = backend.slot(invitation.slotId) {
+            invitationCard(message: message, invitation: invitation, slot: slot)
+                .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
+        } else if let bookingId = message.bookingId, let booking = backend.booking(bookingId) {
             bookingCard(message: message, booking: booking)
                 .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
         } else {
@@ -211,7 +259,15 @@ struct ChatThreadView: View {
                     }
                 }
             }
-            Button("Подробнее") { openedBooking = BookingRef(id: booking.id) }.font(.caption)
+            HStack {
+                Button("Подробнее") { openedBooking = BookingRef(id: booking.id) }.font(.caption)
+                Spacer()
+                // Ученик может отменить запись прямо из чата.
+                if !isCoach && booking.allowedActions(for: .student(me), now: Date()).contains(.cancel) {
+                    Button("Отменить", role: .destructive) { cancelBooking = BookingRef(id: booking.id) }
+                        .font(.caption.weight(.semibold))
+                }
+            }
             Text(Fmt.time(message.date)).font(.caption2).foregroundStyle(palette.textSecondary)
         }
         .padding(Space.m)
@@ -219,8 +275,75 @@ struct ChatThreadView: View {
         .glassCard()
     }
 
+    /// Предложение времени от тренера: ученик отвечает одной кнопкой.
+    private func invitationCard(message: DemoMessage, invitation: DemoInvitation, slot: BookingSlot) -> some View {
+        let isCoach = container.role == .trainer
+        return VStack(alignment: .leading, spacing: Space.s) {
+            Label("Предложение тренировки", systemImage: "calendar.badge.clock").font(.callout.weight(.semibold))
+            Text("\(Fmt.day(slot.startsAt).capitalized)").font(.callout)
+            Text("\(Fmt.range(slot.startsAt, minutes: slot.durationMinutes)) · \(backend.coach(slot.trainerId)?.clubName ?? ""), стол \(slot.tableNumber ?? 1)")
+                .font(.caption).foregroundStyle(palette.textSecondary)
+            if let comment = invitation.comment, !comment.isEmpty {
+                Text("«\(comment)»").font(.caption)
+            }
+            switch invitation.status {
+            case .sent:
+                if isCoach {
+                    HStack(spacing: Space.s) {
+                        ProgressView()
+                        Text("Ждём ответа ученика").font(.caption).foregroundStyle(palette.textSecondary)
+                    }
+                } else {
+                    HStack(spacing: Space.xs) {
+                        Button("Принять") { answer(message, .accept) }.buttonStyle(.borderedProminent)
+                        Button("Другое время") { answer(message, .otherTime) }.buttonStyle(.bordered)
+                        Button("Нет") { answer(message, .decline) }.buttonStyle(.bordered).tint(palette.statusCancelled)
+                    }
+                    .font(.caption.weight(.semibold))
+                }
+            case .accepted:
+                Label("Принято — тренировка в календаре", systemImage: "checkmark.circle.fill")
+                    .font(.caption.weight(.semibold)).foregroundStyle(palette.statusConfirmed)
+                if let bookingId = invitation.bookingId {
+                    Button("Подробнее") { openedBooking = BookingRef(id: bookingId) }.font(.caption)
+                }
+            case .declined:
+                Label("Отклонено", systemImage: "xmark.circle").font(.caption).foregroundStyle(palette.statusCancelled)
+            case .counterProposed:
+                Label("Ученик выбирает другое время", systemImage: "arrow.triangle.2.circlepath")
+                    .font(.caption).foregroundStyle(palette.textSecondary)
+            case .expired:
+                Label("Время прошло", systemImage: "clock.badge.xmark").font(.caption).foregroundStyle(palette.textSecondary)
+            }
+            Text(Fmt.time(message.date)).font(.caption2).foregroundStyle(palette.textSecondary)
+        }
+        .padding(Space.m)
+        .frame(maxWidth: 300, alignment: .leading)
+        .glassCard()
+    }
+
+    private func answer(_ message: DemoMessage, _ answer: DemoBackend.InvitationAnswer) {
+        run {
+            try backend.answerInvitation(messageId: message.id, by: me, answer)
+            if answer == .otherTime { container.openBooking(with: message.from) }
+        }
+    }
+
     private var composer: some View {
         HStack(spacing: Space.s) {
+            // Тренер предлагает своё время; ученик переходит к записи к этому тренеру.
+            if container.role == .trainer || backend.isCoach(otherId) {
+                Button {
+                    if container.role == .trainer {
+                        showPropose = true
+                    } else {
+                        container.openBooking(with: otherId)
+                    }
+                } label: {
+                    Image(systemName: "calendar.badge.plus").font(.system(size: 24))
+                }
+                .accessibilityLabel(container.role == .trainer ? "Предложить время" : "Записаться к тренеру")
+            }
             TextField("Сообщение", text: $draft, axis: .vertical)
                 .lineLimit(1...4)
                 .padding(.horizontal, Space.m)
@@ -250,5 +373,238 @@ struct ChatThreadView: View {
 
     private func run(_ action: () throws -> Void) {
         do { try action() } catch { errorText = DemoBackend.message(for: error) }
+    }
+}
+
+/// Тренер выбирает свой свободный слот и предлагает его ученику.
+struct ProposeSlotSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.palette) private var palette
+    let container: AppContainer
+    let studentId: UserID
+    @State private var day: Date?
+    @State private var slotId: SlotID?
+    @State private var comment = ""
+    @State private var errorText: String?
+
+    private var backend: DemoBackend { container.backend }
+    private var coachId: UserID { container.currentUserId }
+
+    /// Ближайшие 14 дней, в которые у тренера есть свободное время.
+    private var days: [Date] {
+        backend.availableDays(of: coachId).filter { $0 <= Date().addingTimeInterval(14 * 86_400) }.sorted()
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: Space.l) {
+                    Text("Предложить время: \(backend.name(studentId))").font(.headline)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: Space.s) {
+                            ForEach(days, id: \.self) { item in
+                                let selected = item == day
+                                Button {
+                                    day = item
+                                    slotId = nil
+                                } label: {
+                                    VStack {
+                                        Text(item.formatted(.dateTime.weekday(.abbreviated))).font(.caption)
+                                        Text(item.formatted(.dateTime.day())).font(.title3.bold())
+                                    }
+                                    .frame(width: 52, height: 60)
+                                    .foregroundStyle(selected ? palette.onAccent : palette.textPrimary)
+                                    .background {
+                                        if selected {
+                                            RoundedRectangle(cornerRadius: Radius.m, style: .continuous).fill(palette.accent)
+                                        }
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .glassCard(cornerRadius: Radius.m)
+                            }
+                        }
+                    }
+                    if let day {
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Space.s), count: 3), spacing: Space.s) {
+                            ForEach(backend.freeSlots(of: coachId, on: day)) { slot in
+                                let selected = slot.id == slotId
+                                Button { slotId = slot.id } label: {
+                                    Text(Fmt.time(slot.startsAt))
+                                        .font(.callout.weight(.semibold).monospacedDigit())
+                                        .frame(maxWidth: .infinity, minHeight: 44)
+                                        .foregroundStyle(selected ? palette.onAccent : palette.textPrimary)
+                                        .background {
+                                            if selected {
+                                                RoundedRectangle(cornerRadius: Radius.m, style: .continuous).fill(palette.accent)
+                                            }
+                                        }
+                                }
+                                .buttonStyle(.plain)
+                                .glassCard(cornerRadius: Radius.m)
+                            }
+                        }
+                    } else {
+                        Text("Выберите день").foregroundStyle(palette.textSecondary)
+                    }
+                    TextField("Комментарий: например, отработаем выход", text: $comment, axis: .vertical)
+                        .lineLimit(1...3)
+                        .padding(Space.m)
+                        .glassCard(cornerRadius: Radius.m)
+                }
+                .padding(Space.l)
+            }
+            .safeAreaInset(edge: .bottom) {
+                Button("Предложить ученику") { propose() }
+                    .buttonStyle(.cueGlassProminent)
+                    .disabled(slotId == nil)
+                    .padding(.horizontal, Space.l)
+                    .padding(.bottom, Space.s)
+            }
+            .background(ThemedBackground())
+            .navigationTitle("Предложить время")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } }
+            }
+            .errorAlert($errorText)
+        }
+    }
+
+    private func propose() {
+        guard let slotId else { return }
+        do {
+            let text = comment.trimmingCharacters(in: .whitespacesAndNewlines)
+            try backend.proposeSlot(coachId: coachId, studentId: studentId, slotId: slotId,
+                                    comment: text.isEmpty ? nil : text)
+            dismiss()
+        } catch {
+            errorText = DemoBackend.message(for: error)
+        }
+    }
+}
+
+struct PersonRef: Identifiable, Hashable {
+    let id: UserID
+}
+
+/// Профиль собеседника: тренер (для ученика), ученик (для тренера) или другой игрок клуба (для ученика).
+struct PersonProfileSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.palette) private var palette
+    let container: AppContainer
+    let personId: UserID
+
+    private var backend: DemoBackend { container.backend }
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let coach = backend.coach(personId) {
+                    coachProfile(coach)
+                } else if container.role == .trainer {
+                    StudentDetailView(container: container, studentId: personId)
+                } else {
+                    playerProfile
+                }
+            }
+            .background(ThemedBackground())
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) { Button("Готово") { dismiss() } }
+            }
+        }
+    }
+
+    private func coachProfile(_ coach: DemoCoach) -> some View {
+        ScrollView {
+            VStack(spacing: Space.l) {
+                Avatar(initials: coach.person.initials, size: 88)
+                Text(coach.name).font(.title2.weight(.semibold)).fontDesign(palette.headingDesign)
+                Text(coach.rank).foregroundStyle(palette.textSecondary)
+                VStack(alignment: .leading, spacing: Space.s) {
+                    Label("\(coach.clubName), \(coach.clubAddress)", systemImage: "mappin.and.ellipse")
+                    Label(coach.scheduleTitle, systemImage: "clock")
+                    Label("\(Fmt.price(coach.price)) за час", systemImage: "rublesign.circle")
+                    // Телефон тренера виден ученику с записью к нему (BR-002.2).
+                    if backend.bookings(ofStudent: container.currentUserId).contains(where: { $0.trainerId == coach.id }),
+                       let url = URL(string: "tel:\(coach.person.phone.filter { $0.isNumber || $0 == "+" })") {
+                        Link(destination: url) { Label(coach.person.phone, systemImage: "phone") }
+                    }
+                }
+                .font(.callout)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(Space.l)
+                .glassCard()
+                Button("Записаться к тренеру") {
+                    dismiss()
+                    container.openBooking(with: coach.id)
+                }
+                .buttonStyle(.cueGlassProminent)
+                Button("Написать") {
+                    dismiss()
+                    container.openChat(with: coach.id)
+                }
+                .buttonStyle(.bordered)
+            }
+            .padding(Space.l)
+        }
+        .navigationTitle("Тренер")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    /// Профиль другого ученика: публичная витрина + прогресс по его настройкам приватности. Телефона нет (BR-030.2).
+    private var playerProfile: some View {
+        let person = backend.person(personId)
+        let progress = backend.progress(for: personId)
+        let rating = backend.publicRating(of: personId)
+        return ScrollView {
+            VStack(spacing: Space.l) {
+                Avatar(initials: person?.initials ?? "?", size: 88)
+                Text(person?.name ?? "Игрок").font(.title2.weight(.semibold)).fontDesign(palette.headingDesign)
+                Text(progress.current.level?.title ?? "Новичок").foregroundStyle(palette.textSecondary)
+
+                if let rating {
+                    VStack(alignment: .leading, spacing: Space.s) {
+                        HStack {
+                            Text("Прогресс").font(.headline)
+                            Spacer()
+                            Text("\(rating)").font(.title2.bold().monospacedDigit()).foregroundStyle(palette.accent)
+                        }
+                        ForEach(MetricKey.allCases) { key in
+                            let value = progress.current[key] ?? 0
+                            VStack(alignment: .leading, spacing: Space.xs) {
+                                HStack {
+                                    Text(key.title)
+                                    Spacer()
+                                    Text("\(value)").monospacedDigit()
+                                }
+                                .font(.callout)
+                                ProgressView(value: Double(value), total: 100).tint(palette.accent)
+                            }
+                        }
+                    }
+                    .padding(Space.l)
+                    .glassCard()
+                } else {
+                    Label("Игрок скрыл прогресс от других учеников", systemImage: "lock.fill")
+                        .foregroundStyle(palette.textSecondary)
+                        .padding(Space.l)
+                        .frame(maxWidth: .infinity)
+                        .glassCard()
+                }
+
+                Label("Телефон не показывается — связь через чат", systemImage: "phone.down")
+                    .font(.caption).foregroundStyle(palette.textSecondary)
+
+                Button("Написать") {
+                    dismiss()
+                    container.openChat(with: personId)
+                }
+                .buttonStyle(.cueGlassProminent)
+            }
+            .padding(Space.l)
+        }
+        .navigationTitle("Игрок")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

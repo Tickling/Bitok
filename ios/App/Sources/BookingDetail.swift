@@ -108,6 +108,16 @@ struct BookingDetailView: View {
     private var backend: DemoBackend { container.backend }
     private var isCoach: Bool { container.role == .trainer }
 
+    /// Текст подтверждения отмены: при отмене позже чем за 12 часов — предупреждение о поздней отмене.
+    static func cancelWarning(_ booking: Booking?) -> String {
+        guard let booking else { return "" }
+        let hours = booking.startsAt.timeIntervalSince(Date()) / 3600
+        if booking.status == .confirmed && hours < 12 {
+            return "До тренировки меньше 12 часов — отмена будет считаться поздней. Тренер получит уведомление."
+        }
+        return "Слот освободится, тренер получит уведомление."
+    }
+
     var body: some View {
         NavigationStack {
             Group {
@@ -206,10 +216,19 @@ struct BookingDetailView: View {
             }
         }
         .confirmationDialog("Отменить тренировку?", isPresented: $showCancel, titleVisibility: .visible) {
-            Button("Отменить тренировку", role: .destructive) {
-                let reason = CancellationReason(code: isCoach ? .coachUnavailable : .scheduleConflict)
-                run { try backend.cancel(booking.id, by: container.currentUserId, reason: reason) }
+            if isCoach {
+                Button("Отменить тренировку", role: .destructive) {
+                    run { try backend.cancel(booking.id, by: container.currentUserId, reason: CancellationReason(code: .coachUnavailable)) }
+                }
+            } else {
+                ForEach([CancellationReasonCode.scheduleConflict, .illness, .other], id: \.self) { code in
+                    Button(code == .scheduleConflict ? "Изменились планы" : DemoBackend.reasonTitle(code), role: .destructive) {
+                        run { try backend.cancel(booking.id, by: container.currentUserId, reason: CancellationReason(code: code)) }
+                    }
+                }
             }
+        } message: {
+            Text(Self.cancelWarning(booking))
         }
     }
 
@@ -243,6 +262,21 @@ struct BookingDetailView: View {
                 }
                 .buttonStyle(.bordered)
             } else {
+                if allowed.contains(.cancel) {
+                    Button("Отменить запись", role: .destructive) { showCancel = true }
+                        .buttonStyle(.borderedProminent)
+                        .tint(palette.statusCancelled)
+                    Button {
+                        run {
+                            try backend.cancel(booking.id, by: me, reason: CancellationReason(code: .scheduleConflict))
+                            dismiss()
+                            container.openBooking(with: booking.trainerId)
+                        }
+                    } label: {
+                        Label("Перенести на другое время", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    .buttonStyle(.bordered)
+                }
                 if booking.status.holdsSlot {
                     Button { Task { await addToCalendar(booking) } } label: {
                         Label("Добавить в календарь", systemImage: "calendar.badge.plus")
@@ -252,9 +286,6 @@ struct BookingDetailView: View {
                         Label("Напомнить за 2 часа", systemImage: "bell")
                     }
                     .buttonStyle(.bordered)
-                }
-                if allowed.contains(.cancel) {
-                    Button("Отменить запись", role: .destructive) { showCancel = true }.buttonStyle(.bordered)
                 }
                 Button("Написать тренеру") {
                     dismiss()

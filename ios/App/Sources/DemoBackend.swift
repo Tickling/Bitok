@@ -7,6 +7,7 @@ import Observation
 import CoreDomain
 import BookingDomain
 import ProgressDomain
+import ChatDomain
 
 struct DemoPerson: Identifiable, Hashable, Sendable {
     let id: UserID
@@ -50,6 +51,16 @@ struct DemoMessage: Codable, Identifiable, Hashable, Sendable {
     let date: Date
     /// Системное сообщение о брони: в чате показывается карточка с живым статусом.
     var bookingId: BookingID? = nil
+    /// Предложение тренера: конкретный слот, на который ученик может согласиться одной кнопкой.
+    var invitation: DemoInvitation? = nil
+}
+
+struct DemoInvitation: Codable, Hashable, Sendable {
+    let slotId: SlotID
+    var status: InvitationStatus
+    var comment: String?
+    /// Бронь, созданная после согласия ученика.
+    var bookingId: BookingID?
 }
 
 private struct DemoSnapshot: Codable {
@@ -279,6 +290,64 @@ final class DemoBackend {
         return record
     }
 
+    // MARK: - Предложение времени тренером (FR-017, FR-028)
+
+    /// Тренер предлагает ученику свой свободный слот. Слот не блокируется, пока ученик не ответит.
+    func proposeSlot(coachId: UserID, studentId: UserID, slotId: SlotID, comment: String?) throws {
+        guard let slot = slot(slotId), slot.trainerId == coachId else { throw BookingError.forbidden }
+        guard slot.isBookable(at: Date()) else { throw BookingError.slotAlreadyTaken }
+        messages.append(DemoMessage(id: UUID(), from: coachId, to: studentId,
+                                    text: "Предлагаю тренировку", date: Date(),
+                                    invitation: DemoInvitation(slotId: slotId, status: .sent, comment: comment, bookingId: nil)))
+        notify(studentId, "\(name(coachId)) предлагает тренировку", Self.when(slot.startsAt))
+        save()
+    }
+
+    enum InvitationAnswer { case accept, decline, otherTime }
+
+    /// Ответ ученика. «Принять» сразу создаёт подтверждённую бронь — время уже согласовано с тренером.
+    @discardableResult
+    func answerInvitation(messageId: UUID, by studentId: UserID, _ answer: InvitationAnswer) throws -> Booking? {
+        guard let index = messages.firstIndex(where: { $0.id == messageId }),
+              var invitation = messages[index].invitation, messages[index].to == studentId else { throw BookingError.forbidden }
+        guard invitation.status == .sent else { throw BookingError.invalidStateTransition(from: .confirmed, to: .confirmed) }
+        let coachId = messages[index].from
+        var created: Booking?
+        switch answer {
+        case .accept:
+            let now = Date()
+            guard let slotIndex = slots.firstIndex(where: { $0.id == invitation.slotId }) else { throw BookingError.slotNotAvailable }
+            var slot = slots[slotIndex]
+            guard slot.isBookable(at: now) else { throw BookingError.slotAlreadyTaken }
+            let overlaps = bookings.contains { other in
+                other.studentId == studentId && other.status.holdsSlot
+                    && other.startsAt < slot.endsAt
+                    && slot.startsAt < other.startsAt.addingTimeInterval(TimeInterval(other.durationMinutes * 60))
+            }
+            guard !overlaps else { throw BookingError.overlappingBooking }
+            let booking = try Booking.assignByCoach(id: BookingID(), slot: slot, studentId: studentId, coachId: coachId,
+                                                    isCoachesStudent: true, decision: .notRequired, now: now)
+            slot.markBooked()
+            slots[slotIndex] = slot
+            bookings.append(booking)
+            invitation.status = .accepted
+            invitation.bookingId = booking.id
+            created = booking
+            post(from: studentId, to: coachId, text: "Принимаю предложение ✓", bookingId: booking.id)
+            notify(coachId, "\(name(studentId)) принял предложение", Self.when(booking.startsAt))
+        case .decline:
+            invitation.status = .declined
+            post(from: studentId, to: coachId, text: "Не смогу в это время", bookingId: nil)
+            notify(coachId, "\(name(studentId)) отказался", "Предложение тренировки отклонено")
+        case .otherTime:
+            invitation.status = .counterProposed
+            post(from: studentId, to: coachId, text: "Это время не подходит — выберу другое в календаре", bookingId: nil)
+        }
+        messages[index].invitation = invitation
+        save()
+        return created
+    }
+
     // MARK: - Прогресс
 
     func progress(for studentId: UserID) -> StudentProgress {
@@ -319,9 +388,11 @@ final class DemoBackend {
         save()
     }
 
-    /// Собеседники: у ученика — все тренеры, у тренера — его ученики. Свежие диалоги сверху.
+    /// Собеседники: у ученика — все тренеры и игроки, с которыми есть переписка; у тренера — его ученики.
     func chatPartners(of userId: UserID) -> [DemoPerson] {
-        let partners = isCoach(userId) ? students(of: userId) : coaches.map(\.person)
+        let partners = isCoach(userId)
+            ? students(of: userId)
+            : coaches.map(\.person) + students.filter { $0.id != userId && !conversation(between: userId, and: $0.id).isEmpty }
         return partners.sorted {
             (lastMessage(userId, $0.id)?.date ?? .distantPast) > (lastMessage(userId, $1.id)?.date ?? .distantPast)
         }
@@ -329,6 +400,16 @@ final class DemoBackend {
 
     func events(for userId: UserID) -> [DemoEvent] {
         events.filter { $0.userId == userId }.sorted { $0.date > $1.date }
+    }
+
+    // MARK: - «Игроки клуба» (FR-030)
+
+    /// Другие ученики клуба для ученика.
+    func players(for userId: UserID) -> [DemoPerson] { students.filter { $0.id != userId } }
+
+    /// Рейтинг, видимый другим ученикам. Демо приватности: Олег скрыл прогресс → nil (в UI — 🔒).
+    func publicRating(of studentId: UserID) -> Int? {
+        studentId == students[2].id ? nil : progress(for: studentId).overallRating
     }
 
     // MARK: - Сброс
