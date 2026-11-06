@@ -88,6 +88,8 @@ jobs:
     name: iOS IPA для установки (Sideloadly / AltStore)
     runs-on: macos-15
     needs: ios-app
+    permissions:
+      contents: write   # публикация свежего Bitok.ipa в служебную ветку ipa-builds
     steps:
       - uses: actions/checkout@v4
       - run: brew install xcodegen
@@ -111,3 +113,19 @@ jobs:
           name: Bitok-ipa
           path: ios/Bitok.ipa
           retention-days: 30
+      - name: Publish latest IPA to branch ipa-builds
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          mkdir -p "$RUNNER_TEMP/ipa" && cp ios/Bitok.ipa "$RUNNER_TEMP/ipa/"
+          cd "$RUNNER_TEMP/ipa"
+          echo "Сборка ${GITHUB_SHA}, $(date -u +%Y-%m-%dT%H:%MZ)" > BUILD.txt
+          git init -q -b ipa-builds
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q --allow-empty -m "Bitok.ipa from ${GITHUB_SHA}"
+          git add Bitok.ipa BUILD.txt
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q --amend -m "Bitok.ipa from ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" ipa-builds
