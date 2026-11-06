@@ -2,41 +2,42 @@
 import Foundation
 import Observation
 import CoreDomain
-import BookingDomain
 import ProgressDomain
-import AchievementDomain
-import ChatDomain
 
 @MainActor
 @Observable
 final class AppContainer {
-    var role: UserRole
-    var flags: ClientFlags
+    var role: UserRole = .student
+    var flags = ClientFlags()
+    /// Выбранная вкладка и путь в чате — чтобы после записи сразу открыть диалог с тренером.
+    var selectedTab: AppTab = .calendar
+    var chatPath: [UserID] = []
     /// Текущая демо-учётка; nil — показывается экран входа.
     private(set) var account: DemoAccount? = nil
-    let currentUserId: UserID
-    let coachId: UserID
 
-    // Порты → адаптеры. MVP: NoopPaymentGateway; v1.0: BFFPaymentGateway — ядро не меняется.
+    /// Локальный демо-сервер. В проде вместо него — адаптеры CoreNetwork к BFF.
+    let backend: DemoBackend
+    /// Порт платёжного контура. MVP: NoopPaymentGateway; v1.0: BFFPaymentGateway — ядро не меняется.
     let paymentGateway: PaymentGateway
-    let slots: SlotRepository
-    let bookings: BookingRepository
     let progress: ProgressRepository
 
-    init(role: UserRole, flags: ClientFlags, currentUserId: UserID, coachId: UserID,
-         paymentGateway: PaymentGateway, slots: SlotRepository, bookings: BookingRepository, progress: ProgressRepository) {
-        self.role = role
-        self.flags = flags
-        self.currentUserId = currentUserId
-        self.coachId = coachId
+    init(backend: DemoBackend, paymentGateway: PaymentGateway) {
+        self.backend = backend
         self.paymentGateway = paymentGateway
-        self.slots = slots
-        self.bookings = bookings
-        self.progress = progress
+        self.progress = BackendProgressRepository(backend: backend)
         if let saved = UserDefaults.standard.string(forKey: Self.accountKey), let restored = DemoAccount(rawValue: saved) {
             self.account = restored
             self.role = restored.role
         }
+    }
+
+    static func demo() -> AppContainer {
+        AppContainer(backend: DemoBackend(), paymentGateway: NoopPaymentGateway())
+    }
+
+    /// ID текущего пользователя: тренер Алексей, тренер Вероника или ученик Иван.
+    var currentUserId: UserID {
+        account?.userId ?? DemoBackend.ivanId
     }
 
     private static let accountKey = "demoAccount"
@@ -47,24 +48,26 @@ final class AppContainer {
         UserDefaults.standard.set(account.rawValue, forKey: Self.accountKey)
     }
 
-    func signOut() {
-        account = nil
-        UserDefaults.standard.removeObject(forKey: Self.accountKey)
+    /// Открыть диалог с собеседником (используется после записи и из карточки брони).
+    func openChat(with userId: UserID) {
+        chatPath = [userId]
+        selectedTab = .chat
     }
 
-    /// Демо-сборка: локальные данные без backend (для симулятора и демонстраций).
-    static func demo() -> AppContainer {
-        let coach = UserID()
-        let student = UserID()
-        let store = DemoBookingStore(coachId: coach, studentId: student)
-        return AppContainer(role: .student, flags: ClientFlags(), currentUserId: student, coachId: coach,
-                            paymentGateway: NoopPaymentGateway(), slots: store, bookings: store,
-                            progress: DemoProgressRepository())
+    func signOut() {
+        selectedTab = .calendar
+        chatPath = []
+        account = nil
+        UserDefaults.standard.removeObject(forKey: Self.accountKey)
     }
 
     func handle(_ url: URL) {
         // bitok://booking/{id} — из события календаря; https://bitok.app/pay/return — возврат из банка.
     }
+}
+
+enum AppTab: Hashable {
+    case calendar, people, chat, content, profile
 }
 
 struct ClientFlags: Decodable, Sendable {

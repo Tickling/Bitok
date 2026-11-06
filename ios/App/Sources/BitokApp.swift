@@ -18,6 +18,7 @@ struct BitokApp: App {
                 }
             }
             .environment(themes)
+            .environment(\.locale, Locale(identifier: "ru_RU"))
             .onOpenURL { url in
                 // Возврат из банка (universal link /pay/return) лишь будит обновление статуса —
                 // подтверждение оплаты только по серверному webhook (BR-020.6).

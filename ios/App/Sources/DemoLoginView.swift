@@ -5,9 +5,10 @@ import SwiftUI
 import CoreDomain
 import DesignSystem
 
-/// Тестовые учётки. Код подтверждения для обеих — 1234.
+/// Тестовые учётки. Код подтверждения для всех — 1234.
 enum DemoAccount: String, CaseIterable, Identifiable {
     case coach
+    case veronica
     case student
 
     var id: Self { self }
@@ -15,6 +16,7 @@ enum DemoAccount: String, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .coach: "Алексей Воронов"
+        case .veronica: "Вероника Смирнова"
         case .student: "Иван Петров"
         }
     }
@@ -22,13 +24,23 @@ enum DemoAccount: String, CaseIterable, Identifiable {
     var phone: String {
         switch self {
         case .coach: "+7 900 000-00-01"
+        case .veronica: "+7 900 000-00-03"
         case .student: "+7 900 000-00-02"
         }
     }
 
-    var role: UserRole { self == .coach ? .trainer : .student }
+    var role: UserRole { self == .student ? .student : .trainer }
 
-    var roleTitle: String { self == .coach ? "Тренер" : "Ученик" }
+    var roleTitle: String { self == .student ? "Ученик" : "Тренер" }
+
+    /// ID пользователя в демо-данных.
+    var userId: UserID {
+        switch self {
+        case .coach: DemoBackend.alexeyId
+        case .veronica: DemoBackend.veronikaId
+        case .student: DemoBackend.ivanId
+        }
+    }
 
     static let otpCode = "1234"
 
