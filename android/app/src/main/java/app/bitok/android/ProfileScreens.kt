@@ -358,6 +358,25 @@ fun HelpScreen(app: AppState) {
     var opened by remember { mutableStateOf<String?>(topics.first().first) }
     Screen("Помощь", app) {
         Secondary(if (app.isCoach) "Коротко о том, где что находится в приложении тренера." else "Коротко о том, где что находится и что можно делать.", size = 15)
+        Title("Экраны с подсказками")
+        (if (app.isCoach) coachShots else studentShots).forEach { shot ->
+            GlassCard {
+                Text(shot.title, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = p.text)
+                androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(shot.image), shot.title,
+                    Modifier.fillMaxWidth().height(460.dp).clip(RoundedCornerShape(18.dp)),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Fit)
+                shot.items.forEachIndexed { i, text ->
+                    Row(verticalAlignment = Alignment.Top) {
+                        Box(Modifier.size(22.dp).background(p.accent, RoundedCornerShape(11.dp)), contentAlignment = Alignment.Center) {
+                            Text("${i + 1}", color = p.onAccent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Text(text, color = p.text, fontSize = 15.sp)
+                    }
+                }
+            }
+        }
+        Title("Пошагово")
         topics.forEach { (title, steps) ->
             GlassCard(onClick = { opened = if (opened == title) null else title }) {
                 Row { Title(title, Modifier.weight(1f)); Text(if (opened == title) "−" else "+", fontSize = 22.sp, color = p.accent) }

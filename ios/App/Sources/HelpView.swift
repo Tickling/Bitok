@@ -107,6 +107,14 @@ struct HelpView: View {
                      : "Коротко о том, где что находится и что можно делать.")
                     .foregroundStyle(palette.textSecondary)
             }
+            Section("Экраны с подсказками") {
+                ForEach(role == .trainer ? HelpShot.coach : HelpShot.student) { shot in
+                    HelpShotCard(shot: shot)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
+                }
+            }
+            Section("Пошагово") {
             ForEach(topics) { topic in
                 DisclosureGroup {
                     VStack(alignment: .leading, spacing: Space.s) {
@@ -123,6 +131,7 @@ struct HelpView: View {
                 } label: {
                     Label(topic.title, systemImage: topic.icon).font(.headline)
                 }
+            }
             }
             Section("Вкладки") {
                 LabeledContent("Календарь", value: role == .trainer ? "расписание и заявки" : "запись к тренеру")
