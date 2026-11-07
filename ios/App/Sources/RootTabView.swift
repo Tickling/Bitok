@@ -36,5 +36,14 @@ struct RootTabView: View {
                 .tabItem { Label("Профиль", systemImage: "person.crop.circle") }
                 .tag(AppTab.profile)
         }
+        // Неоткрытый подарок — сразу красивая распаковка.
+        .fullScreenCover(item: Binding(
+            get: { container.backend.unopenedGift(for: container.currentUserId) },
+            set: { _ in }
+        )) { gift in
+            GiftRevealView(gift: gift, fromName: container.backend.name(gift.fromId)) {
+                container.backend.markOpened(gift.id)
+            }
+        }
     }
 }

@@ -57,6 +57,8 @@ struct DemoMessage: Codable, Identifiable, Hashable, Sendable {
     var invitation: DemoInvitation? = nil
     /// Запрос между учениками: «сыграем?» или «обменяемся номерами?».
     var peerRequest: DemoPeerRequest? = nil
+    /** Подарок: в чате показывается открытка. */
+    var giftId: UUID? = nil
 }
 
 /// Запрос одного ученика другому. Номера телефонов открываются только после согласия обоих (BR-030.2).
@@ -94,6 +96,7 @@ private struct DemoSnapshot: Codable {
     var groups: [DemoGroupSession]? = nil
     var news: [DemoNews]? = nil
     var listings: [DemoListing]? = nil
+    var gifts: [DemoGift]? = nil
     var slots: [BookingSlot]
     var bookings: [Booking]
     var records: [ProgressRecord]
@@ -144,6 +147,7 @@ final class DemoBackend {
     var groups: [DemoGroupSession] = []
     var news: [DemoNews] = []
     var listings: [DemoListing] = []
+    var gifts: [DemoGift] = []
 
     private static let storageKey = "demoBackend.v5"
 
@@ -639,6 +643,7 @@ final class DemoBackend {
         groups = []
         news = []
         listings = []
+        gifts = []
         coaches = Self.baseCoaches
         seed()
     }
@@ -671,7 +676,7 @@ final class DemoBackend {
 
     func save() {
         let snapshot = DemoSnapshot(profiles: profiles, venues: venues, coachInfo: coachInfo, studentPrices: studentPrices,
-                                    groups: groups, news: news, listings: listings, slots: slots, bookings: bookings, records: records, events: events,
+                                    groups: groups, news: news, listings: listings, gifts: gifts, slots: slots, bookings: bookings, records: records, events: events,
                                     messages: messages, privacy: privacy)
         if let data = try? JSONEncoder().encode(snapshot) {
             UserDefaults.standard.set(data, forKey: Self.storageKey)
@@ -692,6 +697,7 @@ final class DemoBackend {
         groups = snapshot.groups ?? []
         news = snapshot.news ?? []
         listings = snapshot.listings ?? []
+        gifts = snapshot.gifts ?? []
         syncCoaches()
     }
 

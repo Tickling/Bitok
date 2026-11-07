@@ -178,7 +178,9 @@ private fun MessageView(app: AppState, message: Message, otherId: String) {
     val mine = message.from == app.me
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
         val booking = message.bookingId?.let { b.booking(it) }
+        val gift = message.giftId?.let { b.gift(it) }
         when {
+            gift != null -> GiftMessage(gift, b.name(gift.fromId), mine) { app.replayGift = gift.id }
             message.peer != null -> PeerCard(app, message, message.peer, otherId)
             message.invitation != null -> InvitationCard(app, message, message.invitation)
             booking != null -> BookingCard(app, message, booking)

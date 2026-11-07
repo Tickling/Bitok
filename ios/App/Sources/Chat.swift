@@ -140,6 +140,7 @@ struct ChatThreadView: View {
     @State private var showProfile = false
     @State private var swapBooking: BookingRef?
     @State private var counterBooking: BookingRef?
+    @State private var replayGift: DemoGift?
 
     private var backend: DemoBackend { container.backend }
     private var me: UserID { container.currentUserId }
@@ -188,6 +189,11 @@ struct ChatThreadView: View {
         .sheet(isPresented: $showPropose) {
             ProposeSlotSheet(container: container, studentId: otherId)
         }
+        .fullScreenCover(item: $replayGift) { gift in
+            GiftRevealView(gift: gift, fromName: backend.name(gift.fromId)) {
+                if !gift.opened { backend.markOpened(gift.id) }
+            }
+        }
         .sheet(item: $counterBooking) { ref in
             ProposeSlotSheet(container: container, studentId: otherId, replacing: ref.id)
         }
@@ -211,7 +217,10 @@ struct ChatThreadView: View {
     @ViewBuilder
     private func messageView(_ message: DemoMessage) -> some View {
         let mine = message.from == me
-        if let request = message.peerRequest {
+        if let giftId = message.giftId, let gift = backend.gift(giftId) {
+            GiftMessageCard(gift: gift, fromName: backend.name(gift.fromId), isMine: mine) { replayGift = gift }
+                .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
+        } else if let request = message.peerRequest {
             peerRequestCard(message: message, request: request)
                 .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
         } else if let invitation = message.invitation, let slot = backend.slot(invitation.slotId) {

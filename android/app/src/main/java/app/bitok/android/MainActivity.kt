@@ -97,6 +97,7 @@ sealed interface Route {
     data object EditProfile : Route
     data class CropAvatar(val uri: String) : Route
     data object AppIcon : Route
+    data class GiftComposer(val listingId: String) : Route
     data object Settings : Route
     data object Help : Route
     data object Trophies : Route
@@ -115,6 +116,8 @@ class AppState(val context: Context) {
     var uiTest = false
         private set
     var uiPage by mutableStateOf<String?>(null)
+    /** Подарок, который пользователь открыл повторно из чата. */
+    var replayGift by mutableStateOf<String?>(null)
 
     fun applyUiTest(intent: Intent?) {
         val account = intent?.getStringExtra("uiAccount")?.let { runCatching { DemoAccount.valueOf(it) }.getOrNull() } ?: return
@@ -203,6 +206,16 @@ fun Root(app: AppState) {
     } else {
         Tabs(app)
     }
+    // Неоткрытый подарок — сразу красивая распаковка; из чата можно посмотреть ещё раз.
+    val gift = app.replayGift?.let { app.backend.gift(it) } ?: app.backend.unopenedGift(app.me)
+    if (gift != null) {
+        androidx.compose.runtime.key(gift.id) {
+            GiftReveal(gift, app.backend.name(gift.fromId)) {
+                if (!gift.opened) app.backend.markOpened(gift.id)
+                app.replayGift = null
+            }
+        }
+    }
     Alerts(app)
 }
 
@@ -225,6 +238,7 @@ private fun RouteScreen(app: AppState, route: Route) {
         Route.EditProfile -> EditProfileScreen(app)
         is Route.CropAvatar -> CropAvatarScreen(app, route.uri)
         Route.AppIcon -> AppIconScreen(app)
+        is Route.GiftComposer -> GiftComposerScreen(app, route.listingId)
         Route.Settings -> SettingsScreen(app)
         Route.Help -> HelpScreen(app)
         Route.Trophies -> TrophiesScreen(app)

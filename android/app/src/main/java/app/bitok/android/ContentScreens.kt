@@ -182,7 +182,10 @@ fun ListingDetailScreen(app: AppState, id: String) {
         if (listing.sellerId == app.me) {
             SecondaryButton("Снять с публикации", Modifier.fillMaxWidth(), p.cancelled) { b.deleteListing(listing.id); app.pop() }
         } else if (!app.isCoach) {
-            PrimaryButton("Написать ${if (listing.category.isService) "мастеру" else "продавцу"}") {
+            if (!listing.category.isService) {
+                PrimaryButton("🎁 Купить в подарок") { app.push(Route.GiftComposer(listing.id)) }
+            }
+            SecondaryButton("Написать ${if (listing.category.isService) "мастеру" else "продавцу"}", Modifier.fillMaxWidth()) {
                 b.send(app.me, listing.sellerId, "Здравствуйте! Интересует «${listing.title}»")
                 app.openChat(listing.sellerId)
             }

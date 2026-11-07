@@ -544,6 +544,28 @@ class DemoBackend(private val prefs: SharedPreferences) {
 
     // endregion
 
+    // region Подарки
+
+    fun unopenedGift(userId: String) = state.gifts.filter { it.toId == userId && !it.opened }.minByOrNull { it.at }
+    fun gift(id: String) = state.gifts.firstOrNull { it.id == id }
+
+    fun sendGift(listing: Listing, from: String, to: String, card: GiftCard, message: String) {
+        val gift = Gift(newId(), from, to, listing.id, listing.title, listing.sellerId, card, message, now())
+        update { it.copy(gifts = it.gifts + gift, messages = it.messages + Message(newId(), from, to, "🎁 Подарок: ${listing.title}", now(), giftId = gift.id)) }
+        post(from, listing.sellerId, "Покупаю «${listing.title}» в подарок для ${name(to)}. Передайте, пожалуйста, на тренировке 🎁")
+        notify(to, "🎁 Вам подарок от ${name(from)}", "${card.emoji} ${card.title} Откройте приложение, чтобы распаковать")
+        notify(listing.sellerId, "Новый заказ-подарок", "${listing.title} · для ${name(to)}")
+    }
+
+    fun markOpened(id: String) {
+        val gift = gift(id) ?: return
+        update { s -> s.copy(gifts = s.gifts.map { if (it.id == id) it.copy(opened = true) else it }) }
+        post(gift.toId, gift.fromId, "Спасибо за подарок! 😍")
+        notify(gift.fromId, "${name(gift.toId)} открыл(а) подарок", gift.itemTitle)
+    }
+
+    // endregion
+
     // region Новости и магазин
 
     fun publish(item: News) {

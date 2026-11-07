@@ -133,6 +133,31 @@ data class Message(
     val bookingId: String? = null,
     val invitation: Invitation? = null,
     val peer: PeerRequest? = null,
+    val giftId: String? = null,
+)
+
+@Serializable
+enum class GiftCard(val title: String, val emoji: String, val from: Long, val to: Long) {
+    BIRTHDAY("С днём рождения!", "🎂", 0xFFFA739E, 0xFFFDC266),
+    VICTORY("За победу!", "🏆", 0xFFF2C74D, 0xFF8C5C0D),
+    NEW_YEAR("С Новым годом!", "🎄", 0xFF14734D, 0xFFBF1F2E),
+    THANKS("Спасибо!", "🙏", 0xFF4DA3FF, 0xFF6B4DD9),
+    JUST_BECAUSE("Просто так", "🎱", 0xFF1F7A45, 0xFF0D331F),
+}
+
+/** Подарок: товар из магазина, открытка и поздравление. */
+@Serializable
+data class Gift(
+    val id: String,
+    val fromId: String,
+    val toId: String,
+    val listingId: String,
+    val itemTitle: String,
+    val sellerId: String,
+    val card: GiftCard,
+    val message: String,
+    val at: Long,
+    val opened: Boolean = false,
 )
 
 @Serializable
@@ -220,6 +245,7 @@ data class DemoState(
     val groups: List<GroupSession> = emptyList(),
     val news: List<News> = emptyList(),
     val listings: List<Listing> = emptyList(),
+    val gifts: List<Gift> = emptyList(),
     val profiles: Map<String, Profile> = emptyMap(),
     val coachInfo: Map<String, CoachInfo> = emptyMap(),
     /** Ключ «coachId|studentId» → цена в рублях. */

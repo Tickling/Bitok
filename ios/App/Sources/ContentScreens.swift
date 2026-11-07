@@ -195,6 +195,7 @@ struct ListingDetail: View {
     @Environment(\.palette) private var palette
     let container: AppContainer
     let listing: DemoListing
+    @State private var giftComposer = false
 
     var body: some View {
         NavigationStack {
@@ -234,6 +235,14 @@ struct ListingDetail: View {
                         }
                         .buttonStyle(.bordered)
                     } else if container.role == .student {
+                        if !listing.category.isService {
+                            Button {
+                                giftComposer = true
+                            } label: {
+                                Label("Купить в подарок", systemImage: "gift.fill")
+                            }
+                            .buttonStyle(.cueGlassProminent)
+                        }
                         Button("Написать \(listing.category.isService ? "мастеру" : "продавцу")") {
                             container.backend.send(from: container.currentUserId, to: listing.sellerId,
                                                    text: "Здравствуйте! Интересует «\(listing.title)»")
@@ -247,6 +256,12 @@ struct ListingDetail: View {
             }
             .background(ThemedBackground())
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Готово") { dismiss() } } }
+            .sheet(isPresented: $giftComposer) {
+                GiftComposer(container: container, listing: listing) {
+                    dismiss()
+                    if let last = container.backend.gifts.last { container.openChat(with: last.toId) }
+                }
+            }
         }
     }
 }
