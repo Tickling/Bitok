@@ -158,6 +158,7 @@ fun GiftReveal(gift: Gift, fromName: String, onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
     val lid = remember { Animatable(0f) }
     val confetti = remember { Animatable(0f) }
+    val cardScale = remember { Animatable(0.2f) }
     val wiggle by rememberInfiniteTransition(label = "wiggle")
         .animateFloat(-4f, 4f, infiniteRepeatable(tween(180, easing = LinearEasing), RepeatMode.Reverse), label = "angle")
     val pieces = remember { List(90) { Triple(Random.nextFloat(), Random.nextFloat() * 0.5f, Random.nextFloat()) } }
@@ -186,8 +187,8 @@ fun GiftReveal(gift: Gift, fromName: String, onClose: () -> Unit) {
             Text(if (opened) "Вам подарок!" else "$fromName прислал(а) подарок", color = Color.White, fontSize = 24.sp,
                 fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
             Box(Modifier.height(340.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                AnimatedVisibility(opened, enter = scaleIn(spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessLow)) + fadeIn()) {
-                    GiftCardView(gift.card, gift.message, fromName, gift.itemTitle)
+                if (opened) {
+                    Box(Modifier.scale(cardScale.value)) { GiftCardView(gift.card, gift.message, fromName, gift.itemTitle) }
                 }
                 if (!opened) {
                     Box(
@@ -196,6 +197,7 @@ fun GiftReveal(gift: Gift, fromName: String, onClose: () -> Unit) {
                                 scope.launch {
                                     lid.animateTo(1f, tween(550))
                                     opened = true
+                                    launch { cardScale.animateTo(1f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessLow)) }
                                     confetti.animateTo(1f, tween(3200, easing = LinearEasing))
                                 }
                             },
