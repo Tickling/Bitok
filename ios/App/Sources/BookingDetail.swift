@@ -19,8 +19,12 @@ enum Fmt {
     static func time(_ date: Date) -> String { date.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute().locale(locale)) }
     static func day(_ date: Date) -> String { date.formatted(.dateTime.weekday(.wide).day().month(.wide).locale(locale)) }
     static func shortDay(_ date: Date) -> String { date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).locale(locale)) }
+    /// «Ноябрь 2026» — именительный падеж (LLLL).
     static func monthYear(_ date: Date) -> String {
-        date.formatted(.dateTime.month(.standaloneWide).year().locale(locale)).replacingOccurrences(of: " г.", with: "")
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.dateFormat = "LLLL yyyy"
+        return formatter.string(from: date)
     }
     static func stamp(_ date: Date) -> String {
         date.formatted(.dateTime.day().month(.abbreviated).hour(.twoDigits(amPM: .omitted)).minute().locale(locale))
