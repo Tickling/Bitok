@@ -56,6 +56,8 @@ data class Venue(
     val hours: List<Int>,
     val onlySelected: Boolean = false,
     val allowed: Set<String> = emptySet(),
+    /** Тест-зал: слот каждый час, запись за 5 минут до начала — для проверки уведомлений. */
+    val isTest: Boolean = false,
 ) {
     val daysTitle: String
         get() = (1..7).filter { it in weekdays }.joinToString(", ") { WEEKDAYS[it - 1] }.ifEmpty { "Дни не выбраны" }
@@ -159,6 +161,8 @@ data class News(
     val body: String,
     val eventAt: Long? = null,
     val at: Long,
+    val imageId: String? = null,
+    val videoUrl: String? = null,
 )
 
 @Serializable
@@ -180,6 +184,7 @@ data class Listing(
     val details: String,
     val price: Int? = null,
     val at: Long,
+    val imageId: String? = null,
 )
 
 @Serializable

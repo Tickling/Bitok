@@ -69,8 +69,8 @@ fun CoachScheduleScreen(app: AppState) {
     val p = LocalPalette.current
     val b = app.backend
     val me = app.me
-    var mode by remember { mutableStateOf(Mode.DAY) }
-    var day by remember { mutableStateOf(LocalDate.now()) }
+    var mode by remember { mutableStateOf(if (app.uiPage == "week") Mode.WEEK else Mode.DAY) }
+    var day by remember { mutableStateOf(if (app.uiPage == "tomorrow") LocalDate.now().plusDays(1) else LocalDate.now()) }
 
     Screen("Расписание", app) {
         Segmented(Mode.entries, mode, { it.title }) { mode = it }
@@ -434,7 +434,7 @@ fun VenueEditorScreen(app: AppState, venueId: String?) {
             }
         }
         Title("Начало тренировок")
-        (8..23).chunked(4).forEach { row ->
+        (0..23).chunked(4).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 row.forEach { h -> Chip("%02d:00".format(h), h in hours, Modifier.weight(1f)) { hours = if (h in hours) hours - h else hours + h } }
             }

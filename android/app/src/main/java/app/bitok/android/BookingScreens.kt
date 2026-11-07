@@ -119,8 +119,20 @@ fun StudentBookingScreen(app: AppState) {
     val me = app.me
     var month by remember { mutableStateOf(LocalDate.now().withDayOfMonth(1)) }
     var day by remember(coachId) { mutableStateOf<LocalDate?>(null) }
-    var slotId by remember(coachId, day) { mutableStateOf<String?>(null) }
+    var slotId by remember(coachId) { mutableStateOf<String?>(null) }
     val info = b.coachInfo(coachId)
+    // Скриншот «Помощи»: выбран ближайший день и первое время.
+    androidx.compose.runtime.LaunchedEffect(app.uiPage) {
+        if (app.uiPage == "day") {
+            val first = b.availableDays(coachId, me).sorted().firstOrNull { d -> b.freeSlots(coachId, d, me).any { b.leadTime(it) > 600_000 } }
+            if (first != null) {
+                day = first
+                kotlinx.coroutines.delay(300)
+                slotId = b.freeSlots(coachId, first, me).firstOrNull { b.leadTime(it) > 600_000 }?.id
+            }
+            app.uiPage = null
+        }
+    }
 
     Screen("Запись", app, bottom = {
         val slot = slotId?.let { b.slot(it) }
@@ -149,7 +161,7 @@ fun StudentBookingScreen(app: AppState) {
             IconButton({ month = month.plusMonths(1); day = null }) { Icon(Icons.Filled.ChevronRight, "Следующий месяц", tint = p.accent) }
         }
         val myDays = b.bookingsOfStudent(me).filter { it.status.holdsSlot }.map { it.start.toDate() }.toSet()
-        MonthGrid(month, day, b.availableDays(coachId, me), myDays) { day = it }
+        MonthGrid(month, day, b.availableDays(coachId, me), myDays) { day = it; slotId = null }
         val selectedDay = day
         if (selectedDay == null) {
             Secondary("👆 Выберите день — доступные дни выделены", size = 15)

@@ -55,7 +55,7 @@ private enum class ChatSegment(val title: String) { CHATS("Чаты"), PLAYERS("
 fun ChatListScreen(app: AppState) {
     val p = LocalPalette.current
     val b = app.backend
-    var segment by remember { mutableStateOf(ChatSegment.CHATS) }
+    var segment by remember { mutableStateOf(if (app.uiPage == "players") ChatSegment.PLAYERS else ChatSegment.CHATS) }
     Screen("Чат", app) {
         val options = ChatSegment.entries.filter { !app.isCoach || it != ChatSegment.PLAYERS }
         Segmented(options, segment, { it.title }) { segment = it }

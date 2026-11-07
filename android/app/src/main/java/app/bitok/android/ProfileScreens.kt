@@ -43,6 +43,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -215,7 +221,8 @@ fun EditProfileScreen(app: AppState) {
     var coachAbout by remember { mutableStateOf(info?.about ?: "") }
     var price by remember { mutableStateOf(info?.price?.toString() ?: "") }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) AvatarStore.set(context, app.me, uri)
+        // Сначала редактор: сдвиг и масштаб с предпросмотром.
+        if (uri != null) app.push(Route.CropAvatar(uri.toString()))
     }
     Screen("Профиль", app, bottom = {
         PrimaryButton("Сохранить", Modifier.padding(16.dp), enabled = first.isNotBlank()) {
@@ -270,6 +277,29 @@ fun SettingsScreen(app: AppState) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { row.forEach { t -> Chip(t.title, t == app.textSize, Modifier.weight(1f)) { app.changeTextSize(t) } } }
         }
         Secondary("Меняет размер текста во всём приложении, независимо от настроек телефона.")
+        GlassCard(onClick = { app.push(Route.AppIcon) }) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val current = AppIcons.firstOrNull { it.key == AppIconSwitcher.current(app.context) } ?: AppIcons.first()
+                androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(current.preview), null,
+                    Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)))
+                Spacer(Modifier.width(12.dp))
+                Title("Значок приложения", Modifier.weight(1f))
+                Icon(Icons.Filled.ChevronRight, null, tint = p.textSecondary)
+            }
+        }
+        GlassCard {
+            Title("Уведомления")
+            var on by remember { mutableStateOf(app.notifier.enabled) }
+            ToggleRow("Уведомления о заявках и сообщениях", on) { on = it; app.notifier.enabled = it }
+            Secondary("Напомнить о тренировке")
+            var minutes by remember { mutableStateOf(app.notifier.reminderMinutes) }
+            listOf(5, 15, 30, 60, 120, 1440).chunked(3).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    row.forEach { m -> Chip("за ${Notifier.humanize(m)}", m == minutes, Modifier.weight(1f)) { minutes = m; app.notifier.reminderMinutes = m } }
+                }
+            }
+            Secondary("Для проверки: у Алексея есть «Тест-зал 24/7» — слот каждый час, записаться можно за 5 минут до начала. Подтвердите заявку тренером — придёт уведомление и напоминание.")
+        }
         if (app.isCoach) {
             GlassCard {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -434,3 +464,113 @@ private val coachHelp = listOf(
         "«Контент» → «Магазин» → «⊕»: товар или услуга ремонта и обслуживания кия.",
     ),
 )
+
+/** Редактор аватарки: перетащите и приблизите фото; снизу — как оно будет выглядеть в кружках разного размера. */
+@Composable
+fun CropAvatarScreen(app: AppState, uri: String) {
+    val p = LocalPalette.current
+    val context = LocalContext.current
+    val bitmap = remember(uri) { loadBitmap(context, android.net.Uri.parse(uri)) }
+    if (bitmap == null) return Screen("Фото профиля", app) { Secondary("Не удалось открыть фото") }
+    val image = remember(bitmap) { bitmap.asImageBitmap() }
+    var zoom by remember { mutableStateOf(1f) }
+    var offset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    val sideDp = 300.dp
+    val side = with(androidx.compose.ui.platform.LocalDensity.current) { sideDp.toPx() }
+    fun clamp(o: androidx.compose.ui.geometry.Offset, z: Float): androidx.compose.ui.geometry.Offset {
+        val fill = maxOf(side / bitmap.width, side / bitmap.height) * z
+        val limitX = maxOf(0f, (bitmap.width * fill - side) / 2)
+        val limitY = maxOf(0f, (bitmap.height * fill - side) / 2)
+        return androidx.compose.ui.geometry.Offset(o.x.coerceIn(-limitX, limitX), o.y.coerceIn(-limitY, limitY))
+    }
+
+    @Composable
+    fun Cropped(size: androidx.compose.ui.unit.Dp) {
+        androidx.compose.foundation.Canvas(Modifier.size(size).clip(androidx.compose.foundation.shape.CircleShape)) {
+            val factor = this.size.width / side
+            val fill = maxOf(side / bitmap.width, side / bitmap.height) * zoom * factor
+            drawContext.canvas.save()
+            drawContext.transform.translate(this.size.width / 2 + offset.x * factor, this.size.height / 2 + offset.y * factor)
+            drawContext.transform.scale(fill, fill, androidx.compose.ui.geometry.Offset.Zero)
+            drawImage(image, topLeft = androidx.compose.ui.geometry.Offset(-bitmap.width / 2f, -bitmap.height / 2f))
+            drawContext.canvas.restore()
+        }
+    }
+
+    Screen("Фото профиля", app, bottom = {
+        PrimaryButton("Готово", Modifier.padding(16.dp)) {
+            val result = cropAvatar(bitmap, side, zoom, offset.x, offset.y)
+            val file = java.io.File(context.cacheDir, "avatar.jpg")
+            file.outputStream().use { result.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, it) }
+            AvatarStore.set(context, app.me, android.net.Uri.fromFile(file))
+            app.pop()
+        }
+    }) {
+        Box(
+            Modifier.fillMaxWidth().height(sideDp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                Modifier.size(sideDp).clip(RoundedCornerShape(4.dp))
+                    .pointerInput(Unit) {
+                        detectTransformGestures { _, pan, gestureZoom, _ ->
+                            zoom = (zoom * gestureZoom).coerceIn(1f, 5f)
+                            offset = clamp(offset + pan, zoom)
+                        }
+                    },
+            ) {
+                androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+                    val fill = maxOf(side / bitmap.width, side / bitmap.height) * zoom
+                    drawContext.canvas.save()
+                    drawContext.transform.translate(this.size.width / 2 + offset.x, this.size.height / 2 + offset.y)
+                    drawContext.transform.scale(fill, fill, androidx.compose.ui.geometry.Offset.Zero)
+                    drawImage(image, topLeft = androidx.compose.ui.geometry.Offset(-bitmap.width / 2f, -bitmap.height / 2f))
+                    drawContext.canvas.restore()
+                    // Затемнение вне круга
+                    val hole = androidx.compose.ui.graphics.Path().apply { addOval(androidx.compose.ui.geometry.Rect(0f, 0f, size.width, size.height)) }
+                    val frame = androidx.compose.ui.graphics.Path().apply { addRect(androidx.compose.ui.geometry.Rect(0f, 0f, size.width, size.height)) }
+                    val outside = androidx.compose.ui.graphics.Path.combine(androidx.compose.ui.graphics.PathOperation.Difference, frame, hole)
+                    drawPath(outside, Color.Black.copy(alpha = 0.55f))
+                    drawCircle(Color.White, radius = size.width / 2, style = androidx.compose.ui.graphics.drawscope.Stroke(4f))
+                }
+            }
+        }
+        Secondary("Перетащите фото и разведите пальцы, чтобы приблизить", Modifier.align(Alignment.CenterHorizontally), 14)
+        androidx.compose.material3.Slider(value = zoom, onValueChange = { zoom = it; offset = clamp(offset, it) }, valueRange = 1f..5f)
+        Secondary("Так будет видно в приложении", Modifier.align(Alignment.CenterHorizontally))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.Bottom) {
+            listOf(96.dp to "Профиль", 56.dp to "Карточка", 40.dp to "Список", 28.dp to "Чат").forEach { (size, title) ->
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Cropped(size)
+                    Secondary(title, size = 11)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AppIconScreen(app: AppState) {
+    val p = LocalPalette.current
+    var current by remember { mutableStateOf(AppIconSwitcher.current(app.context)) }
+    Screen("Значок приложения", app) {
+        Secondary("Выберите значок для рабочего стола. Лаунчер может обновить его через несколько секунд.", size = 14)
+        AppIcons.chunked(2).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                row.forEach { option ->
+                    GlassCard(Modifier.weight(1f), onClick = { AppIconSwitcher.apply(app.context, option.key); current = option.key }) {
+                        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(option.preview), option.title,
+                                Modifier.size(84.dp).clip(RoundedCornerShape(20.dp))
+                                    .then(if (option.key == current) Modifier.border(3.dp, p.accent, RoundedCornerShape(20.dp)) else Modifier))
+                            Text(option.title, fontWeight = FontWeight.SemiBold, color = p.text, fontSize = 14.sp)
+                            Secondary(option.subtitle, size = 12)
+                            if (option.key == current) Text("✓ Выбран", color = p.accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+                if (row.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+    }
+}

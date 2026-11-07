@@ -33,6 +33,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -58,7 +67,7 @@ private fun priceTitle(listing: Listing) = listing.price?.let { (if (listing.cat
 fun ContentScreen(app: AppState) {
     val p = LocalPalette.current
     val b = app.backend
-    var segment by remember { mutableStateOf(ContentSegment.NEWS) }
+    var segment by remember { mutableStateOf(if (app.uiPage == "market") ContentSegment.MARKET else ContentSegment.NEWS) }
     var category by remember { mutableStateOf<MarketCategory?>(null) }
     Screen("Контент", app, actions = {
         if (app.isCoach) {
@@ -80,7 +89,15 @@ fun ContentScreen(app: AppState) {
                         }
                         Title(item.title)
                         item.eventAt?.let { Text("📅 ${Fmt.day(it)}, ${Fmt.time(it)}", fontWeight = FontWeight.SemiBold, color = p.text) }
+                        MediaStore.get(LocalContext.current, item.imageId)?.let {
+                            Image(it.asImageBitmap(), null, Modifier.fillMaxWidth().height(190.dp).clip(RoundedCornerShape(12.dp)),
+                                contentScale = ContentScale.Crop)
+                        }
                         Text(item.body, color = p.text)
+                        item.videoUrl?.let { link ->
+                            val uri = LocalUriHandler.current
+                            TextButton({ runCatching { uri.openUri(link) } }) { Text("▶ Смотреть видео", fontWeight = FontWeight.SemiBold) }
+                        }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Avatar(b.person(item.authorId), 22.dp)
                             Spacer(Modifier.width(6.dp))
@@ -117,10 +134,15 @@ private fun ListingRow(app: AppState, listing: Listing) {
     val p = LocalPalette.current
     GlassCard(onClick = { app.push(Route.ListingDetail(listing.id)) }) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(48.dp).background(if (listing.category.isService) p.accent2 else p.accent, RoundedCornerShape(12.dp)),
-                contentAlignment = Alignment.Center,
-            ) { Text(listing.category.emoji, fontSize = 22.sp) }
+            val photo = MediaStore.get(LocalContext.current, listing.imageId)
+            if (photo != null) {
+                Image(photo.asImageBitmap(), null, Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
+            } else {
+                Box(
+                    Modifier.size(56.dp).background(if (listing.category.isService) p.accent2 else p.accent, RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center,
+                ) { Text(listing.category.emoji, fontSize = 22.sp) }
+            }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(listing.title, fontWeight = FontWeight.SemiBold, color = p.text)
@@ -137,10 +159,15 @@ fun ListingDetailScreen(app: AppState, id: String) {
     val b = app.backend
     val listing = b.state.listings.firstOrNull { it.id == id } ?: return Screen("Объявление", app) { Secondary("Объявление снято") }
     Screen(listing.category.title, app) {
-        Box(
-            Modifier.fillMaxWidth().height(140.dp).background(Brush.linearGradient(listOf(p.accent, p.accent2)), RoundedCornerShape(18.dp)),
-            contentAlignment = Alignment.Center,
-        ) { Text(listing.category.emoji, fontSize = 52.sp) }
+        val photo = MediaStore.get(LocalContext.current, listing.imageId)
+        if (photo != null) {
+            Image(photo.asImageBitmap(), null, Modifier.fillMaxWidth().height(260.dp).clip(RoundedCornerShape(18.dp)), contentScale = ContentScale.Crop)
+        } else {
+            Box(
+                Modifier.fillMaxWidth().height(140.dp).background(Brush.linearGradient(listOf(p.accent, p.accent2)), RoundedCornerShape(18.dp)),
+                contentAlignment = Alignment.Center,
+            ) { Text(listing.category.emoji, fontSize = 52.sp) }
+        }
         Text(listing.title, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, color = p.text)
         Text(priceTitle(listing), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = p.accent)
         Text(listing.details, color = p.text)
@@ -171,16 +198,24 @@ fun NewsComposerScreen(app: AppState) {
     var withDate by remember { mutableStateOf(true) }
     var dayOffset by remember { mutableStateOf(7) }
     var hour by remember { mutableStateOf(11) }
+    var imageId by remember { mutableStateOf<String?>(null) }
+    var video by remember { mutableStateOf("") }
     Screen(if (tournament) "Анонс турнира" else "Новость", app, bottom = {
         PrimaryButton("Опубликовать", Modifier.padding(16.dp), enabled = title.isNotBlank()) {
             app.backend.publish(News(newId(), app.me, tournament, title.trim(), text.trim(),
-                if (withDate) LocalDate.now().plusDays(dayOffset.toLong()).at(hour) else null, System.currentTimeMillis()))
+                if (withDate) LocalDate.now().plusDays(dayOffset.toLong()).at(hour) else null, System.currentTimeMillis(),
+                imageId, normalizeVideo(video)))
             app.pop()
         }
     }) {
         Segmented(listOf(true, false), tournament, { if (it) "Турнир" else "Новость" }) { tournament = it }
         OutlinedTextField(title, { title = it }, Modifier.fillMaxWidth(), label = { Text(if (tournament) "Название турнира" else "Заголовок") })
         OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth(), label = { Text(if (tournament) "Формат, взнос, призы, как записаться" else "Текст") }, minLines = 4)
+        Title("Фото и видео")
+        PhotoField(imageId) { imageId = it }
+        OutlinedTextField(video, { video = it }, Modifier.fillMaxWidth(), label = { Text("Ссылка на видео: YouTube, VK, Rutube") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), singleLine = true,
+            supportingText = { if (video.isNotBlank() && normalizeVideo(video) == null) Text("Проверьте ссылку") })
         Row(verticalAlignment = Alignment.CenterVertically) {
             Title("Указать дату", Modifier.weight(1f))
             Switch(withDate, { withDate = it })
@@ -205,9 +240,10 @@ fun ListingComposerScreen(app: AppState) {
     var title by remember { mutableStateOf("") }
     var details by remember { mutableStateOf("") }
     var price by remember { mutableStateOf("") }
+    var imageId by remember { mutableStateOf<String?>(null) }
     Screen("Новое объявление", app, bottom = {
         PrimaryButton("Опубликовать", Modifier.padding(16.dp), enabled = title.isNotBlank()) {
-            app.backend.publish(Listing(newId(), app.me, category, title.trim(), details.trim(), price.toIntOrNull(), System.currentTimeMillis()))
+            app.backend.publish(Listing(newId(), app.me, category, title.trim(), details.trim(), price.toIntOrNull(), System.currentTimeMillis(), imageId))
             app.pop()
         }
     }) {
@@ -220,8 +256,37 @@ fun ListingComposerScreen(app: AppState) {
         OutlinedTextField(title, { title = it }, Modifier.fillMaxWidth(),
             label = { Text(if (category.isService) "Услуга, например: замена наклейки" else "Товар, например: кий «Веста», 160 см") })
         OutlinedTextField(details, { details = it }, Modifier.fillMaxWidth(), label = { Text("Описание, состояние, сроки") }, minLines = 3)
+        Title("Фото")
+        PhotoField(imageId) { imageId = it }
         OutlinedTextField(price, { price = it.filter { c -> c.isDigit() } }, Modifier.fillMaxWidth(),
             label = { Text(if (category.isService) "Цена от" else "Цена") }, suffix = { Text("₽") }, placeholder = { Text("договорная") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
+    }
+}
+
+/** Ссылка на видео: добавляем https://, если забыли; пустая — без видео. */
+fun normalizeVideo(raw: String): String? {
+    val trimmed = raw.trim()
+    if (trimmed.isEmpty()) return null
+    val link = if (trimmed.lowercase().startsWith("http")) trimmed else "https://$trimmed"
+    return link.takeIf { runCatching { java.net.URI(it).host }.getOrNull() != null }
+}
+
+/** Фото: выбрать из галереи, посмотреть, убрать. */
+@Composable
+fun PhotoField(imageId: String?, onChange: (String?) -> Unit) {
+    val context = LocalContext.current
+    val p = LocalPalette.current
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) onChange(MediaStore.save(context, uri))
+    }
+    MediaStore.get(context, imageId)?.let {
+        Image(it.asImageBitmap(), null, Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
+    }
+    Row {
+        TextButton({ picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
+            Text(if (imageId == null) "📷 Добавить фото" else "📷 Заменить фото")
+        }
+        if (imageId != null) TextButton({ onChange(null) }) { Text("Убрать", color = p.cancelled) }
     }
 }

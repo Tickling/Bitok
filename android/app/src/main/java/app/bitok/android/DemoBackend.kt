@@ -127,12 +127,13 @@ class DemoBackend(private val prefs: SharedPreferences) {
         val today = LocalDate.now()
         val created = mutableListOf<Slot>()
         s.venues.filter { it.coachId == coachId }.forEachIndexed { venueIndex, venue ->
-            for (offset in fromDay..21) {
+            val range = if (venue.isTest) maxOf(fromDay, 0)..7 else fromDay..21
+            for (offset in range) {
                 val day = today.plusDays(offset.toLong())
                 if (day.dayOfWeek.value !in venue.weekdays) continue
                 for (hour in venue.hours.sorted()) {
                     val start = day.at(hour)
-                    if (fromDay >= 0 && start <= now()) continue
+                    if ((fromDay >= 0 || venue.isTest) && start <= now()) continue
                     val taken = (s.slots + created).any { it.coachId == coachId && it.start == start } ||
                         s.groups.any { g -> g.coachId == coachId && !g.cancelled && g.start < start + 3_600_000 && start < g.end }
                     if (taken) continue
@@ -152,15 +153,18 @@ class DemoBackend(private val prefs: SharedPreferences) {
 
     private fun bookable(slot: Slot) = slot.status == SlotStatus.AVAILABLE
 
+    /** Сколько минимум до начала можно записаться: 2 часа, в тест-зале — 5 минут. */
+    fun leadTime(slot: Slot): Long = if (venue(slot.venueId)?.isTest == true) 5 * 60_000L else 2 * 3_600_000L
+
     fun freeSlots(coachId: String, day: LocalDate, studentId: String? = null): List<Slot> =
         state.slots.filter {
-            it.coachId == coachId && it.start.toDate() == day && bookable(it) && it.start - now() >= 2 * 3_600_000 &&
+            it.coachId == coachId && it.start.toDate() == day && bookable(it) && it.start - now() >= leadTime(it) &&
                 (studentId == null || canBook(it.venueId, studentId))
         }.sortedBy { it.start }
 
     fun availableDays(coachId: String, studentId: String? = null): Set<LocalDate> =
         state.slots.filter {
-            it.coachId == coachId && bookable(it) && it.start - now() >= 2 * 3_600_000 &&
+            it.coachId == coachId && bookable(it) && it.start - now() >= leadTime(it) &&
                 (studentId == null || canBook(it.venueId, studentId))
         }.map { it.start.toDate() }.toSet()
 
@@ -190,7 +194,7 @@ class DemoBackend(private val prefs: SharedPreferences) {
 
     fun book(slotId: String, studentId: String, comment: String?): Booking {
         val slot = slot(slotId)?.takeIf { bookable(it) } ?: throw DemoError("Этот слот уже заняли. Выберите другое время.")
-        if (slot.start - now() < 2 * 3_600_000) throw DemoError("Записаться можно не позднее чем за 2 часа до начала.")
+        if (slot.start - now() < leadTime(slot)) throw DemoError("Записаться можно не позднее чем за ${leadTime(slot) / 60_000} мин до начала.")
         if (!canBook(slot.venueId, studentId)) throw DemoError("Это место доступно только ученикам тренера по приглашению.")
         if (state.bookings.count { it.studentId == studentId && it.status == BookingStatus.AWAITING } >= 3) {
             throw DemoError("У вас уже 3 заявки ждут тренера.")
@@ -228,6 +232,7 @@ class DemoBackend(private val prefs: SharedPreferences) {
     fun approve(id: String) {
         val b = require(id, BookingStatus.AWAITING)
         setStatus(id, BookingStatus.CONFIRMED, SlotStatus.BOOKED)
+        notifier?.remind(b)
         notify(b.studentId, "Тренировка подтверждена ✓", "${name(b.coachId)} · ${Fmt.stamp(b.start)}")
         post(b.coachId, b.studentId, "Тренировка подтверждена ✓ Жду вас!", id)
     }
@@ -243,6 +248,7 @@ class DemoBackend(private val prefs: SharedPreferences) {
         val b = require(id, BookingStatus.AWAITING, BookingStatus.CONFIRMED)
         val byCoach = isCoach(actor)
         setStatus(id, if (byCoach) BookingStatus.CANCELLED_BY_COACH else BookingStatus.CANCELLED_BY_STUDENT, SlotStatus.AVAILABLE)
+        notifier?.cancelReminder(id)
         val target = if (byCoach) b.studentId else b.coachId
         notify(target, "Тренировка отменена", "${name(actor)} · ${Fmt.stamp(b.start)}")
         post(actor, target, "Тренировка отменена", id)
@@ -317,6 +323,7 @@ class DemoBackend(private val prefs: SharedPreferences) {
                     s.copy(slots = s.slots.map { if (it.id == slot.id) it.copy(status = SlotStatus.BOOKED) else it }, bookings = s.bookings + booking)
                 }
                 updated = invitation.copy(status = InvitationStatus.ACCEPTED, bookingId = booking.id)
+                notifier?.remind(booking)
                 post(studentId, coachId, "Принимаю предложение ✓", booking.id)
                 notify(coachId, "${name(studentId)} принял предложение", Fmt.stamp(booking.start))
             }
@@ -354,6 +361,7 @@ class DemoBackend(private val prefs: SharedPreferences) {
             s.copy(bookings = s.bookings.map { if (it.id == first.id || it.id == second.id) it.copy(status = BookingStatus.RESCHEDULED) else it } +
                 listOf(firstNew, secondNew))
         }
+        listOf(first to firstNew, second to secondNew).forEach { (old, new) -> notifier?.cancelReminder(old.id); notifier?.remind(new) }
         for ((old, new, partner) in listOf(Triple(first, firstNew, second.studentId), Triple(second, secondNew, first.studentId))) {
             post(coachId, old.studentId, "Поменял вас местами с ${person(partner)?.firstName}: теперь ${Fmt.stamp(new.start)} вместо ${Fmt.time(old.start)}", new.id)
             notify(old.studentId, "Время тренировки изменено", "${Fmt.stamp(new.start)} вместо ${Fmt.time(old.start)}")
@@ -467,8 +475,14 @@ class DemoBackend(private val prefs: SharedPreferences) {
     private fun post(from: String, to: String, text: String, bookingId: String? = null) =
         update { it.copy(messages = it.messages + Message(newId(), from, to, text, now(), bookingId)) }
 
-    private fun notify(userId: String, title: String, body: String) =
+    /** Системные уведомления и напоминания (подключаются в AppState). */
+    var notifier: Notifier? = null
+    private var seeding = false
+
+    private fun notify(userId: String, title: String, body: String) {
         update { it.copy(notices = it.notices + Notice(newId(), userId, title, body, now())) }
+        if (!seeding) notifier?.post(name(userId), title, body)
+    }
 
     // endregion
 
@@ -551,12 +565,18 @@ class DemoBackend(private val prefs: SharedPreferences) {
     }
 
     private fun seed() {
+        seeding = true
+        try { seedData() } finally { seeding = false }
+    }
+
+    private fun seedData() {
         val today = LocalDate.now()
         val flagship = Venue(newId(), Ids.ALEXEY, "Флагман", "Москва, ул. Тверская, 10", setOf(1, 2, 3, 4, 5, 6), listOf(16, 17, 18, 19, 20, 21))
         val tidjon = Venue(newId(), Ids.ALEXEY, "Тиджон", "Москва, Ленинский пр., 45", setOf(7), listOf(12, 13, 14, 15),
             onlySelected = true, allowed = setOf(Ids.IVAN, Ids.NATASHA))
         val pyramid = Venue(newId(), Ids.VERONIKA, "Пирамида", "Москва, ул. Арбат, 25", setOf(1, 3, 5, 7), listOf(10, 11, 12, 13, 14))
-        var s = DemoState(venues = listOf(flagship, tidjon, pyramid))
+        val testHall = Venue(newId(), Ids.ALEXEY, "Тест-зал 24/7", "Для проверки уведомлений", (1..7).toSet(), (0..23).toList(), isTest = true)
+        var s = DemoState(venues = listOf(flagship, tidjon, pyramid, testHall))
         s = s.copy(slots = generate(Ids.ALEXEY, s, -45))
         s = s.copy(slots = s.slots + generate(Ids.VERONIKA, s, -45))
 
@@ -613,7 +633,8 @@ class DemoBackend(private val prefs: SharedPreferences) {
         val tournament = today.plusDays(14).at(11)
         val news = listOf(
             News(newId(), Ids.ALEXEY, true, "Кубок «Флагмана» — открыта регистрация",
-                "Свободная пирамида, сетка на 32 игрока. Взнос 1 500 ₽, призы — кии и медали. Запись у тренера в чате.", tournament, now - 6 * 3_600_000),
+                "Свободная пирамида, сетка на 32 игрока. Взнос 1 500 ₽, призы — кии и медали. Запись у тренера в чате.", tournament, now - 6 * 3_600_000,
+                videoUrl = "https://www.youtube.com/results?search_query=русский+бильярд+свободная+пирамида"),
             News(newId(), Ids.VERONIKA, true, "Женский турнир по пулу в «Пирамиде»",
                 "Восьмёрка, до 3 побед. Новичкам — отдельная группа.", tournament + 7 * 86_400_000L, now - 26 * 3_600_000),
             News(newId(), Ids.ALEXEY, false, "Итоги осеннего рейтинга", "Иван Петров поднялся на 3-е место клуба. Поздравляем! 🎉", null, now - 3 * 86_400_000L),
@@ -638,6 +659,6 @@ class DemoBackend(private val prefs: SharedPreferences) {
     // endregion
 
     companion object {
-        private const val KEY = "demoState.v1"
+        private const val KEY = "demoState.v2"
     }
 }

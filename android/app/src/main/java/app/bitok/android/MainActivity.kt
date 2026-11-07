@@ -3,7 +3,11 @@
 // Точка входа и навигация: вход по тестовой учётке → нижние вкладки → экраны поверх вкладок.
 package app.bitok.android
 
+import android.Manifest
 import android.content.Context
+import android.content.Intent
+import android.os.Build
+import androidx.activity.result.contract.ActivityResultContracts
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -60,6 +64,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val app = AppState(applicationContext)
+        app.applyUiTest(intent)
+        // Android 13+: разрешение на уведомления (кроме режима скриншотов).
+        if (Build.VERSION.SDK_INT >= 33 && !app.uiTest) {
+            registerForActivityResult(ActivityResultContracts.RequestPermission()) {}.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
         setContent {
             BitokTheme(app.appearance, app.textSize) {
                 ThemedBackground { Root(app) }
@@ -86,6 +95,8 @@ sealed interface Route {
     data object Venues : Route
     data class VenueEditor(val id: String?) : Route
     data object EditProfile : Route
+    data class CropAvatar(val uri: String) : Route
+    data object AppIcon : Route
     data object Settings : Route
     data object Help : Route
     data object Trophies : Route
@@ -95,9 +106,33 @@ sealed interface Route {
 }
 
 /** Состояние приложения: учётка, вкладка, стек экранов, настройки. */
-class AppState(context: Context) {
+class AppState(val context: Context) {
     private val prefs = context.getSharedPreferences("bitok", Context.MODE_PRIVATE)
     val backend = DemoBackend(prefs)
+    val notifier = Notifier(context).also { backend.notifier = it }
+
+    /** Скриншоты для «Помощи»: CI запускает приложение с параметрами (учётка, вкладка, раздел). */
+    var uiTest = false
+        private set
+    var uiPage by mutableStateOf<String?>(null)
+
+    fun applyUiTest(intent: Intent?) {
+        val account = intent?.getStringExtra("uiAccount")?.let { runCatching { DemoAccount.valueOf(it) }.getOrNull() } ?: return
+        uiTest = true
+        notifier.silent = true
+        if (intent.getBooleanExtra("uiReset", false)) backend.reset()
+        signIn(account)
+        tab = runCatching { Tab.valueOf(intent.getStringExtra("uiTab") ?: "CALENDAR") }.getOrDefault(Tab.CALENDAR)
+        stack.clear()
+        uiPage = intent.getStringExtra("uiPage")
+        val chats = mapOf("alexey" to Ids.ALEXEY, "ivan" to Ids.IVAN, "natasha" to Ids.NATASHA, "veronika" to Ids.VERONIKA)
+        intent.getStringExtra("uiChat")?.let { chats[it] }?.let { stack.add(Route.Chat(it)) }
+        when (uiPage) {
+            "venues" -> stack.add(Route.Venues)
+            "settings" -> stack.add(Route.Settings)
+            "help" -> stack.add(Route.Help)
+        }
+    }
 
     var account by mutableStateOf(prefs.getString("account", null)?.let { runCatching { DemoAccount.valueOf(it) }.getOrNull() })
         private set
@@ -188,6 +223,8 @@ private fun RouteScreen(app: AppState, route: Route) {
         Route.Venues -> VenuesScreen(app)
         is Route.VenueEditor -> VenueEditorScreen(app, route.id)
         Route.EditProfile -> EditProfileScreen(app)
+        is Route.CropAvatar -> CropAvatarScreen(app, route.uri)
+        Route.AppIcon -> AppIconScreen(app)
         Route.Settings -> SettingsScreen(app)
         Route.Help -> HelpScreen(app)
         Route.Trophies -> TrophiesScreen(app)
