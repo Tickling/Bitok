@@ -264,10 +264,10 @@ fun SettingsScreen(app: AppState) {
     var confirmReset by remember { mutableStateOf(false) }
     Screen("Настройки", app) {
         Title("Оформление")
-        Appearance.entries.forEach { a -> Chip(a.title, a == app.appearance, Modifier.fillMaxWidth()) { app.setAppearance(a) } }
+        Appearance.entries.forEach { a -> Chip(a.title, a == app.appearance, Modifier.fillMaxWidth()) { app.changeAppearance(a) } }
         Title("Размер текста")
         TextSize.entries.chunked(2).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { row.forEach { t -> Chip(t.title, t == app.textSize, Modifier.weight(1f)) { app.setTextSize(t) } } }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { row.forEach { t -> Chip(t.title, t == app.textSize, Modifier.weight(1f)) { app.changeTextSize(t) } } }
         }
         Secondary("Меняет размер текста во всём приложении, независимо от настроек телефона.")
         if (app.isCoach) {
@@ -277,7 +277,7 @@ fun SettingsScreen(app: AppState) {
                         Title("Сетка недели в календаре")
                         Secondary("Цветная сетка «дни × часы». Выключите, чтобы видеть неделю списком.")
                     }
-                    Switch(app.weekGrid, { app.setWeekGrid(it) })
+                    Switch(app.weekGrid, { app.changeWeekGrid(it) })
                 }
             }
         } else {

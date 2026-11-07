@@ -130,9 +130,9 @@ class AppState(context: Context) {
         prefs.edit().remove("account").apply()
     }
 
-    fun setAppearance(value: Appearance) { appearance = value; prefs.edit().putString("appearance", value.name).apply() }
-    fun setTextSize(value: TextSize) { textSize = value; prefs.edit().putString("textSize", value.name).apply() }
-    fun setWeekGrid(value: Boolean) { weekGrid = value; prefs.edit().putBoolean("weekGrid", value).apply() }
+    fun changeAppearance(value: Appearance) { appearance = value; prefs.edit().putString("appearance", value.name).apply() }
+    fun changeTextSize(value: TextSize) { textSize = value; prefs.edit().putString("textSize", value.name).apply() }
+    fun changeWeekGrid(value: Boolean) { weekGrid = value; prefs.edit().putBoolean("weekGrid", value).apply() }
 
     fun push(route: Route) { stack.add(route) }
     fun pop() { if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex) }
