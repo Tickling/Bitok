@@ -1,0 +1,20 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "types": [
+      "node"
+    ],
+    "paths": {
+      "@bitok/shared-kernel": [
+        "../../shared-kernel/src"
+      ]
+    },
+    "baseUrl": ".",
+    "noEmit": true
+  },
+  "include": [
+    "src",
+    "test"
+  ]
+}

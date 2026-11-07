@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.bitok.app/booking/confirmed_by_coach/v1.json",
+  "title": "BookingConfirmedByCoach",
+  "description": "data для CloudEvent type = booking.confirmed_by_coach",
+  "type": "object",
+  "required": [
+    "bookingId",
+    "paymentRequired"
+  ],
+  "properties": {
+    "bookingId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "studentId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "trainerId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "paymentRequired": {
+      "type": "boolean"
+    },
+    "amount": {
+      "type": "object",
+      "required": [
+        "amountMinor",
+        "currency"
+      ],
+      "properties": {
+        "amountMinor": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "currency": {
+          "const": "RUB"
+        }
+      }
+    },
+    "paymentDeadline": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "version": {
+      "type": "integer"
+    }
+  },
+  "additionalProperties": true
+}

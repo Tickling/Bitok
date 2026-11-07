@@ -1,0 +1,387 @@
+openapi: 3.0.3
+info:
+  title: Bitok Progress Service API
+  version: 1.0.0
+  description: Оценки учеников, метрики прогресса и приватность (FR-011 — FR-013).
+servers:
+  - url: https://api.bitok.app/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: Progress
+  - name: Privacy
+paths:
+  /progress/evaluate:
+    post:
+      tags: [Progress]
+      summary: Оценить ученика после тренировки (FR-011)
+      description: |
+        Доступно тренеру, проводившему тренировку, в течение 7 дней после неё.
+        Одна оценка на бронирование. Пересчитывает метрики (EMA, α=0.4) и публикует `progress.evaluated`.
+      operationId: evaluateStudent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EvaluateRequest' }
+            example:
+              bookingId: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+              scores:
+                stanceAndStroke: 65
+                aiming: 78
+                positionPlay: 52
+                cueBallControl: 40
+                tacticalThinking: 58
+              comment: Отличный прогресс в прицеливании. Выход пока нестабилен.
+              recommendations:
+                - 20 минут в день упражнение «Лесенка» на выход
+                - Отработка оттяжки (нижний винт) на средней силе
+              assignedLessonIds: [a8098c1a-f86e-11da-bd1a-00112444be1e]
+      responses:
+        '201':
+          description: Оценка сохранена, метрики пересчитаны
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EvaluationResult' }
+              example:
+                record:
+                  id: 3f2504e0-4f89-11d3-9a0c-0305e82c3301
+                  bookingId: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                  studentId: c56a4180-65aa-42ec-a945-5fd21dec0538
+                  trainerId: e3b0c442-98fc-1c14-9afb-f4c8996fb924
+                  scores: { stanceAndStroke: 65, aiming: 78, positionPlay: 52, cueBallControl: 40, tacticalThinking: 58 }
+                  comment: Отличный прогресс в прицеливании. Выход пока нестабилен.
+                  recommendations: [20 минут в день упражнение «Лесенка» на выход]
+                  evaluatedAt: '2026-10-28T17:10:00Z'
+                  revision: 1
+                progress:
+                  studentId: c56a4180-65aa-42ec-a945-5fd21dec0538
+                  metrics: { stanceAndStroke: 63, aiming: 74, positionPlay: 52, cueBallControl: 44, tacticalThinking: 58 }
+                  overallRating: 58
+                  evaluationsCount: 12
+                  updatedAt: '2026-10-28T17:10:00Z'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: Тренировка уже оценена (ALREADY_EVALUATED) или не завершена (BOOKING_NOT_COMPLETED)
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '422':
+          description: Значения вне 0..100, пустая оценка или окно оценки закрыто (EVALUATION_WINDOW_CLOSED)
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+              example:
+                type: https://docs.bitok.app/errors/validation
+                title: Ошибка валидации
+                status: 422
+                code: VALIDATION_FAILED
+                errors:
+                  - field: scores.aiming
+                    message: Значение должно быть от 0 до 100
+                traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+
+  /students/{id}/progress:
+    get:
+      tags: [Progress]
+      summary: Текущий прогресс ученика (FR-012)
+      description: |
+        Политика FR-013: владелец и его тренер — всегда; другие ученики — только при
+        `showProgressToStudents = true`; другие тренеры — никогда.
+      operationId: getStudentProgress
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - name: compareWithDaysAgo
+          in: query
+          description: Вернуть дополнительно снимок метрик N дней назад для наложения на радар
+          schema: { type: integer, minimum: 1, maximum: 365, default: 30 }
+      responses:
+        '200':
+          description: Прогресс
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProgressDashboard' }
+              example:
+                current:
+                  studentId: c56a4180-65aa-42ec-a945-5fd21dec0538
+                  metrics: { stanceAndStroke: 63, aiming: 74, positionPlay: 52, cueBallControl: 44, tacticalThinking: 58 }
+                  overallRating: 58
+                  evaluationsCount: 12
+                  updatedAt: '2026-10-28T17:10:00Z'
+                comparison:
+                  date: '2026-09-28'
+                  metrics: { stanceAndStroke: 59, aiming: 61, positionPlay: 48, cueBallControl: 39, tacticalThinking: 52 }
+                  overallRating: 52
+                level: { code: advanced, title: Продвинутый }
+                weakestMetric: cueBallControl
+                strongestMetric: aiming
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Скрыто настройками приватности (PRIVACY_RESTRICTED)
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /students/{id}/progress/history:
+    get:
+      tags: [Progress]
+      summary: История метрик (FR-012)
+      description: При периоде > 90 дней данные агрегируются по неделям (`granularity = WEEK`).
+      operationId: getStudentProgressHistory
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: metrics
+          in: query
+          description: Подмножество метрик (по умолчанию — все)
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/MetricKey' }
+          style: form
+          explode: false
+        - name: includeEvaluations
+          in: query
+          description: Включить оценки с комментариями (только владелец и его тренер)
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Временной ряд
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProgressHistory' }
+              example:
+                granularity: DAY
+                points:
+                  - date: '2026-10-14'
+                    metrics: { aiming: 68, positionPlay: 50 }
+                    overallRating: 56
+                  - date: '2026-10-28'
+                    metrics: { aiming: 74, positionPlay: 52 }
+                    overallRating: 58
+                evaluations: []
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Скрыто настройками приватности
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+
+  /students/{id}/privacy:
+    get:
+      tags: [Privacy]
+      summary: Настройки приватности (только владелец)
+      operationId: getPrivacy
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+      responses:
+        '200':
+          description: Настройки
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PrivacySettings' }
+              example: { showProgressToStudents: false, showAchievementsToStudents: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      tags: [Privacy]
+      summary: Обновить настройки приватности (FR-013)
+      description: Только владелец. Публикует `progress.privacy.changed`; кэши инвалидируются ≤ 5 с.
+      operationId: updatePrivacy
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PrivacySettings' }
+            example:
+              showProgressToStudents: false
+              showAchievementsToStudents: true
+      responses:
+        '200':
+          description: Сохранённые настройки
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PrivacySettings' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    StudentId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  responses:
+    BadRequest:
+      description: Некорректный запрос
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Не авторизован
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: Нет прав
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Не найдено
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }
+        traceId: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              message: { type: string }
+    MetricKey:
+      type: string
+      enum: [stanceAndStroke, aiming, positionPlay, cueBallControl, tacticalThinking]
+    Scores:
+      type: object
+      description: Оценки 0–100 по метрикам; минимум одна
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        stanceAndStroke: { type: integer, minimum: 0, maximum: 100, description: Стойка и техника удара }
+        aiming: { type: integer, minimum: 0, maximum: 100, description: Прицеливание }
+        positionPlay: { type: integer, minimum: 0, maximum: 100, description: Позиционная игра }
+        cueBallControl: { type: integer, minimum: 0, maximum: 100, description: Контроль битка }
+        tacticalThinking: { type: integer, minimum: 0, maximum: 100, description: Тактическое мышление }
+    Metrics:
+      type: object
+      description: Текущие значения метрик 0–100 (EMA)
+      additionalProperties: false
+      properties:
+        stanceAndStroke: { type: integer, minimum: 0, maximum: 100 }
+        aiming: { type: integer, minimum: 0, maximum: 100 }
+        positionPlay: { type: integer, minimum: 0, maximum: 100 }
+        cueBallControl: { type: integer, minimum: 0, maximum: 100 }
+        tacticalThinking: { type: integer, minimum: 0, maximum: 100 }
+    EvaluateRequest:
+      type: object
+      required: [bookingId, scores]
+      additionalProperties: false
+      properties:
+        bookingId: { type: string, format: uuid }
+        scores: { $ref: '#/components/schemas/Scores' }
+        comment: { type: string, maxLength: 2000 }
+        recommendations:
+          type: array
+          maxItems: 10
+          items: { type: string, maxLength: 300 }
+        assignedLessonIds:
+          type: array
+          maxItems: 5
+          items: { type: string, format: uuid }
+    ProgressRecord:
+      type: object
+      required: [id, bookingId, studentId, trainerId, scores, evaluatedAt, revision]
+      properties:
+        id: { type: string, format: uuid }
+        bookingId: { type: string, format: uuid }
+        studentId: { type: string, format: uuid }
+        trainerId: { type: string, format: uuid }
+        scores: { $ref: '#/components/schemas/Scores' }
+        comment: { type: string, nullable: true }
+        recommendations:
+          type: array
+          items: { type: string }
+        assignedLessonIds:
+          type: array
+          items: { type: string, format: uuid }
+        evaluatedAt: { type: string, format: date-time }
+        revision: { type: integer }
+    StudentProgress:
+      type: object
+      required: [studentId, metrics, evaluationsCount]
+      properties:
+        studentId: { type: string, format: uuid }
+        metrics: { $ref: '#/components/schemas/Metrics' }
+        overallRating: { type: integer, minimum: 0, maximum: 100, nullable: true }
+        evaluationsCount: { type: integer }
+        updatedAt: { type: string, format: date-time, nullable: true }
+    EvaluationResult:
+      type: object
+      required: [record, progress]
+      properties:
+        record: { $ref: '#/components/schemas/ProgressRecord' }
+        progress: { $ref: '#/components/schemas/StudentProgress' }
+    ProgressDashboard:
+      type: object
+      required: [current]
+      properties:
+        current: { $ref: '#/components/schemas/StudentProgress' }
+        comparison:
+          type: object
+          nullable: true
+          properties:
+            date: { type: string, format: date }
+            metrics: { $ref: '#/components/schemas/Metrics' }
+            overallRating: { type: integer }
+        level:
+          type: object
+          description: Уровень по Overall Rating — основа титулов Новичок / Любитель / Продвинутый / Профессионал / Мастер
+          properties:
+            code: { type: string, enum: [novice, amateur, advanced, professional, master] }
+            title: { type: string }
+        weakestMetric: { $ref: '#/components/schemas/MetricKey' }
+        strongestMetric: { $ref: '#/components/schemas/MetricKey' }
+    ProgressHistory:
+      type: object
+      required: [granularity, points]
+      properties:
+        granularity: { type: string, enum: [DAY, WEEK] }
+        points:
+          type: array
+          items:
+            type: object
+            required: [date, metrics]
+            properties:
+              date: { type: string, format: date }
+              metrics: { $ref: '#/components/schemas/Metrics' }
+              overallRating: { type: integer }
+        evaluations:
+          type: array
+          items: { $ref: '#/components/schemas/ProgressRecord' }
+    PrivacySettings:
+      type: object
+      description: Тренер ученика видит прогресс и достижения всегда — настройки касаются других учеников
+      required: [showProgressToStudents, showAchievementsToStudents]
+      additionalProperties: false
+      properties:
+        showProgressToStudents: { type: boolean, default: false, description: «Показывать прогресс другим ученикам» }
+        showAchievementsToStudents: { type: boolean, default: true, description: «Показывать достижения другим ученикам» }
+        discoverableInPlayers: { type: boolean, default: true, description: Показывать в списке «Игроки клуба» (FR-030) }

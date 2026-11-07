@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.bitok.app/booking/requested/v1.json",
+  "title": "BookingRequested",
+  "description": "data для CloudEvent type = booking.requested",
+  "type": "object",
+  "required": [
+    "bookingId",
+    "slotId",
+    "studentId",
+    "trainerId",
+    "startsAt",
+    "status"
+  ],
+  "properties": {
+    "bookingId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "slotId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "studentId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "trainerId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "startsAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "durationMinutes": {
+      "type": "integer"
+    },
+    "status": {
+      "enum": [
+        "DRAFT",
+        "AWAITING_COACH_APPROVAL",
+        "AWAITING_PAYMENT",
+        "CONFIRMED",
+        "COMPLETED",
+        "REJECTED_BY_COACH",
+        "CANCELLED_BY_STUDENT",
+        "CANCELLED_BY_COACH",
+        "EXPIRED",
+        "RESCHEDULED",
+        "NO_SHOW"
+      ]
+    },
+    "version": {
+      "type": "integer"
+    }
+  },
+  "additionalProperties": true
+}
