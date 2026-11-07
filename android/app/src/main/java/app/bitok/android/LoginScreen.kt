@@ -56,7 +56,7 @@ fun LoginScreen(app: AppState) {
             } else {
                 Title("Код из SMS отправлен на ${account?.phone}")
                 OutlinedTextField(code, { code = it }, Modifier.fillMaxWidth(), placeholder = { Text("Код") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPad), singleLine = true)
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword), singleLine = true)
                 Secondary("Демо-режим: код для тестовых учёток — ${DemoAccount.OTP}")
                 PrimaryButton("Войти", enabled = code.length >= 4) {
                     if (code == DemoAccount.OTP) account?.let { app.signIn(it) } else error = "Неверный код"
