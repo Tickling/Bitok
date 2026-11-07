@@ -1,4 +1,5 @@
-// App/Sources/FeatureRoots.swift — корневые экраны вкладок «Прогресс», «Ученики», «Контент».
+// App/Sources/FeatureRoots.swift — корневые экраны вкладок «Прогресс» и «Ученики».
+// «Контент» — ContentScreens.swift.
 // «Профиль» — ProfileScreen.swift.
 // «Календарь» — StudentBooking.swift / CoachSchedule.swift, «Чат» — Chat.swift.
 import SwiftUI
@@ -10,7 +11,6 @@ import ProgressDomain
 import ProgressUI
 import AchievementDomain
 import AchievementUI
-import ShopUI
 
 // MARK: - Календарь (по роли)
 
@@ -109,7 +109,7 @@ struct StudentsRootView: View {
         let waiting = backend.bookings(ofStudent: student.id)
             .contains { $0.trainerId == me && $0.status == .completed && !backend.isEvaluated($0.id) }
         return HStack(spacing: Space.m) {
-            Avatar(initials: student.initials, size: 44)
+            Avatar(initials: student.initials, size: 44, userId: student.id)
             VStack(alignment: .leading, spacing: 2) {
                 Text(student.name).font(.headline)
                 Text(student.phone).font(.caption).foregroundStyle(palette.textSecondary)
@@ -142,7 +142,7 @@ struct StudentDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.l) {
                 HStack(spacing: Space.m) {
-                    Avatar(initials: student?.initials ?? "?", size: 56)
+                    Avatar(initials: student?.initials ?? "?", size: 56, userId: studentId)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(student?.name ?? "Ученик").font(.title3.weight(.semibold))
                         Text(progress.current.level?.title ?? "Пока без оценок").foregroundStyle(palette.textSecondary)
@@ -175,6 +175,8 @@ struct StudentDetailView: View {
                 .padding(Space.m)
                 .glassCard()
 
+                StudentPriceCard(container: container, studentId: studentId)
+
                 Button("Написать ученику") { container.openChat(with: studentId) }
                     .buttonStyle(.cueGlassProminent)
 
@@ -199,24 +201,57 @@ struct StudentDetailView: View {
     }
 }
 
-// MARK: - Контент
+/// Индивидуальная цена тренировки для ученика. Применяется к новым записям.
+struct StudentPriceCard: View {
+    @Environment(\.palette) private var palette
+    let container: AppContainer
+    let studentId: UserID
+    @State private var value: Int64 = 0
+    @State private var loaded = false
 
-struct ContentRootView: View {
-    let showsShop: Bool
+    private var backend: DemoBackend { container.backend }
+    private var coachId: UserID { container.currentUserId }
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if showsShop {
-                    ShopComingSoonView()
-                } else {
-                    ContentUnavailableView("Новости, уроки и турниры", systemImage: "newspaper",
-                                           description: Text("Раздел появится в следующей версии"))
+        let custom = backend.hasCustomPrice(coach: coachId, student: studentId)
+        let base = backend.coach(coachId)?.price ?? .rubles(0)
+        VStack(alignment: .leading, spacing: Space.s) {
+            HStack {
+                Text("Цена для ученика").font(.headline)
+                Spacer()
+                Text(custom ? "своя" : "базовая").font(.caption.weight(.semibold))
+                    .foregroundStyle(custom ? palette.accent : palette.textSecondary)
+            }
+            HStack {
+                TextField("Цена", value: $value, format: .number)
+                    .keyboardType(.numberPad)
+                    .font(.title3.bold().monospacedDigit())
+                    .padding(Space.s)
+                    .glassCard(cornerRadius: Radius.m)
+                Text("₽ за час").foregroundStyle(palette.textSecondary)
+            }
+            HStack {
+                Button("Сохранить") { backend.setPrice(value, coach: coachId, student: studentId) }
+                    .buttonStyle(.borderedProminent)
+                if custom {
+                    Button("Вернуть базовую (\(Fmt.price(base)))") {
+                        backend.setPrice(nil, coach: coachId, student: studentId)
+                        value = NSDecimalNumber(decimal: base.decimalValue).int64Value
+                    }
+                    .buttonStyle(.bordered)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(ThemedBackground())
-            .navigationTitle("Контент")
+            .font(.callout)
+            Text("Новые записи этого ученика будут по этой цене. Другие ученики её не видят.")
+                .font(.caption).foregroundStyle(palette.textSecondary)
+        }
+        .padding(Space.m)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassCard()
+        .onAppear {
+            guard !loaded else { return }
+            value = NSDecimalNumber(decimal: backend.price(coach: coachId, student: studentId).decimalValue).int64Value
+            loaded = true
         }
     }
 }

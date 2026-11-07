@@ -7,6 +7,7 @@ import DesignSystem
 struct BitokApp: App {
     @State private var themes = ThemeManager()
     @State private var container = AppContainer.demo()
+    @AppStorage(TextSize.storageKey) private var textSize = TextSize.standard.rawValue
 
     var body: some Scene {
         WindowGroup {
@@ -18,6 +19,7 @@ struct BitokApp: App {
                 }
             }
             .environment(themes)
+            .dynamicTypeSize((TextSize(rawValue: textSize) ?? .standard).dynamicType)
             .environment(\.locale, Locale(identifier: "ru_RU"))
             .onOpenURL { url in
                 // Возврат из банка (universal link /pay/return) лишь будит обновление статуса —

@@ -19,17 +19,19 @@ struct DemoPerson: Identifiable, Hashable, Sendable {
     }
 }
 
-/// Тренер: человек + клуб и описание расписания.
+/// Тренер: человек + редактируемое описание. Где и когда он тренирует — в его местах (DemoVenue).
 struct DemoCoach: Identifiable, Hashable, Sendable {
     let person: DemoPerson
-    let rank: String
-    let clubName: String
-    let clubAddress: String
-    let scheduleTitle: String
-    let price: Money
-    /// Рабочие дни (Calendar weekday: 1 — воскресенье … 7 — суббота) и часы начала тренировок.
-    let weekdays: Set<Int>
-    let hours: [Int]
+    /// Квалификация: «Мастер спорта», «КМС» и т. п.
+    var rank: String
+    /// Часы работы текстом: «Пн–Сб, 16:00–22:00».
+    var scheduleTitle: String
+    /// Базовая цена; для отдельных учеников тренер может задать свою.
+    var price: Money
+    var about: String = ""
+    /// Основное место (первое в списке мест тренера).
+    var clubName: String = ""
+    var clubAddress: String = ""
 
     var id: UserID { person.id }
     var name: String { person.name }
@@ -86,6 +88,12 @@ struct DemoProfile: Codable, Hashable, Sendable {
 
 private struct DemoSnapshot: Codable {
     var profiles: [UserID: DemoProfile]? = nil
+    var venues: [DemoVenue]? = nil
+    var coachInfo: [UserID: DemoCoachInfo]? = nil
+    var studentPrices: [UserID: [UserID: Int64]]? = nil
+    var groups: [DemoGroupSession]? = nil
+    var news: [DemoNews]? = nil
+    var listings: [DemoListing]? = nil
     var slots: [BookingSlot]
     var bookings: [Booking]
     var records: [ProgressRecord]
@@ -103,16 +111,17 @@ final class DemoBackend {
     static let ivanId = UserID(UUID(uuidString: "00000000-0000-0000-0000-000000000001")!)
     static let natashaId = UserID(UUID(uuidString: "00000000-0000-0000-0000-000000000005")!)
 
-    let coaches: [DemoCoach] = [
+    /// Тренеры в исходном виде; правки профиля (DemoCoachInfo) и места накладываются в syncCoaches().
+    static let baseCoaches: [DemoCoach] = [
         DemoCoach(person: DemoPerson(id: DemoBackend.alexeyId, name: "Алексей Воронов", phone: "+7 900 000-00-01"),
-                  rank: "Мастер спорта", clubName: "Престиж", clubAddress: "Москва, ул. Тверская, 10",
-                  scheduleTitle: "Пн–Сб, вечер 16:00–22:00", price: .rubles(2500),
-                  weekdays: [2, 3, 4, 5, 6, 7], hours: [16, 17, 18, 19, 20, 21]),
+                  rank: "Мастер спорта", scheduleTitle: "Пн–Сб 16:00–22:00, Вс 12:00–16:00", price: .rubles(2500),
+                  about: "Русский бильярд, 15 лет тренерского опыта"),
         DemoCoach(person: DemoPerson(id: DemoBackend.veronikaId, name: "Вероника Смирнова", phone: "+7 900 000-00-03"),
-                  rank: "КМС, тренер по пулу", clubName: "Пирамида", clubAddress: "Москва, ул. Арбат, 25",
-                  scheduleTitle: "Пн, Ср, Пт, Вс — утро и день 10:00–15:00", price: .rubles(2000),
-                  weekdays: [1, 2, 4, 6], hours: [10, 11, 12, 13, 14]),
+                  rank: "КМС, тренер по пулу", scheduleTitle: "Пн, Ср, Пт, Вс 10:00–15:00", price: .rubles(2000),
+                  about: "Пул и постановка удара с нуля"),
     ]
+
+    var coaches: [DemoCoach] = DemoBackend.baseCoaches
 
     let students: [DemoPerson] = [
         DemoPerson(id: DemoBackend.ivanId, name: "Иван Петров", phone: "+7 900 000-00-02"),
@@ -122,20 +131,27 @@ final class DemoBackend {
         DemoPerson(id: DemoBackend.natashaId, name: "Наталья Белова", phone: "+7 900 000-00-04"),
     ]
 
-    private(set) var slots: [BookingSlot] = []
-    private(set) var bookings: [Booking] = []
+    var slots: [BookingSlot] = []
+    var bookings: [Booking] = []
     private(set) var records: [ProgressRecord] = []
-    private(set) var events: [DemoEvent] = []
-    private(set) var messages: [DemoMessage] = []
+    var events: [DemoEvent] = []
+    var messages: [DemoMessage] = []
     private(set) var privacy = PrivacySettings()
     private(set) var profiles: [UserID: DemoProfile] = [:]
+    var venues: [DemoVenue] = []
+    var coachInfo: [UserID: DemoCoachInfo] = [:]
+    var studentPrices: [UserID: [UserID: Int64]] = [:]
+    var groups: [DemoGroupSession] = []
+    var news: [DemoNews] = []
+    var listings: [DemoListing] = []
 
-    private static let storageKey = "demoBackend.v3"
+    private static let storageKey = "demoBackend.v4"
 
     init() {
         // Данные прошлых версий (v1 — один тренер, v2 — без Натальи) пересоздаются.
         UserDefaults.standard.removeObject(forKey: "demoBackend.v1")
         UserDefaults.standard.removeObject(forKey: "demoBackend.v2")
+        UserDefaults.standard.removeObject(forKey: "demoBackend.v3")   // v3 — без мест, групп и магазина
         if let data = UserDefaults.standard.data(forKey: Self.storageKey),
            let snapshot = try? JSONDecoder().decode(DemoSnapshot.self, from: data) {
             apply(snapshot)
@@ -187,16 +203,24 @@ final class DemoBackend {
     func booking(_ id: BookingID) -> Booking? { bookings.first { $0.id == id } }
 
     /// Свободные слоты тренера на день, доступные ученику (не раньше чем через 2 часа — BR-005.3).
-    func freeSlots(of coachId: UserID, on day: Date, now: Date = Date()) -> [BookingSlot] {
+    /// `student` — показываем только места, открытые этому ученику (у тренера могут быть места «для своих»).
+    func freeSlots(of coachId: UserID, on day: Date, for student: UserID? = nil, now: Date = Date()) -> [BookingSlot] {
         slots.filter { $0.trainerId == coachId && Calendar.current.isDate($0.startsAt, inSameDayAs: day)
-            && $0.isBookable(at: now) && $0.startsAt.timeIntervalSince(now) >= 2 * 3600 }
+            && $0.isBookable(at: now) && $0.startsAt.timeIntervalSince(now) >= 2 * 3600
+            && isVisible($0, to: student) }
             .sorted { $0.startsAt < $1.startsAt }
     }
 
     /// Дни, в которые у тренера есть свободное время.
-    func availableDays(of coachId: UserID, now: Date = Date()) -> Set<Date> {
-        Set(slots.filter { $0.trainerId == coachId && $0.isBookable(at: now) && $0.startsAt.timeIntervalSince(now) >= 2 * 3600 }
+    func availableDays(of coachId: UserID, for student: UserID? = nil, now: Date = Date()) -> Set<Date> {
+        Set(slots.filter { $0.trainerId == coachId && $0.isBookable(at: now) && $0.startsAt.timeIntervalSince(now) >= 2 * 3600
+            && isVisible($0, to: student) }
             .map { Calendar.current.startOfDay(for: $0.startsAt) })
+    }
+
+    private func isVisible(_ slot: BookingSlot, to student: UserID?) -> Bool {
+        guard let student else { return true }
+        return canBook(clubId: slot.clubId, student: student)
     }
 
     /// Все дни, когда тренер работает (для календаря тренера).
@@ -245,7 +269,10 @@ final class DemoBackend {
         }
         guard !overlaps else { throw BookingError.overlappingBooking }
 
-        let booking = try Booking.request(id: BookingID(), slot: slot, studentId: studentId, comment: comment, now: now)
+        guard canBook(clubId: slot.clubId, student: studentId) else { throw BookingError.forbidden }
+        // Цена — индивидуальная для ученика, если тренер её задал.
+        let booking = try Booking.request(id: BookingID(), slot: priced(slot, for: studentId), studentId: studentId,
+                                          comment: comment, now: now)
         try slot.hold(until: booking.approvalExpiresAt, now: now)
         slots[index] = slot
         bookings.append(booking)
@@ -267,7 +294,8 @@ final class DemoBackend {
         save()
     }
 
-    func reject(_ id: BookingID, reason: CancellationReason) throws {
+    /// `note` — свой текст в чат вместо стандартного (например, когда тренер сразу предлагает другое время).
+    func reject(_ id: BookingID, reason: CancellationReason, note: String? = nil) throws {
         guard let current = booking(id) else { throw BookingError.slotNotAvailable }
         try update(id) { booking, now in
             try booking.reject(by: .coach(current.trainerId), reason: reason, now: now)
@@ -275,8 +303,21 @@ final class DemoBackend {
         mutateSlot(current.slotId) { $0.release() }
         notify(current.studentId, "Заявка отклонена", "\(Self.when(current.startsAt)) · \(Self.reasonTitle(reason.code))")
         post(from: current.trainerId, to: current.studentId,
-             text: "Заявка отклонена: \(Self.reasonTitle(reason.code).lowercased()). Выберите другое время", bookingId: id)
+             text: note ?? "Заявка отклонена: \(Self.reasonTitle(reason.code).lowercased()). Выберите другое время", bookingId: id)
         save()
+    }
+
+    /// Тренер отвечает на заявку своим временем: заявка закрывается, ученику приходит предложение нового слота.
+    func counterPropose(bookingId: BookingID, slotId: SlotID, comment: String?) throws {
+        guard let current = booking(bookingId), let slot = slot(slotId) else { throw BookingError.slotNotAvailable }
+        guard slot.isBookable(at: Date()) else { throw BookingError.slotAlreadyTaken }
+        if current.status == .awaitingCoachApproval {
+            try reject(bookingId, reason: CancellationReason(code: .scheduleConflict),
+                       note: "В \(Fmt.time(current.startsAt)) не получится — предлагаю другое время 👇")
+        } else if current.status == .confirmed {
+            try cancel(bookingId, by: current.trainerId, reason: CancellationReason(code: .coachUnavailable))
+        }
+        try proposeSlot(coachId: current.trainerId, studentId: current.studentId, slotId: slotId, comment: comment)
     }
 
     func cancel(_ id: BookingID, by actor: UserID, reason: CancellationReason?) throws {
@@ -368,8 +409,8 @@ final class DemoBackend {
                     && slot.startsAt < other.startsAt.addingTimeInterval(TimeInterval(other.durationMinutes * 60))
             }
             guard !overlaps else { throw BookingError.overlappingBooking }
-            let booking = try Booking.assignByCoach(id: BookingID(), slot: slot, studentId: studentId, coachId: coachId,
-                                                    isCoachesStudent: true, decision: .notRequired, now: now)
+            let booking = try Booking.assignByCoach(id: BookingID(), slot: priced(slot, for: studentId), studentId: studentId,
+                                                    coachId: coachId, isCoachesStudent: true, decision: .notRequired, now: now)
             slot.markBooked()
             slots[slotIndex] = slot
             bookings.append(booking)
@@ -442,9 +483,11 @@ final class DemoBackend {
         firstSlot.release()
         secondSlot.release()
         // Ученик первой брони получает слот второй и наоборот.
-        let firstNew = try Booking.assignByCoach(id: BookingID(), slot: secondSlot, studentId: first.studentId, coachId: coachId,
+        let firstNew = try Booking.assignByCoach(id: BookingID(), slot: priced(secondSlot, for: first.studentId),
+                                                 studentId: first.studentId, coachId: coachId,
                                                  isCoachesStudent: true, decision: .notRequired, now: now)
-        let secondNew = try Booking.assignByCoach(id: BookingID(), slot: firstSlot, studentId: second.studentId, coachId: coachId,
+        let secondNew = try Booking.assignByCoach(id: BookingID(), slot: priced(firstSlot, for: second.studentId),
+                                                  studentId: second.studentId, coachId: coachId,
                                                   isCoachesStudent: true, decision: .notRequired, now: now)
         firstSlot.markBooked()
         secondSlot.markBooked()
@@ -580,35 +623,43 @@ final class DemoBackend {
         messages = []
         privacy = PrivacySettings()
         profiles = [:]
+        venues = []
+        coachInfo = [:]
+        studentPrices = [:]
+        groups = []
+        news = []
+        listings = []
+        coaches = Self.baseCoaches
         seed()
     }
 
     // MARK: - Private
 
-    private func update(_ id: BookingID, _ change: (inout Booking, Date) throws -> Void) throws {
+    func update(_ id: BookingID, _ change: (inout Booking, Date) throws -> Void) throws {
         guard let index = bookings.firstIndex(where: { $0.id == id }) else { throw BookingError.slotNotAvailable }
         var booking = bookings[index]
         try change(&booking, Date())
         bookings[index] = booking
     }
 
-    private func mutateSlot(_ id: SlotID, _ change: (inout BookingSlot) -> Void) {
+    func mutateSlot(_ id: SlotID, _ change: (inout BookingSlot) -> Void) {
         guard let index = slots.firstIndex(where: { $0.id == id }) else { return }
         var slot = slots[index]
         change(&slot)
         slots[index] = slot
     }
 
-    private func notify(_ userId: UserID, _ title: String, _ body: String) {
+    func notify(_ userId: UserID, _ title: String, _ body: String) {
         events.append(DemoEvent(id: UUID(), userId: userId, title: title, body: body, date: Date()))
     }
 
-    private func post(from: UserID, to: UserID, text: String, bookingId: BookingID?) {
+    func post(from: UserID, to: UserID, text: String, bookingId: BookingID?) {
         messages.append(DemoMessage(id: UUID(), from: from, to: to, text: text, date: Date(), bookingId: bookingId))
     }
 
-    private func save() {
-        let snapshot = DemoSnapshot(profiles: profiles, slots: slots, bookings: bookings, records: records, events: events,
+    func save() {
+        let snapshot = DemoSnapshot(profiles: profiles, venues: venues, coachInfo: coachInfo, studentPrices: studentPrices,
+                                    groups: groups, news: news, listings: listings, slots: slots, bookings: bookings, records: records, events: events,
                                     messages: messages, privacy: privacy)
         if let data = try? JSONEncoder().encode(snapshot) {
             UserDefaults.standard.set(data, forKey: Self.storageKey)
@@ -623,25 +674,21 @@ final class DemoBackend {
         messages = snapshot.messages
         privacy = snapshot.privacy
         profiles = snapshot.profiles ?? [:]
+        venues = snapshot.venues ?? []
+        coachInfo = snapshot.coachInfo ?? [:]
+        studentPrices = snapshot.studentPrices ?? [:]
+        groups = snapshot.groups ?? []
+        news = snapshot.news ?? []
+        listings = snapshot.listings ?? []
+        syncCoaches()
     }
 
     /// Начальные данные: расписания двух тренеров на 3 недели, история Ивана, заявки других учеников.
     private func seed() {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: Date())
-        for (coachIndex, coach) in coaches.enumerated() {
-            for dayOffset in -45...21 {
-                guard let day = calendar.date(byAdding: .day, value: dayOffset, to: today),
-                      coach.weekdays.contains(calendar.component(.weekday, from: day)) else { continue }
-                for hour in coach.hours {
-                    guard let start = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: day),
-                          let slot = try? BookingSlot(id: SlotID(), trainerId: coach.id, clubId: ClubID(),
-                                                      tableNumber: (hour + coachIndex) % 4 + 1, startsAt: start,
-                                                      durationMinutes: 60, price: coach.price)
-                    else { continue }
-                    slots.append(slot)
-                }
-            }
+        seedVenues()
+        syncCoaches()
+        for coach in coaches {
+            generateSlots(for: coach.id, fromDay: -45)
         }
 
         let alexey = coaches[0].id, veronika = coaches[1].id
@@ -689,6 +736,7 @@ final class DemoBackend {
             messages.append(DemoMessage(id: UUID(), from: alexey, to: student, text: "Тренировка подтверждена ✓ Жду вас!",
                                         date: Date().addingTimeInterval(-4 * 3600), bookingId: booking.id))
         }
+        seedExtras()
         for student in [ivan, natasha] {
             notify(student, "Добро пожаловать в «Биток»", "Выберите тренера и запишитесь во вкладке «Календарь»")
         }
@@ -704,7 +752,9 @@ final class DemoBackend {
         let calendar = Calendar.current
         guard let day = calendar.date(byAdding: .day, value: dayOffset, to: calendar.startOfDay(for: Date())) else { return nil }
         // Ближайший рабочий день тренера, начиная с нужного (у Вероники не каждый день рабочий).
+        let mainClub = venues.first { $0.coachId == coach }?.clubId
         let candidates = slots.indices.filter { slots[$0].trainerId == coach && slots[$0].status == .available
+            && slots[$0].clubId == mainClub
             && slots[$0].startsAt >= day }
             .sorted { slots[$0].startsAt < slots[$1].startsAt }
         guard let index = candidates.first else { return nil }
@@ -728,7 +778,7 @@ final class DemoBackend {
     }
 
     static func when(_ date: Date) -> String {
-        date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).hour().minute())
+        date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).hour(.twoDigits(amPM: .omitted)).minute().locale(Fmt.locale))
     }
 
     static func reasonTitle(_ code: CancellationReasonCode) -> String {

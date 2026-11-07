@@ -2,6 +2,17 @@
 import SwiftUI
 import DesignSystem
 
+public extension Calendar {
+    /// Русский календарь: неделя с понедельника, названия дней и месяцев по-русски.
+    static var bitok: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = Locale(identifier: "ru_RU")
+        calendar.firstWeekday = 2
+        calendar.timeZone = .current
+        return calendar
+    }
+}
+
 public struct MonthGrid: View {
     @Environment(\.palette) private var palette
     @Binding private var selection: Date?
@@ -11,7 +22,7 @@ public struct MonthGrid: View {
     private let calendar: Calendar
 
     public init(month: Date, selection: Binding<Date?>, availableDays: Set<Date>,
-                myBookingDays: Set<Date>, calendar: Calendar = .current) {
+                myBookingDays: Set<Date>, calendar: Calendar = .bitok) {
         self.month = month
         self._selection = selection
         self.availableDays = availableDays
@@ -20,7 +31,8 @@ public struct MonthGrid: View {
     }
 
     private var weekdaySymbols: [String] {
-        let symbols = calendar.veryShortStandaloneWeekdaySymbols
+        // «пн», «вт» … — у однобуквенных сокращений есть повторы (П, С, В).
+        let symbols = calendar.shortStandaloneWeekdaySymbols.map { $0.prefix(2).capitalized }
         let shift = calendar.firstWeekday - 1
         return Array(symbols[shift...] + symbols[..<shift])
     }
@@ -37,7 +49,7 @@ public struct MonthGrid: View {
 
     public var body: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Space.xs), count: 7), spacing: Space.xs) {
-            ForEach(weekdaySymbols, id: \.self) { symbol in
+            ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, symbol in
                 Text(symbol).font(.caption2).foregroundStyle(palette.textSecondary)
             }
             ForEach(Array(cells.enumerated()), id: \.offset) { _, day in
@@ -75,7 +87,7 @@ public struct MonthGrid: View {
         .buttonStyle(.plain)
         .disabled(!isAvailable)
         .opacity(isAvailable ? 1 : 0.35)
-        .accessibilityLabel(Text(day, format: .dateTime.weekday(.wide).day().month(.wide)))
+        .accessibilityLabel(Text(day.formatted(.dateTime.weekday(.wide).day().month(.wide).locale(calendar.locale ?? .current))))
         .accessibilityHint(isAvailable ? "Есть свободное время" : "Нет свободных слотов")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }

@@ -19,6 +19,12 @@ public struct GlassCard: ViewModifier {
 
     public func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        // Вся карточка реагирует на нажатие, а не только текст и иконки внутри.
+        styled(content, shape: shape).contentShape(shape)
+    }
+
+    @ViewBuilder
+    private func styled(_ content: Content, shape: RoundedRectangle) -> some View {
         if reduceTransparency {
             content.background(palette.surfaceOpaque, in: shape)
         } else {

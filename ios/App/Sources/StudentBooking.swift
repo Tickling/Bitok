@@ -13,6 +13,7 @@ struct StudentBookingScreen: View {
     @State private var selectedSlotId: SlotID?
     @State private var showConfirm = false
     @State private var openedBooking: BookingRef?
+    @State private var openedGroup: GroupRef?
 
     private var backend: DemoBackend { container.backend }
     private var me: UserID { container.currentUserId }
@@ -27,8 +28,9 @@ struct StudentBookingScreen: View {
                     trainerCard
                     monthHeader
                     MonthGrid(month: month, selection: $selectedDay,
-                              availableDays: backend.availableDays(of: coachId), myBookingDays: myBookingDays)
+                              availableDays: backend.availableDays(of: coachId, for: me), myBookingDays: myBookingDays)
                     slotsSection
+                    groupsSection
                     myBookingsSection
                 }
                 .padding(Space.l)
@@ -54,6 +56,24 @@ struct StudentBookingScreen: View {
             .sheet(item: $openedBooking) { ref in
                 BookingDetailView(bookingId: ref.id, container: container)
             }
+            .sheet(item: $openedGroup) { ref in
+                GroupSessionSheet(container: container, groupId: ref.id)
+            }
+        }
+    }
+
+    /// Групповые (игровые) тренировки выбранного тренера.
+    @ViewBuilder
+    private var groupsSection: some View {
+        let sessions = backend.openGroups(of: coachId, for: me)
+        if !sessions.isEmpty {
+            Text("Групповые тренировки").font(.headline)
+            ForEach(sessions) { session in
+                Button { openedGroup = GroupRef(id: session.id) } label: {
+                    GroupCard(session: session, backend: backend, joined: session.participants.contains(me))
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 
@@ -71,7 +91,7 @@ struct StudentBookingScreen: View {
                     withAnimation(.spring(duration: 0.25)) { container.selectedCoachId = item.id }
                 } label: {
                     HStack(spacing: Space.xs) {
-                        Avatar(initials: item.person.initials, size: 24)
+                        Avatar(initials: item.person.initials, size: 24, userId: item.id)
                         Text(item.name.split(separator: " ").first.map(String.init) ?? item.name)
                             .font(.callout.weight(.semibold))
                     }
@@ -93,10 +113,12 @@ struct StudentBookingScreen: View {
     private var trainerCard: some View {
         if let coach {
             HStack(spacing: Space.m) {
-                Avatar(initials: coach.person.initials, size: 44)
+                Avatar(initials: coach.person.initials, size: 44, userId: coach.id)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(coach.name).font(.headline)
-                    Text("\(coach.rank) · \(coach.clubName) · \(Fmt.price(coach.price))/ч")
+                    Text(coach.rank).font(.caption).foregroundStyle(palette.textSecondary)
+                    Label(backend.venues(of: coach.id).filter { backend.canBook(clubId: $0.clubId, student: me) }
+                            .map(\.name).joined(separator: " · "), systemImage: "mappin.and.ellipse")
                         .font(.caption).foregroundStyle(palette.textSecondary)
                     Label(coach.scheduleTitle, systemImage: "clock")
                         .font(.caption).foregroundStyle(palette.textSecondary)
@@ -113,7 +135,7 @@ struct StudentBookingScreen: View {
             Button { shiftMonth(-1) } label: { Image(systemName: "chevron.left") }
                 .accessibilityLabel("Предыдущий месяц")
             Spacer()
-            Text(month.formatted(.dateTime.month(.wide).year()).capitalized)
+            Text(Fmt.monthYear(month).capitalized)
                 .font(.title3.weight(.semibold))
                 .fontDesign(palette.headingDesign)
             Spacer()
@@ -126,7 +148,8 @@ struct StudentBookingScreen: View {
     @ViewBuilder
     private var slotsSection: some View {
         if let day = selectedDay {
-            let slots = backend.freeSlots(of: coachId, on: day)
+            let slots = backend.freeSlots(of: coachId, on: day, for: me)
+            let manyPlaces = Set(slots.map(\.clubId)).count > 1
             VStack(alignment: .leading, spacing: Space.s) {
                 Text(Fmt.day(day).capitalized).font(.headline)
                 if slots.isEmpty {
@@ -138,8 +161,13 @@ struct StudentBookingScreen: View {
                             Button {
                                 withAnimation(.spring(duration: 0.25)) { selectedSlotId = isSelected ? nil : slot.id }
                             } label: {
-                                Text(Fmt.time(slot.startsAt))
-                                    .font(.callout.weight(.semibold).monospacedDigit())
+                                VStack(spacing: 0) {
+                                    Text(Fmt.time(slot.startsAt))
+                                        .font(.callout.weight(.semibold).monospacedDigit())
+                                    if manyPlaces {
+                                        Text(backend.venue(clubId: slot.clubId)?.name ?? "").font(.caption2).lineLimit(1)
+                                    }
+                                }
                                     .frame(maxWidth: .infinity, minHeight: 44)
                                     .foregroundStyle(isSelected ? palette.onAccent : palette.textPrimary)
                                     .background {
@@ -166,7 +194,17 @@ struct StudentBookingScreen: View {
     private var myBookingsSection: some View {
         let all = backend.bookings(ofStudent: me)
         let upcoming = all.filter { $0.status.holdsSlot }.sorted { $0.startsAt < $1.startsAt }
-        let past = all.filter { !$0.status.holdsSlot }.prefix(5)
+        let past = all.filter { !$0.status.holdsSlot && $0.status != .rescheduled }.prefix(5)
+        let myGroups = backend.groups(ofStudent: me).filter { $0.coachId != coachId }
+        if !myGroups.isEmpty {
+            Text("Мои групповые у других тренеров").font(.headline)
+            ForEach(myGroups) { session in
+                Button { openedGroup = GroupRef(id: session.id) } label: {
+                    GroupCard(session: session, backend: backend, joined: true)
+                }
+                .buttonStyle(.plain)
+            }
+        }
         if !upcoming.isEmpty {
             Text("Мои записи").font(.headline)
             Text("Нажмите на запись, чтобы отменить или перенести").font(.caption).foregroundStyle(palette.textSecondary)
@@ -224,7 +262,7 @@ struct BookingConfirmSheet: View {
                     Text("Проверьте запись").font(.title2.weight(.semibold)).fontDesign(palette.headingDesign)
                     VStack(alignment: .leading, spacing: Space.m) {
                         HStack(spacing: Space.m) {
-                            Avatar(initials: container.backend.person(slot.trainerId)?.initials ?? "?", size: 44)
+                            Avatar(initials: container.backend.person(slot.trainerId)?.initials ?? "?", size: 44, userId: slot.trainerId)
                             VStack(alignment: .leading) {
                                 Text("Тренер").font(.caption).foregroundStyle(palette.textSecondary)
                                 Text(container.backend.name(slot.trainerId)).font(.headline)
@@ -233,8 +271,10 @@ struct BookingConfirmSheet: View {
                         Divider()
                         row("calendar", "Дата", Fmt.day(slot.startsAt).capitalized)
                         row("clock", "Время", Fmt.range(slot.startsAt, minutes: slot.durationMinutes))
-                        row("mappin.and.ellipse", "Где", "\(container.backend.coach(slot.trainerId)?.clubName ?? "Клуб"), стол \(slot.tableNumber ?? 1)")
-                        row("rublesign.circle", "Стоимость", "\(Fmt.price(slot.price)) · оплата в клубе")
+                        row("mappin.and.ellipse", "Где", container.backend.placeTitle(slotId: slot.id))
+                        row("building.2", "Адрес", container.backend.placeAddress(slotId: slot.id))
+                        row("rublesign.circle", "Стоимость",
+                            "\(Fmt.price(container.backend.price(coach: slot.trainerId, student: container.currentUserId))) · оплата в клубе")
                     }
                     .padding(Space.l)
                     .glassCard()

@@ -7,6 +7,7 @@ import BookingDomain
 import ProgressDomain
 import AchievementDomain
 import AchievementUI
+import PhotosUI
 
 struct ProfileRootView: View {
     @Environment(\.palette) private var palette
@@ -57,11 +58,7 @@ struct ProfileRootView: View {
                 }
                 Spacer()
                 ProfileFrameView(style: frame.style) {
-                    Text(person?.initials ?? "?")
-                        .font(.system(size: 30, weight: .heavy))
-                        .foregroundStyle(.white)
-                        .frame(width: 84, height: 84)
-                        .background(Color.black.opacity(0.18))
+                    Avatar(initials: person?.initials ?? "?", size: 84, userId: me)
                 }
             }
             HStack {
@@ -152,7 +149,7 @@ struct ProfileRootView: View {
     @ViewBuilder
     private var coachCard: some View {
         if let coach = backend.coach(me) {
-            let calendar = Calendar.current
+            let calendar = Calendar.bitok
             let weekStart = calendar.dateInterval(of: .weekOfYear, for: Date())?.start ?? Date()
             let weekEnd = weekStart.addingTimeInterval(7 * 86_400)
             let mine = backend.bookings.filter { $0.trainerId == me }
@@ -160,14 +157,17 @@ struct ProfileRootView: View {
             let waiting = mine.filter { $0.status == .completed && !backend.isEvaluated($0.id) }.count
             VStack(alignment: .leading, spacing: Space.m) {
                 HStack(spacing: Space.m) {
-                    Avatar(initials: backend.person(me)?.initials ?? "?", size: 72)
+                    Avatar(initials: backend.person(me)?.initials ?? "?", size: 72, userId: me)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(backend.name(me)).font(.title3.weight(.bold))
                         Text(coach.rank).font(.callout).opacity(0.85)
-                        Text("\(coach.clubName) · \(Fmt.price(coach.price))/ч").font(.caption).opacity(0.85)
+                        Text(backend.venues(of: me).map(\.name).joined(separator: " · ")).font(.caption).opacity(0.85)
                     }
                 }
                 Label(coach.scheduleTitle, systemImage: "clock").font(.caption).opacity(0.9)
+                if !coach.about.isEmpty {
+                    Text(coach.about).font(.caption).opacity(0.9)
+                }
                 HStack {
                     stat("\(backend.students(of: me).count)", "учеников")
                     stat("\(thisWeek)", "на неделе")
@@ -199,6 +199,12 @@ struct ProfileRootView: View {
     private var menu: some View {
         VStack(spacing: 0) {
             menuLink("Редактировать профиль", "person.text.rectangle") { EditProfileView(container: container) }
+            if container.role == .trainer {
+                Divider().padding(.leading, 52)
+                menuLink("Места и расписание", "mappin.and.ellipse") { VenuesView(container: container) }
+                Divider().padding(.leading, 52)
+                menuLink("Групповые тренировки", "person.3") { CoachGroupsView(container: container) }
+            }
             if container.role == .student {
                 Divider().padding(.leading, 52)
                 menuLink("Трофеи и достижения", "trophy") {
@@ -217,6 +223,8 @@ struct ProfileRootView: View {
             }
             Divider().padding(.leading, 52)
             menuLink("Настройки", "gearshape") { SettingsView(container: container) }
+            Divider().padding(.leading, 52)
+            menuLink("Помощь", "questionmark.circle") { HelpView(role: container.role) }
         }
         .glassCard()
     }
@@ -250,19 +258,51 @@ struct EditProfileView: View {
     @Environment(\.dismiss) private var dismiss
     let container: AppContainer
     @State private var profile = DemoProfile(firstName: "", lastName: "", city: "", discipline: "", about: "")
+    @State private var coachInfo = DemoCoachInfo(rank: "", scheduleTitle: "", about: "", priceRubles: 0)
     @State private var loaded = false
+    @State private var photoItem: PhotosPickerItem?
+
+    private var isCoach: Bool { container.role == .trainer }
 
     private static let disciplines = ["Русский бильярд", "Пул", "Снукер", "Карамболь"]
 
     var body: some View {
         Form {
             Section {
-                HStack {
-                    Spacer()
-                    Avatar(initials: initials, size: 88)
-                    Spacer()
+                VStack(spacing: Space.s) {
+                    Avatar(initials: initials, size: 96, userId: container.currentUserId)
+                    PhotosPicker(selection: $photoItem, matching: .images) {
+                        Label(AvatarStore.shared.image(for: container.currentUserId) == nil ? "Загрузить фото" : "Изменить фото",
+                              systemImage: "camera")
+                    }
+                    if AvatarStore.shared.image(for: container.currentUserId) != nil {
+                        Button("Удалить фото", role: .destructive) { AvatarStore.shared.set(nil, for: container.currentUserId) }
+                            .font(.caption)
+                    }
                 }
+                .frame(maxWidth: .infinity)
                 .listRowBackground(Color.clear)
+            }
+            if isCoach {
+                Section {
+                    TextField("Мастер спорта, КМС, тренер по пулу…", text: $coachInfo.rank)
+                    TextField("Часы работы, например Пн–Сб 16:00–22:00", text: $coachInfo.scheduleTitle)
+                    TextField("Коротко о себе: опыт, специализация", text: $coachInfo.about, axis: .vertical)
+                        .lineLimit(2...4)
+                    HStack {
+                        Text("Базовая цена")
+                        Spacer()
+                        TextField("2500", value: $coachInfo.priceRubles, format: .number)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 90)
+                        Text("₽")
+                    }
+                } header: {
+                    Text("Тренер")
+                } footer: {
+                    Text("Цену видит только ученик в своей записи. Для отдельного ученика её можно изменить в его карточке (вкладка «Ученики»).")
+                }
             }
             Section("Имя") {
                 TextField("Имя", text: $profile.firstName)
@@ -273,9 +313,10 @@ struct EditProfileView: View {
                 Picker("Дисциплина", selection: $profile.discipline) {
                     ForEach(Self.disciplines, id: \.self) { Text($0).tag($0) }
                 }
-                TextField(container.role == .trainer ? "Опыт, специализация" : "Чего хотите добиться", text: $profile.about,
-                          axis: .vertical)
-                    .lineLimit(2...5)
+                if !isCoach {
+                    TextField("Чего хотите добиться", text: $profile.about, axis: .vertical)
+                        .lineLimit(2...5)
+                }
             }
             Section("Телефон") {
                 Text(container.account?.phone ?? "")
@@ -289,6 +330,9 @@ struct EditProfileView: View {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Сохранить") {
                     container.backend.updateProfile(profile, for: container.currentUserId)
+                    if isCoach {
+                        container.backend.updateCoachInfo(coachInfo, for: container.currentUserId)
+                    }
                     dismiss()
                 }
                 .disabled(profile.firstName.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -297,7 +341,16 @@ struct EditProfileView: View {
         .onAppear {
             guard !loaded else { return }
             profile = container.backend.profile(for: container.currentUserId)
+            coachInfo = container.backend.coachInfo(for: container.currentUserId)
             loaded = true
+        }
+        .onChange(of: photoItem) { _, item in
+            guard let item else { return }
+            Task {
+                let data = try? await item.loadTransferable(type: Data.self)
+                AvatarStore.shared.set(data, for: container.currentUserId)
+                photoItem = nil
+            }
         }
     }
 
@@ -387,6 +440,8 @@ struct SettingsView: View {
     @Environment(ThemeManager.self) private var themes
     @Bindable var container: AppContainer
     @AppStorage("reminder.minutes") private var reminderMinutes = 120
+    @AppStorage(TextSize.storageKey) private var textSize = TextSize.standard.rawValue
+    @AppStorage("coach.weekGrid") private var weekGrid = true
     @State private var confirmReset = false
 
     var body: some View {
@@ -398,6 +453,27 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.inline)
                 .labelsHidden()
+            }
+            Section {
+                Picker("Размер текста", selection: $textSize) {
+                    ForEach(TextSize.allCases) { Text($0.title).tag($0.rawValue) }
+                }
+                Text("Так будет выглядеть текст в приложении")
+                    .font(.body)
+                    .dynamicTypeSize((TextSize(rawValue: textSize) ?? .standard).dynamicType)
+            } header: {
+                Text("Текст")
+            } footer: {
+                Text("Меняет размер текста во всём приложении, независимо от настроек iPhone.")
+            }
+            if container.role == .trainer {
+                Section {
+                    Toggle("Сетка недели в календаре", isOn: $weekGrid)
+                } header: {
+                    Text("Календарь")
+                } footer: {
+                    Text("Во вкладке «Неделя» — цветная сетка «дни × часы». Выключите, чтобы видеть неделю списком.")
+                }
             }
             if container.role == .student {
                 Section {
@@ -419,7 +495,6 @@ struct SettingsView: View {
                 }
             }
             Section {
-                Toggle("Магазин (shopEnabled)", isOn: $container.flags.shopEnabled)
                 Button("Сбросить демо-данные", role: .destructive) { confirmReset = true }
             } header: {
                 Text("Демо")
@@ -452,5 +527,30 @@ struct SettingsView: View {
                 _ = container.backend.setPrivacy(settings)
             }
         )
+    }
+}
+
+// MARK: - Размер текста
+
+/// Размер текста во всём приложении (применяется в BitokApp через dynamicTypeSize).
+enum TextSize: Int, CaseIterable, Identifiable {
+    case standard, large, larger, largest
+    static let storageKey = "app.textSize"
+    var id: Self { self }
+    var title: String {
+        switch self {
+        case .standard: "Стандартный"
+        case .large: "Крупный"
+        case .larger: "Очень крупный"
+        case .largest: "Максимальный"
+        }
+    }
+    var dynamicType: DynamicTypeSize {
+        switch self {
+        case .standard: .large
+        case .large: .xLarge
+        case .larger: .xxLarge
+        case .largest: .xxxLarge
+        }
     }
 }

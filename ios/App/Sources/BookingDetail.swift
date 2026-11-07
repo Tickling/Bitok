@@ -13,15 +13,64 @@ struct BookingRef: Identifiable, Hashable {
     let id: BookingID
 }
 
+/// Форматы дат и цен — всегда по-русски, независимо от языка телефона.
 enum Fmt {
-    static func time(_ date: Date) -> String { date.formatted(.dateTime.hour().minute()) }
-    static func day(_ date: Date) -> String { date.formatted(.dateTime.weekday(.wide).day().month(.wide)) }
-    static func shortDay(_ date: Date) -> String { date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)) }
+    static let locale = Locale(identifier: "ru_RU")
+    static func time(_ date: Date) -> String { date.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute().locale(locale)) }
+    static func day(_ date: Date) -> String { date.formatted(.dateTime.weekday(.wide).day().month(.wide).locale(locale)) }
+    static func shortDay(_ date: Date) -> String { date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).locale(locale)) }
+    static func monthYear(_ date: Date) -> String {
+        date.formatted(.dateTime.month(.standaloneWide).year().locale(locale)).replacingOccurrences(of: " г.", with: "")
+    }
+    static func stamp(_ date: Date) -> String {
+        date.formatted(.dateTime.day().month(.abbreviated).hour(.twoDigits(amPM: .omitted)).minute().locale(locale))
+    }
     static func range(_ start: Date, minutes: Int) -> String {
         "\(time(start))–\(time(start.addingTimeInterval(TimeInterval(minutes * 60))))"
     }
     static func price(_ money: Money) -> String {
-        money.decimalValue.formatted(.currency(code: "RUB").precision(.fractionLength(0)))
+        money.decimalValue.formatted(.currency(code: "RUB").precision(.fractionLength(0)).locale(locale))
+    }
+    static func rubles(_ value: Int64) -> String { price(.rubles(value)) }
+}
+
+/// Фото профиля: хранятся на устройстве (Documents/avatars/<id>.jpg). В проде — Media Service + CDN.
+@MainActor
+@Observable
+final class AvatarStore {
+    static let shared = AvatarStore()
+    private(set) var images: [UserID: UIImage] = [:]
+
+    private var folder: URL {
+        URL.documentsDirectory.appending(path: "avatars", directoryHint: .isDirectory)
+    }
+
+    private init() {
+        let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
+        for file in files {
+            guard let uuid = UUID(uuidString: file.deletingPathExtension().lastPathComponent),
+                  let image = UIImage(contentsOfFile: file.path) else { continue }
+            images[UserID(uuid)] = image
+        }
+    }
+
+    func image(for id: UserID) -> UIImage? { images[id] }
+
+    /// Сохраняет уменьшенную до 512 px копию; nil — удалить фото.
+    func set(_ data: Data?, for id: UserID) {
+        let file = folder.appending(path: "\(id.rawValue.uuidString).jpg")
+        guard let data, let original = UIImage(data: data) else {
+            try? FileManager.default.removeItem(at: file)
+            images[id] = nil
+            return
+        }
+        let side: CGFloat = 512
+        let scale = min(1, side / max(original.size.width, original.size.height))
+        let size = CGSize(width: original.size.width * scale, height: original.size.height * scale)
+        let resized = UIGraphicsImageRenderer(size: size).image { _ in original.draw(in: CGRect(origin: .zero, size: size)) }
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try? resized.jpegData(compressionQuality: 0.85)?.write(to: file)
+        images[id] = resized
     }
 }
 
@@ -29,15 +78,27 @@ struct Avatar: View {
     @Environment(\.palette) private var palette
     let initials: String
     var size: CGFloat = 40
+    /// Если у пользователя есть фото — показываем его вместо инициалов.
+    var userId: UserID? = nil
 
     var body: some View {
-        Text(initials)
-            .font(.system(size: size * 0.36, weight: .bold))
-            .foregroundStyle(.white)
-            .frame(width: size, height: size)
-            .background(LinearGradient(colors: [palette.accent, palette.accentSecondary], startPoint: .topLeading,
-                                       endPoint: .bottomTrailing), in: Circle())
-            .accessibilityHidden(true)
+        Group {
+            if let userId, let image = AvatarStore.shared.image(for: userId) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: size, height: size)
+                    .clipShape(Circle())
+            } else {
+                Text(initials)
+                    .font(.system(size: size * 0.36, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: size, height: size)
+                    .background(LinearGradient(colors: [palette.accent, palette.accentSecondary], startPoint: .topLeading,
+                                               endPoint: .bottomTrailing), in: Circle())
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 
@@ -105,6 +166,7 @@ struct BookingDetailView: View {
     @State private var showCancel = false
     @State private var showEvaluation = false
     @State private var showSwap = false
+    @State private var showCounter = false
 
     private var backend: DemoBackend { container.backend }
     private var isCoach: Bool { container.role == .trainer }
@@ -138,6 +200,11 @@ struct BookingDetailView: View {
             .navigationDestination(isPresented: $showEvaluation) {
                 EvaluationView(bookingId: bookingId, container: container)
             }
+            .sheet(isPresented: $showCounter) {
+                if let booking = backend.booking(bookingId) {
+                    ProposeSlotSheet(container: container, studentId: booking.studentId, replacing: bookingId)
+                }
+            }
             .sheet(isPresented: $showSwap) {
                 SwapStudentsSheet(container: container, bookingId: bookingId) { dismiss() }
             }
@@ -160,7 +227,7 @@ struct BookingDetailView: View {
 
                 if let other {
                     HStack(spacing: Space.m) {
-                        Avatar(initials: other.initials, size: 48)
+                        Avatar(initials: other.initials, size: 48, userId: other.id)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(isCoach ? "Ученик" : "Тренер").font(.caption).foregroundStyle(palette.textSecondary)
                             Text(other.name).font(.headline)
@@ -175,8 +242,8 @@ struct BookingDetailView: View {
                 }
 
                 VStack(alignment: .leading, spacing: Space.s) {
-                    Label("\(coach?.clubName ?? "Клуб"), стол \(slot?.tableNumber ?? 1)", systemImage: "mappin.and.ellipse")
-                    Label(coach?.clubAddress ?? "", systemImage: "building.2")
+                    Label(backend.placeTitle(slotId: booking.slotId), systemImage: "mappin.and.ellipse")
+                    Label(backend.placeAddress(slotId: booking.slotId), systemImage: "building.2")
                     Label("\(booking.durationMinutes) мин · \(Fmt.price(booking.price)) · оплата в клубе", systemImage: "rublesign.circle")
                     if let comment = booking.studentComment, !comment.isEmpty {
                         Label("«\(comment)»", systemImage: "text.bubble")
@@ -249,6 +316,12 @@ struct BookingDetailView: View {
                 if allowed.contains(.reject) {
                     Button("Отклонить…", role: .destructive) { showReject = true }.buttonStyle(.bordered)
                 }
+                if booking.status == .awaitingCoachApproval || (booking.status == .confirmed && booking.startsAt > Date()) {
+                    Button { showCounter = true } label: {
+                        Label("Предложить другое время", systemImage: "calendar.badge.clock")
+                    }
+                    .buttonStyle(.bordered)
+                }
                 if !backend.swapCandidates(for: booking.id).isEmpty {
                     Button { showSwap = true } label: {
                         Label("Поменять местами с другим учеником", systemImage: "arrow.left.arrow.right")
@@ -320,7 +393,7 @@ struct BookingDetailView: View {
             }
             let coach = backend.coach(booking.trainerId)
             try await sync.upsertEvent(for: booking, trainerName: backend.name(booking.trainerId),
-                                       clubAddress: "\(coach?.clubName ?? ""), \(coach?.clubAddress ?? "")")
+                                       clubAddress: "\(backend.placeTitle(slotId: booking.slotId)), \(backend.placeAddress(slotId: booking.slotId))")
             infoText = "Тренировка добавлена в календарь"
         } catch {
             errorText = "Не удалось добавить в календарь"
@@ -446,7 +519,7 @@ struct SwapStudentsSheet: View {
                         ForEach(candidates) { other in
                             Button { selected = other.id } label: {
                                 HStack(spacing: Space.m) {
-                                    Avatar(initials: backend.person(other.studentId)?.initials ?? "?", size: 40)
+                                    Avatar(initials: backend.person(other.studentId)?.initials ?? "?", size: 40, userId: other.studentId)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(backend.name(other.studentId)).font(.headline)
                                         Text("\(Fmt.shortDay(other.startsAt)) · \(Fmt.time(other.startsAt))")

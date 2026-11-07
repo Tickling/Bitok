@@ -15,11 +15,13 @@ struct CoachScheduleScreen: View {
     enum Entry: Identifiable {
         case booking(Booking)
         case free(BookingSlot)
+        case group(DemoGroupSession)
 
         var id: String {
             switch self {
             case .booking(let booking): "b-\(booking.id)"
             case .free(let slot): "s-\(slot.id)"
+            case .group(let session): "g-\(session.id)"
             }
         }
 
@@ -27,6 +29,7 @@ struct CoachScheduleScreen: View {
             switch self {
             case .booking(let booking): booking.startsAt
             case .free(let slot): slot.startsAt
+            case .group(let session): session.startsAt
             }
         }
     }
@@ -34,9 +37,12 @@ struct CoachScheduleScreen: View {
     @Environment(\.palette) private var palette
     let container: AppContainer
     @State private var mode: Mode = .day
-    @State private var selectedDay: Date? = Calendar.current.startOfDay(for: Date())
+    @State private var selectedDay: Date? = Calendar.bitok.startOfDay(for: Date())
     @State private var openedBooking: BookingRef?
+    @State private var openedGroup: GroupRef?
+    @State private var counterBooking: Booking?
     @State private var errorText: String?
+    @AppStorage("coach.weekGrid") private var weekGrid = true
 
     private var backend: DemoBackend { container.backend }
     private var me: UserID { container.currentUserId }
@@ -58,7 +64,7 @@ struct CoachScheduleScreen: View {
                         dayHeader
                         entriesList(for: day)
                     case .week:
-                        weekView
+                        if weekGrid { weekGridView } else { weekView }
                     case .month:
                         MonthGrid(month: day, selection: $selectedDay, availableDays: slotDays, myBookingDays: bookingDays)
                         Text(Fmt.day(day).capitalized).font(.headline)
@@ -71,6 +77,12 @@ struct CoachScheduleScreen: View {
             .navigationTitle("Расписание")
             .sheet(item: $openedBooking) { ref in
                 BookingDetailView(bookingId: ref.id, container: container)
+            }
+            .sheet(item: $openedGroup) { ref in
+                GroupSessionSheet(container: container, groupId: ref.id)
+            }
+            .sheet(item: $counterBooking) { booking in
+                ProposeSlotSheet(container: container, studentId: booking.studentId, replacing: booking.id)
             }
             .errorAlert($errorText)
         }
@@ -90,7 +102,7 @@ struct CoachScheduleScreen: View {
                     VStack(alignment: .leading, spacing: Space.s) {
                         Button { openedBooking = BookingRef(id: booking.id) } label: {
                             HStack {
-                                Avatar(initials: backend.person(booking.studentId)?.initials ?? "?", size: 36)
+                                Avatar(initials: backend.person(booking.studentId)?.initials ?? "?", size: 36, userId: booking.studentId)
                                 VStack(alignment: .leading) {
                                     Text(backend.name(booking.studentId)).font(.callout.weight(.semibold))
                                     Text("\(Fmt.shortDay(booking.startsAt)) · \(Fmt.time(booking.startsAt))")
@@ -110,9 +122,16 @@ struct CoachScheduleScreen: View {
                             Button("Подтвердить") { run { try backend.approve(booking.id) } }
                                 .buttonStyle(.borderedProminent)
                         }
+                        Button { counterBooking = booking } label: {
+                            Label("Предложить другое время", systemImage: "calendar.badge.clock")
+                        }
+                        .buttonStyle(.bordered)
                     }
                     .padding(Space.m)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .glassCard()
+                    // Нажатие на любое место карточки (кроме кнопок) открывает заявку.
+                    .onTapGesture { openedBooking = BookingRef(id: booking.id) }
                 }
             }
         }
@@ -147,8 +166,13 @@ struct CoachScheduleScreen: View {
                     bookingRow(booking)
                 }
                 .buttonStyle(.plain)
+            case .group(let session):
+                Button { openedGroup = GroupRef(id: session.id) } label: {
+                    GroupCard(session: session, backend: backend)
+                }
+                .buttonStyle(.plain)
             case .free(let slot):
-                Label("\(Fmt.time(slot.startsAt)) · свободно", systemImage: "plus")
+                Label("\(Fmt.time(slot.startsAt)) · свободно · \(backend.venue(clubId: slot.clubId)?.name ?? "")", systemImage: "plus")
                     .font(.callout)
                     .foregroundStyle(palette.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -166,6 +190,7 @@ struct CoachScheduleScreen: View {
             VStack(alignment: .leading, spacing: Space.xs) {
                 Text("\(Fmt.time(booking.startsAt)) · \(student?.name ?? "Ученик")").font(.headline)
                 booking.status.pill
+                Text(backend.placeTitle(slotId: booking.slotId)).font(.caption).foregroundStyle(palette.textSecondary)
                 if let phone = student?.phone {
                     Label(phone, systemImage: "phone").font(.callout).foregroundStyle(palette.accent)
                 }
@@ -184,7 +209,7 @@ struct CoachScheduleScreen: View {
     // MARK: - Неделя
 
     private var weekView: some View {
-        let calendar = Calendar.current
+        let calendar = Calendar.bitok
         let start = calendar.dateInterval(of: .weekOfYear, for: day)?.start ?? day
         let days = (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: start) }
         return VStack(alignment: .leading, spacing: Space.l) {
@@ -217,6 +242,155 @@ struct CoachScheduleScreen: View {
         }
     }
 
+    // MARK: - Неделя: сетка «дни × часы»
+
+    private enum Cell {
+        case booking(Booking), group(DemoGroupSession), free, none
+    }
+
+    private func cell(_ day: Date, hour: Int) -> Cell {
+        let calendar = Calendar.bitok
+        guard let start = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: day) else { return .none }
+        let end = start.addingTimeInterval(3600)
+        if let session = backend.groups(of: me, on: day).first(where: { $0.startsAt < end && start < $0.endsAt }) {
+            return .group(session)
+        }
+        if let booking = backend.bookings(of: me, on: day).first(where: {
+            $0.startsAt < end && start < $0.startsAt.addingTimeInterval(TimeInterval($0.durationMinutes * 60))
+                && $0.status != .cancelledByCoach && $0.status != .cancelledByStudent && $0.status != .rejectedByCoach && $0.status != .expired
+        }) {
+            return .booking(booking)
+        }
+        if backend.coachFreeSlots(of: me, on: day).contains(where: { $0.startsAt == start }) { return .free }
+        return .none
+    }
+
+    private var weekGridView: some View {
+        let calendar = Calendar.bitok
+        let start = calendar.dateInterval(of: .weekOfYear, for: day)?.start ?? day
+        let days = (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: start) }
+        let hours = gridHours
+        let weekBookings = days.flatMap { backend.bookings(of: me, on: $0) }
+        let trainings = weekBookings.filter { $0.status == .confirmed || $0.status == .completed }.count
+            + days.flatMap { backend.groups(of: me, on: $0) }.count
+        let requests = weekBookings.filter { $0.status == .awaitingCoachApproval }.count
+        let toEvaluate = weekBookings.filter { $0.status == .completed && !backend.isEvaluated($0.id) }.count
+        return VStack(alignment: .leading, spacing: Space.m) {
+            HStack {
+                Button { shift(days: -7) } label: { Image(systemName: "chevron.left") }
+                Spacer()
+                Text("\(Fmt.shortDay(days.first ?? start)) – \(Fmt.shortDay(days.last ?? start))").font(.headline)
+                Spacer()
+                Button { shift(days: 7) } label: { Image(systemName: "chevron.right") }
+            }
+            .padding(.horizontal, Space.s)
+
+            Grid(horizontalSpacing: 3, verticalSpacing: 3) {
+                GridRow {
+                    Text("").frame(width: 34)
+                    ForEach(days, id: \.self) { weekDay in
+                        Button {
+                            selectedDay = weekDay
+                            mode = .day
+                        } label: {
+                            VStack(spacing: 0) {
+                                Text(weekDay.formatted(.dateTime.weekday(.abbreviated).locale(Fmt.locale)).capitalized)
+                                    .font(.caption2)
+                                Text(weekDay.formatted(.dateTime.day().locale(Fmt.locale))).font(.caption.bold())
+                            }
+                            .frame(maxWidth: .infinity)
+                            .foregroundStyle(calendar.isDateInToday(weekDay) ? palette.accent : palette.textPrimary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                ForEach(hours, id: \.self) { hour in
+                    GridRow {
+                        Text(String(format: "%02d", hour)).font(.caption2.monospacedDigit())
+                            .foregroundStyle(palette.textSecondary).frame(width: 34)
+                        ForEach(days, id: \.self) { weekDay in
+                            gridCell(cell(weekDay, hour: hour), day: weekDay)
+                        }
+                    }
+                }
+            }
+            .padding(Space.s)
+            .glassCard()
+
+            HStack(spacing: Space.m) {
+                legend(palette.statusConfirmed, "подтв.")
+                legend(palette.statusPending, "заявка")
+                legend(palette.statusCompleted, "прошла")
+                legend(palette.accentSecondary, "группа")
+                legend(palette.accent.opacity(0.18), "свободно")
+            }
+            .font(.caption2)
+
+            Label("Неделя: \(trainings) тренировок · \(requests) заявки · \(toEvaluate) ждут оценки", systemImage: "chart.bar")
+                .font(.callout.weight(.semibold))
+                .padding(Space.m)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .glassCard()
+            Text("Нажмите на клетку, чтобы открыть тренировку, или на день — чтобы посмотреть его списком.")
+                .font(.caption).foregroundStyle(palette.textSecondary)
+        }
+    }
+
+    /// Часы, в которые у тренера бывают тренировки (по его местам), плюс часы реальных записей.
+    private var gridHours: [Int] {
+        var hours = Set(backend.venues(of: me).flatMap(\.hours))
+        let calendar = Calendar.bitok
+        for booking in backend.bookings where booking.trainerId == me {
+            hours.insert(calendar.component(.hour, from: booking.startsAt))
+        }
+        for session in backend.groups(of: me, includePast: true) {
+            hours.insert(calendar.component(.hour, from: session.startsAt))
+        }
+        return hours.isEmpty ? Array(10...21) : Array(hours.min()!...hours.max()!)
+    }
+
+    @ViewBuilder
+    private func gridCell(_ cell: Cell, day: Date) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 4, style: .continuous)
+        switch cell {
+        case .booking(let booking):
+            Button { openedBooking = BookingRef(id: booking.id) } label: {
+                shape.fill(booking.status.color(in: palette)).frame(height: 26)
+                    .overlay {
+                        Text(backend.person(booking.studentId)?.initials ?? "")
+                            .font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
+                    }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(Fmt.time(booking.startsAt)), \(backend.name(booking.studentId))")
+        case .group(let session):
+            Button { openedGroup = GroupRef(id: session.id) } label: {
+                shape.fill(palette.accentSecondary).frame(height: 26)
+                    .overlay { Text("👥").font(.system(size: 10)) }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Групповая \(Fmt.time(session.startsAt))")
+        case .free:
+            Button {
+                selectedDay = day
+                mode = .day
+            } label: {
+                shape.fill(palette.accent.opacity(0.18)).frame(height: 26)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Свободно")
+        case .none:
+            shape.fill(palette.textSecondary.opacity(0.06)).frame(height: 26)
+        }
+    }
+
+    private func legend(_ color: Color, _ title: String) -> some View {
+        HStack(spacing: 3) {
+            RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 10, height: 10)
+            Text(title).foregroundStyle(palette.textSecondary)
+        }
+    }
+
     // MARK: - Helpers
 
     private var slotDays: Set<Date> {
@@ -225,10 +399,12 @@ struct CoachScheduleScreen: View {
 
     private var bookingDays: Set<Date> {
         Set(backend.bookings.filter { $0.trainerId == me && $0.status.holdsSlot }.map { Calendar.current.startOfDay(for: $0.startsAt) })
+            .union(backend.groups(of: me).map { Calendar.current.startOfDay(for: $0.startsAt) })
     }
 
     private func entries(for day: Date) -> [Entry] {
-        (backend.bookings(of: me, on: day).map(Entry.booking) + backend.coachFreeSlots(of: me, on: day).map(Entry.free))
+        (backend.bookings(of: me, on: day).map(Entry.booking) + backend.coachFreeSlots(of: me, on: day).map(Entry.free)
+            + backend.groups(of: me, on: day).map(Entry.group))
             .sorted { $0.startsAt < $1.startsAt }
     }
 

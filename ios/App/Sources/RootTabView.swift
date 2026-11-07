@@ -28,7 +28,7 @@ struct RootTabView: View {
                 .badge(container.backend.pendingRequests(of: container.currentUserId).count)
                 .tag(AppTab.chat)
 
-            ContentRootView(showsShop: container.flags.shopEnabled)
+            ContentRootView(container: container)
                 .tabItem { Label("Контент", systemImage: "newspaper") }
                 .tag(AppTab.content)
 

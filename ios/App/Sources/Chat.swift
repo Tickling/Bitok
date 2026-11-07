@@ -56,7 +56,7 @@ struct ChatRootView: View {
         ForEach(backend.chatPartners(of: me)) { person in
             NavigationLink(value: person.id) {
                 HStack(spacing: Space.m) {
-                    Avatar(initials: person.initials, size: 44)
+                    Avatar(initials: person.initials, size: 44, userId: person.id)
                     VStack(alignment: .leading, spacing: 2) {
                         HStack {
                             Text(person.name).font(.headline)
@@ -82,7 +82,7 @@ struct ChatRootView: View {
         ForEach(backend.players(for: me)) { player in
             Button { profilePerson = PersonRef(id: player.id) } label: {
                 HStack(spacing: Space.m) {
-                    Avatar(initials: player.initials, size: 40)
+                    Avatar(initials: player.initials, size: 40, userId: player.id)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(player.name).font(.headline)
                         Text(backend.progress(for: player.id).current.level?.title ?? "Новичок")
@@ -115,7 +115,7 @@ struct ChatRootView: View {
                 HStack {
                     Text(event.title).font(.callout.weight(.semibold))
                     Spacer()
-                    Text(event.date.formatted(.dateTime.day().month(.abbreviated).hour().minute()))
+                    Text(Fmt.stamp(event.date))
                         .font(.caption).foregroundStyle(palette.textSecondary)
                 }
                 Text(event.body).font(.callout).foregroundStyle(palette.textSecondary)
@@ -138,6 +138,7 @@ struct ChatThreadView: View {
     @State private var cancelBooking: BookingRef?
     @State private var showProfile = false
     @State private var swapBooking: BookingRef?
+    @State private var counterBooking: BookingRef?
 
     private var backend: DemoBackend { container.backend }
     private var me: UserID { container.currentUserId }
@@ -164,7 +165,7 @@ struct ChatThreadView: View {
             ToolbarItem(placement: .principal) {
                 Button { showProfile = true } label: {
                     HStack(spacing: Space.s) {
-                        Avatar(initials: backend.person(otherId)?.initials ?? "?", size: 28)
+                        Avatar(initials: backend.person(otherId)?.initials ?? "?", size: 28, userId: otherId)
                         VStack(alignment: .leading, spacing: 0) {
                             Text(backend.name(otherId)).font(.subheadline.weight(.semibold))
                             Text(backend.isCoach(otherId) ? "Тренер · профиль"
@@ -185,6 +186,9 @@ struct ChatThreadView: View {
         }
         .sheet(isPresented: $showPropose) {
             ProposeSlotSheet(container: container, studentId: otherId)
+        }
+        .sheet(item: $counterBooking) { ref in
+            ProposeSlotSheet(container: container, studentId: otherId, replacing: ref.id)
         }
         .sheet(item: $swapBooking) { ref in
             SwapStudentsSheet(container: container, bookingId: ref.id)
@@ -246,7 +250,7 @@ struct ChatThreadView: View {
             Label("\(Fmt.shortDay(booking.startsAt)) · \(Fmt.range(booking.startsAt, minutes: booking.durationMinutes))",
                   systemImage: "calendar")
                 .font(.callout)
-            Label(backend.coach(booking.trainerId)?.clubName ?? "", systemImage: "mappin.and.ellipse").font(.caption)
+            Label(backend.placeTitle(slotId: booking.slotId), systemImage: "mappin.and.ellipse").font(.caption)
                 .foregroundStyle(palette.textSecondary)
             booking.status.pill
             if booking.status == .awaitingCoachApproval {
@@ -260,6 +264,10 @@ struct ChatThreadView: View {
                         Button("Подтвердить") { run { try backend.approve(booking.id) } }
                             .buttonStyle(.borderedProminent)
                     }
+                    Button { counterBooking = BookingRef(id: booking.id) } label: {
+                        Label("Предложить другое время", systemImage: "calendar.badge.clock")
+                    }
+                    .buttonStyle(.bordered)
                 } else {
                     HStack(spacing: Space.s) {
                         ProgressView()
@@ -296,7 +304,7 @@ struct ChatThreadView: View {
         return VStack(alignment: .leading, spacing: Space.s) {
             Label("Предложение тренировки", systemImage: "calendar.badge.clock").font(.callout.weight(.semibold))
             Text("\(Fmt.day(slot.startsAt).capitalized)").font(.callout)
-            Text("\(Fmt.range(slot.startsAt, minutes: slot.durationMinutes)) · \(backend.coach(slot.trainerId)?.clubName ?? ""), стол \(slot.tableNumber ?? 1)")
+            Text("\(Fmt.range(slot.startsAt, minutes: slot.durationMinutes)) · \(backend.placeTitle(slotId: slot.id))")
                 .font(.caption).foregroundStyle(palette.textSecondary)
             if let comment = invitation.comment, !comment.isEmpty {
                 Text("«\(comment)»").font(.caption)
@@ -490,6 +498,8 @@ struct ProposeSlotSheet: View {
     @Environment(\.palette) private var palette
     let container: AppContainer
     let studentId: UserID
+    /// Заявка, на которую тренер отвечает своим временем (кнопка «Предложить другое время»).
+    var replacing: BookingID? = nil
     @State private var day: Date?
     @State private var slotId: SlotID?
     @State private var comment = ""
@@ -507,7 +517,11 @@ struct ProposeSlotSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: Space.l) {
-                    Text("Предложить время: \(backend.name(studentId))").font(.headline)
+                    Text("\(replacing == nil ? "Предложить время" : "Другое время для") \(backend.name(studentId))").font(.headline)
+                    if let replacing, let booking = backend.booking(replacing) {
+                        Text("Вместо \(Fmt.shortDay(booking.startsAt)), \(Fmt.time(booking.startsAt)) — текущая заявка закроется")
+                            .font(.caption).foregroundStyle(palette.textSecondary)
+                    }
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: Space.s) {
                             ForEach(days, id: \.self) { item in
@@ -517,7 +531,7 @@ struct ProposeSlotSheet: View {
                                     slotId = nil
                                 } label: {
                                     VStack {
-                                        Text(item.formatted(.dateTime.weekday(.abbreviated))).font(.caption)
+                                        Text(item.formatted(.dateTime.weekday(.abbreviated).locale(Fmt.locale))).font(.caption)
                                         Text(item.formatted(.dateTime.day())).font(.title3.bold())
                                     }
                                     .frame(width: 52, height: 60)
@@ -538,9 +552,11 @@ struct ProposeSlotSheet: View {
                             ForEach(backend.freeSlots(of: coachId, on: day)) { slot in
                                 let selected = slot.id == slotId
                                 Button { slotId = slot.id } label: {
-                                    Text(Fmt.time(slot.startsAt))
-                                        .font(.callout.weight(.semibold).monospacedDigit())
-                                        .frame(maxWidth: .infinity, minHeight: 44)
+                                    VStack(spacing: 0) {
+                                        Text(Fmt.time(slot.startsAt)).font(.callout.weight(.semibold).monospacedDigit())
+                                        Text(backend.venue(clubId: slot.clubId)?.name ?? "").font(.caption2).lineLimit(1)
+                                    }
+                                        .frame(maxWidth: .infinity, minHeight: 48)
                                         .foregroundStyle(selected ? palette.onAccent : palette.textPrimary)
                                         .background {
                                             if selected {
@@ -583,8 +599,12 @@ struct ProposeSlotSheet: View {
         guard let slotId else { return }
         do {
             let text = comment.trimmingCharacters(in: .whitespacesAndNewlines)
-            try backend.proposeSlot(coachId: coachId, studentId: studentId, slotId: slotId,
-                                    comment: text.isEmpty ? nil : text)
+            if let replacing {
+                try backend.counterPropose(bookingId: replacing, slotId: slotId, comment: text.isEmpty ? nil : text)
+            } else {
+                try backend.proposeSlot(coachId: coachId, studentId: studentId, slotId: slotId,
+                                        comment: text.isEmpty ? nil : text)
+            }
             dismiss()
         } catch {
             errorText = DemoBackend.message(for: error)
@@ -626,13 +646,19 @@ struct PersonProfileSheet: View {
     private func coachProfile(_ coach: DemoCoach) -> some View {
         ScrollView {
             VStack(spacing: Space.l) {
-                Avatar(initials: coach.person.initials, size: 88)
+                Avatar(initials: coach.person.initials, size: 88, userId: coach.id)
                 Text(coach.name).font(.title2.weight(.semibold)).fontDesign(palette.headingDesign)
                 Text(coach.rank).foregroundStyle(palette.textSecondary)
                 VStack(alignment: .leading, spacing: Space.s) {
-                    Label("\(coach.clubName), \(coach.clubAddress)", systemImage: "mappin.and.ellipse")
+                    ForEach(backend.venues(of: coach.id).filter {
+                        container.role == .trainer || backend.canBook(clubId: $0.clubId, student: container.currentUserId)
+                    }) { venue in
+                        Label("\(venue.name), \(venue.address)", systemImage: "mappin.and.ellipse")
+                    }
                     Label(coach.scheduleTitle, systemImage: "clock")
-                    Label("\(Fmt.price(coach.price)) за час", systemImage: "rublesign.circle")
+                    if !coach.about.isEmpty {
+                        Label(coach.about, systemImage: "person.text.rectangle")
+                    }
                     // Телефон тренера виден ученику с записью к нему (BR-002.2).
                     if backend.bookings(ofStudent: container.currentUserId).contains(where: { $0.trainerId == coach.id }),
                        let url = URL(string: "tel:\(coach.person.phone.filter { $0.isNumber || $0 == "+" })") {
@@ -667,7 +693,7 @@ struct PersonProfileSheet: View {
         let rating = backend.publicRating(of: personId)
         return ScrollView {
             VStack(spacing: Space.l) {
-                Avatar(initials: person?.initials ?? "?", size: 88)
+                Avatar(initials: person?.initials ?? "?", size: 88, userId: personId)
                 Text(person?.name ?? "Игрок").font(.title2.weight(.semibold)).fontDesign(palette.headingDesign)
                 Text(progress.current.level?.title ?? "Новичок").foregroundStyle(palette.textSecondary)
 
