@@ -1,0 +1,8 @@
+<resources>
+    <style name="Theme.Bitok" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/ivory</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+    </style>
+    <color name="ivory">#F6EFE4</color>
+    <color name="icon_bg">#0B1E3A</color>
+</resources>
