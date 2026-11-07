@@ -56,6 +56,17 @@ struct StudentBookingScreen: View {
             .sheet(item: $openedBooking) { ref in
                 BookingDetailView(bookingId: ref.id, container: container)
             }
+            .onAppear {
+                // Скриншот «Помощи»: выбран ближайший день и первое время.
+                guard container.uiPage == "day", selectedDay == nil,
+                      let first = backend.availableDays(of: coachId, for: me).sorted().first(where: {
+                          !backend.freeSlots(of: coachId, on: $0, for: me).filter { backend.leadTime($0) > 600 }.isEmpty
+                      }) else { return }
+                selectedDay = first
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    selectedSlotId = backend.freeSlots(of: coachId, on: first, for: me).first { backend.leadTime($0) > 600 }?.id
+                }
+            }
             .sheet(item: $openedGroup) { ref in
                 GroupSessionSheet(container: container, groupId: ref.id)
             }
@@ -135,7 +146,7 @@ struct StudentBookingScreen: View {
             Button { shiftMonth(-1) } label: { Image(systemName: "chevron.left") }
                 .accessibilityLabel("Предыдущий месяц")
             Spacer()
-            Text(Fmt.monthYear(month).capitalized)
+            Text(Fmt.monthYear(month))
                 .font(.title3.weight(.semibold))
                 .fontDesign(palette.headingDesign)
             Spacer()
@@ -151,7 +162,7 @@ struct StudentBookingScreen: View {
             let slots = backend.freeSlots(of: coachId, on: day, for: me)
             let manyPlaces = Set(slots.map(\.clubId)).count > 1
             VStack(alignment: .leading, spacing: Space.s) {
-                Text(Fmt.day(day).capitalized).font(.headline)
+                Text(Fmt.day(day)).font(.headline)
                 if slots.isEmpty {
                     Text("На этот день свободного времени нет").foregroundStyle(palette.textSecondary)
                 } else {
@@ -269,7 +280,7 @@ struct BookingConfirmSheet: View {
                             }
                         }
                         Divider()
-                        row("calendar", "Дата", Fmt.day(slot.startsAt).capitalized)
+                        row("calendar", "Дата", Fmt.day(slot.startsAt))
                         row("clock", "Время", Fmt.range(slot.startsAt, minutes: slot.durationMinutes))
                         row("mappin.and.ellipse", "Где", container.backend.placeTitle(slotId: slot.id))
                         row("building.2", "Адрес", container.backend.placeAddress(slotId: slot.id))

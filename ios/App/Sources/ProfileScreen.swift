@@ -15,6 +15,8 @@ struct ProfileRootView: View {
     @AppStorage("profile.frame") private var frameCode = FrameChoice.gold.rawValue
     @AppStorage("profile.title") private var titleCode = TitleChoice.champion.rawValue
 
+    @State private var autoPage: String?
+
     private var backend: DemoBackend { container.backend }
     private var me: UserID { container.currentUserId }
 
@@ -35,6 +37,13 @@ struct ProfileRootView: View {
             }
             .background(ThemedBackground())
             .navigationTitle(container.role == .trainer ? "Тренер" : "Игрок")
+            .onAppear { autoPage = container.uiPage }
+            .navigationDestination(isPresented: Binding(get: { autoPage == "venues" }, set: { if !$0 { autoPage = nil } })) {
+                VenuesView(container: container)
+            }
+            .navigationDestination(isPresented: Binding(get: { autoPage == "settings" }, set: { if !$0 { autoPage = nil } })) {
+                SettingsView(container: container)
+            }
         }
     }
 
@@ -104,7 +113,7 @@ struct ProfileRootView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Следующая тренировка").font(.caption).foregroundStyle(palette.textSecondary)
                     if let next {
-                        Text("\(Fmt.shortDay(next.startsAt).capitalized) · \(Fmt.time(next.startsAt))").font(.headline)
+                        Text("\(Fmt.shortDay(next.startsAt)) · \(Fmt.time(next.startsAt))").font(.headline)
                         Text("\(backend.name(next.trainerId)) · \(backend.coach(next.trainerId)?.clubName ?? "")")
                             .font(.caption).foregroundStyle(palette.textSecondary)
                     } else {
@@ -261,6 +270,7 @@ struct EditProfileView: View {
     @State private var coachInfo = DemoCoachInfo(rank: "", scheduleTitle: "", about: "", priceRubles: 0)
     @State private var loaded = false
     @State private var photoItem: PhotosPickerItem?
+    @State private var cropping: CropImage?
 
     private var isCoach: Bool { container.role == .trainer }
 
@@ -347,9 +357,16 @@ struct EditProfileView: View {
         .onChange(of: photoItem) { _, item in
             guard let item else { return }
             Task {
-                let data = try? await item.loadTransferable(type: Data.self)
-                AvatarStore.shared.set(data, for: container.currentUserId)
+                // Сначала редактор: сдвиг и масштаб, предпросмотр в кружках разного размера.
+                if let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data) {
+                    cropping = CropImage(image: image)
+                }
                 photoItem = nil
+            }
+        }
+        .sheet(item: $cropping) { item in
+            PhotoCropView(image: item.image) { result in
+                AvatarStore.shared.set(result.jpegData(compressionQuality: 0.9), for: container.currentUserId)
             }
         }
     }
@@ -440,6 +457,7 @@ struct SettingsView: View {
     @Environment(ThemeManager.self) private var themes
     @Bindable var container: AppContainer
     @AppStorage("reminder.minutes") private var reminderMinutes = 120
+    @AppStorage(LocalNotifier.enabledKey) private var notificationsOn = true
     @AppStorage(TextSize.storageKey) private var textSize = TextSize.standard.rawValue
     @AppStorage("coach.weekGrid") private var weekGrid = true
     @State private var confirmReset = false
@@ -486,12 +504,32 @@ struct SettingsView: View {
                     Text("Ваш тренер видит прогресс всегда. Телефон другим ученикам не показывается никогда.")
                 }
             }
-            Section("Напоминание о тренировке") {
-                Picker("Напомнить", selection: $reminderMinutes) {
+            Section {
+                Toggle("Уведомления о заявках и сообщениях", isOn: $notificationsOn)
+                Picker("Напомнить о тренировке", selection: $reminderMinutes) {
+                    Text("За 5 минут").tag(5)
+                    Text("За 15 минут").tag(15)
                     Text("За 30 минут").tag(30)
                     Text("За 1 час").tag(60)
                     Text("За 2 часа").tag(120)
                     Text("За 1 день").tag(1440)
+                }
+            } header: {
+                Text("Уведомления")
+            } footer: {
+                Text("Для проверки: у Алексея есть «Тест-зал 24/7» — слот каждый час, записаться можно за 5 минут до начала. Подтвердите заявку тренером — придёт уведомление и напоминание.")
+            }
+            Section {
+                NavigationLink {
+                    AppIconPicker()
+                } label: {
+                    HStack {
+                        Image("IconPreview-\(AppIconOption.all.first { $0.iconName == UIApplication.shared.alternateIconName }?.id ?? "Classic")")
+                            .resizable()
+                            .frame(width: 36, height: 36)
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        Text("Значок приложения")
+                    }
                 }
             }
             Section {
@@ -553,4 +591,10 @@ enum TextSize: Int, CaseIterable, Identifiable {
         case .largest: .xxxLarge
         }
     }
+}
+
+/// Фото, ожидающее обрезки.
+struct CropImage: Identifiable {
+    let id = UUID()
+    let image: UIImage
 }

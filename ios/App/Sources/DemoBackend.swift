@@ -145,13 +145,14 @@ final class DemoBackend {
     var news: [DemoNews] = []
     var listings: [DemoListing] = []
 
-    private static let storageKey = "demoBackend.v4"
+    private static let storageKey = "demoBackend.v5"
 
     init() {
         // Данные прошлых версий (v1 — один тренер, v2 — без Натальи) пересоздаются.
         UserDefaults.standard.removeObject(forKey: "demoBackend.v1")
         UserDefaults.standard.removeObject(forKey: "demoBackend.v2")
         UserDefaults.standard.removeObject(forKey: "demoBackend.v3")   // v3 — без мест, групп и магазина
+        UserDefaults.standard.removeObject(forKey: "demoBackend.v4")   // v4 — без круглосуточного тест-зала
         if let data = UserDefaults.standard.data(forKey: Self.storageKey),
            let snapshot = try? JSONDecoder().decode(DemoSnapshot.self, from: data) {
             apply(snapshot)
@@ -206,14 +207,14 @@ final class DemoBackend {
     /// `student` — показываем только места, открытые этому ученику (у тренера могут быть места «для своих»).
     func freeSlots(of coachId: UserID, on day: Date, for student: UserID? = nil, now: Date = Date()) -> [BookingSlot] {
         slots.filter { $0.trainerId == coachId && Calendar.current.isDate($0.startsAt, inSameDayAs: day)
-            && $0.isBookable(at: now) && $0.startsAt.timeIntervalSince(now) >= 2 * 3600
+            && $0.isBookable(at: now) && $0.startsAt.timeIntervalSince(now) >= leadTime($0)
             && isVisible($0, to: student) }
             .sorted { $0.startsAt < $1.startsAt }
     }
 
     /// Дни, в которые у тренера есть свободное время.
     func availableDays(of coachId: UserID, for student: UserID? = nil, now: Date = Date()) -> Set<Date> {
-        Set(slots.filter { $0.trainerId == coachId && $0.isBookable(at: now) && $0.startsAt.timeIntervalSince(now) >= 2 * 3600
+        Set(slots.filter { $0.trainerId == coachId && $0.isBookable(at: now) && $0.startsAt.timeIntervalSince(now) >= leadTime($0)
             && isVisible($0, to: student) }
             .map { Calendar.current.startOfDay(for: $0.startsAt) })
     }
@@ -258,7 +259,9 @@ final class DemoBackend {
         let now = Date()
         guard let index = slots.firstIndex(where: { $0.id == slotId }) else { throw BookingError.slotNotAvailable }
         var slot = slots[index]
-        guard slot.startsAt.timeIntervalSince(now) >= 2 * 3600 else { throw BookingError.leadTimeViolation(minimumMinutes: 120) }
+        guard slot.startsAt.timeIntervalSince(now) >= leadTime(slot) else {
+            throw BookingError.leadTimeViolation(minimumMinutes: Int(leadTime(slot) / 60))
+        }
         let active = bookings.filter { $0.studentId == studentId && $0.status.holdsSlot }
         guard active.filter({ $0.status == .awaitingCoachApproval }).count < 3 else {
             throw BookingError.pendingLimitExceeded(limit: 3)
@@ -289,6 +292,7 @@ final class DemoBackend {
             try booking.approve(by: .coach(current.trainerId), decision: .notRequired, now: now)
         }
         mutateSlot(current.slotId) { $0.markBooked() }
+        if let confirmed = booking(id) { LocalNotifier.shared.scheduleReminder(for: confirmed, studentName: name(confirmed.studentId)) }
         notify(current.studentId, "Тренировка подтверждена ✓", "\(name(current.trainerId)) · \(Self.when(current.startsAt))")
         post(from: current.trainerId, to: current.studentId, text: "Тренировка подтверждена ✓ Жду вас!", bookingId: id)
         save()
@@ -327,6 +331,7 @@ final class DemoBackend {
             try booking.cancel(by: role, reason: reason, freeCancellationHours: 12, now: now)
         }
         mutateSlot(current.slotId) { $0.release() }
+        LocalNotifier.shared.cancelReminder(for: id)
         let target = isCoach(actor) ? current.studentId : current.trainerId
         notify(target, "Тренировка отменена", "\(name(actor)) · \(Self.when(current.startsAt))")
         post(from: actor, to: target, text: "Тренировка отменена", bookingId: id)
@@ -417,6 +422,7 @@ final class DemoBackend {
             invitation.status = .accepted
             invitation.bookingId = booking.id
             created = booking
+            LocalNotifier.shared.scheduleReminder(for: booking, studentName: name(studentId))
             post(from: studentId, to: coachId, text: "Принимаю предложение ✓", bookingId: booking.id)
             notify(coachId, "\(name(studentId)) принял предложение", Self.when(booking.startsAt))
         case .decline:
@@ -496,6 +502,10 @@ final class DemoBackend {
         if let index = bookings.firstIndex(where: { $0.id == first.id }) { bookings[index] = firstOld }
         if let index = bookings.firstIndex(where: { $0.id == second.id }) { bookings[index] = secondOld }
         bookings.append(contentsOf: [firstNew, secondNew])
+        for (old, new) in [(first, firstNew), (second, secondNew)] {
+            LocalNotifier.shared.cancelReminder(for: old.id)
+            LocalNotifier.shared.scheduleReminder(for: new, studentName: name(new.studentId))
+        }
 
         for (old, new, partner) in [(first, firstNew, second.studentId), (second, secondNew, first.studentId)] {
             let partnerName = name(partner).split(separator: " ").first.map(String.init) ?? name(partner)
@@ -651,6 +661,8 @@ final class DemoBackend {
 
     func notify(_ userId: UserID, _ title: String, _ body: String) {
         events.append(DemoEvent(id: UUID(), userId: userId, title: title, body: body, date: Date()))
+        // Системное уведомление на телефон (демо: все учётки на одном устройстве — в подзаголовке указан получатель).
+        if !seeding { LocalNotifier.shared.post(to: name(userId), title: title, body: body) }
     }
 
     func post(from: UserID, to: UserID, text: String, bookingId: BookingID?) {
@@ -684,7 +696,12 @@ final class DemoBackend {
     }
 
     /// Начальные данные: расписания двух тренеров на 3 недели, история Ивана, заявки других учеников.
+    /// Во время заполнения начальными данными системные уведомления не показываются.
+    private var seeding = false
+
     private func seed() {
+        seeding = true
+        defer { seeding = false }
         seedVenues()
         syncCoaches()
         for coach in coaches {
@@ -778,7 +795,7 @@ final class DemoBackend {
     }
 
     static func when(_ date: Date) -> String {
-        date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).hour(.twoDigits(amPM: .omitted)).minute().locale(Fmt.locale))
+        Fmt.stamp(date)
     }
 
     static func reasonTitle(_ code: CancellationReasonCode) -> String {

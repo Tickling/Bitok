@@ -73,7 +73,7 @@ struct VenueEditor: View {
 
     private var backend: DemoBackend { container.backend }
     private var isNew: Bool { !backend.venues.contains { $0.id == venue.id } }
-    private static let allHours = Array(8...23)
+    private static let allHours = Array(0...23)
 
     var body: some View {
         NavigationStack {
@@ -370,7 +370,7 @@ struct GroupSessionSheet: View {
         return VStack(alignment: .leading, spacing: Space.l) {
             VStack(alignment: .leading, spacing: Space.xs) {
                 Text("👥 \(session.title)").font(.title2.weight(.semibold)).fontDesign(palette.headingDesign)
-                Text(Fmt.day(session.startsAt).capitalized).font(.headline)
+                Text(Fmt.day(session.startsAt)).font(.headline)
                 Text(Fmt.range(session.startsAt, minutes: session.durationMinutes)).foregroundStyle(palette.textSecondary)
             }
             VStack(alignment: .leading, spacing: Space.s) {

@@ -19,6 +19,10 @@ struct BitokApp: App {
                 }
             }
             .environment(themes)
+            .task {
+                LocalNotifier.shared.setUp()
+                await LocalNotifier.shared.requestAccess()
+            }
             .dynamicTypeSize((TextSize(rawValue: textSize) ?? .standard).dynamicType)
             .environment(\.locale, Locale(identifier: "ru_RU"))
             .onOpenURL { url in

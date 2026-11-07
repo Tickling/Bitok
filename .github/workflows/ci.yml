@@ -130,6 +130,43 @@ jobs:
             commit -q --amend -m "Bitok.ipa from ${GITHUB_SHA}"
           git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" ipa-builds
 
+  ios-screenshots:
+    name: iOS скриншоты для «Помощи»
+    runs-on: macos-15
+    needs: ios-app
+    permissions:
+      contents: write   # публикация PNG в служебную ветку screenshots
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - name: Build for simulator
+        working-directory: ios
+        run: |
+          set -e
+          xcodegen generate
+          xcodebuild -project Bitok.xcodeproj -scheme Bitok -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO build
+      - name: Take screenshots
+        run: ios/scripts/screenshots.sh ios/build/Build/Products/Debug-iphonesimulator/Bitok.app shots/ios
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-screenshots
+          path: shots/ios
+          retention-days: 14
+      - name: Publish screenshots to branch screenshots-ios
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          cd shots/ios
+          git init -q -b screenshots-ios
+          git add .
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "iOS screenshots from ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" screenshots-ios
+
   android:
     name: Android APK
     runs-on: ubuntu-latest

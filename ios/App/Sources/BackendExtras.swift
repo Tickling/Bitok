@@ -20,6 +20,8 @@ struct DemoVenue: Codable, Identifiable, Hashable, Sendable {
     var onlySelected: Bool = false
     var allowedStudents: Set<UserID> = []
     var clubId: ClubID = ClubID()
+    /// Тестовое место: слоты каждый час, записаться можно за 5 минут до начала (проверка уведомлений).
+    var isTest: Bool? = nil
 
     static let weekdayOrder = [2, 3, 4, 5, 6, 7, 1]
     static func weekdayTitle(_ weekday: Int) -> String {
@@ -75,6 +77,9 @@ struct DemoNews: Codable, Identifiable, Hashable, Sendable {
     var body: String
     var eventDate: Date?
     var date: Date = Date()
+    /// Фото (MediaStore) и ссылка на видео.
+    var imageId: String? = nil
+    var videoURL: String? = nil
 }
 
 enum MarketCategory: String, Codable, CaseIterable, Identifiable, Sendable {
@@ -112,6 +117,7 @@ struct DemoListing: Codable, Identifiable, Hashable, Sendable {
     var details: String
     var priceRubles: Int64?
     var date: Date = Date()
+    var imageId: String? = nil
 }
 
 // MARK: - Места
@@ -132,6 +138,11 @@ extension DemoBackend {
 
     func placeAddress(slotId: SlotID) -> String {
         slot(slotId).flatMap { venue(clubId: $0.clubId)?.address } ?? ""
+    }
+
+    /// Минимальное время до начала, когда ещё можно записаться: 2 часа, в тест-зале — 5 минут.
+    func leadTime(_ slot: BookingSlot) -> TimeInterval {
+        venue(clubId: slot.clubId)?.isTest == true ? 5 * 60 : 2 * 3600
     }
 
     func canBook(clubId: ClubID, student: UserID) -> Bool {
@@ -169,12 +180,14 @@ extension DemoBackend {
         let today = calendar.startOfDay(for: Date())
         guard let coach = coach(coachId) else { return }
         for (venueIndex, venue) in venues(of: coachId).enumerated() {
-            for offset in fromDay...21 {
+            // У тест-зала слоты только с сегодняшнего дня и на неделю вперёд.
+            let range = venue.isTest == true ? max(fromDay, 0)...7 : fromDay...21
+            for offset in range {
                 guard let day = calendar.date(byAdding: .day, value: offset, to: today),
                       venue.weekdays.contains(calendar.component(.weekday, from: day)) else { continue }
                 for hour in venue.hours.sorted() {
                     guard let start = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: day),
-                          start > Date() || fromDay < 0,
+                          start > Date() || (fromDay < 0 && venue.isTest != true),
                           !slots.contains(where: { $0.trainerId == coachId && $0.startsAt == start }),
                           !groups.contains(where: { $0.coachId == coachId && !$0.cancelled && $0.startsAt < start.addingTimeInterval(3600) && start < $0.endsAt }),
                           let slot = try? BookingSlot(id: SlotID(), trainerId: coachId, clubId: venue.clubId,
@@ -352,6 +365,9 @@ extension DemoBackend {
                       allowedStudents: [DemoBackend.ivanId, DemoBackend.natashaId]),
             DemoVenue(coachId: veronika, name: "Пирамида", address: "Москва, ул. Арбат, 25",
                       weekdays: [1, 2, 4, 6], hours: [10, 11, 12, 13, 14]),
+            // Круглосуточный тест-зал: слот каждый час с 00:00, запись за 5 минут — чтобы проверить уведомления.
+            DemoVenue(coachId: alexey, name: "Тест-зал 24/7", address: "Для проверки уведомлений",
+                      weekdays: [1, 2, 3, 4, 5, 6, 7], hours: Array(0...23), isTest: true),
         ]
     }
 
@@ -374,7 +390,8 @@ extension DemoBackend {
         news = [
             DemoNews(authorId: alexey, kind: .tournament, title: "Кубок «Флагмана» — открыта регистрация",
                      body: "Свободная пирамида, сетка на 32 игрока. Взнос 1 500 ₽, призы — кии и медали. Запись у тренера в чате.",
-                     eventDate: tournamentDay, date: Date().addingTimeInterval(-6 * 3600)),
+                     eventDate: tournamentDay, date: Date().addingTimeInterval(-6 * 3600),
+                     videoURL: "https://www.youtube.com/results?search_query=русский+бильярд+свободная+пирамида"),
             DemoNews(authorId: veronika, kind: .tournament, title: "Женский турнир по пулу в «Пирамиде»",
                      body: "Восьмёрка, до 3 побед. Новичкам — отдельная группа.",
                      eventDate: tournamentDay.flatMap { calendar.date(byAdding: .day, value: 7, to: $0) },

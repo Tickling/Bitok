@@ -67,7 +67,7 @@ struct CoachScheduleScreen: View {
                         if weekGrid { weekGridView } else { weekView }
                     case .month:
                         MonthGrid(month: day, selection: $selectedDay, availableDays: slotDays, myBookingDays: bookingDays)
-                        Text(Fmt.day(day).capitalized).font(.headline)
+                        Text(Fmt.day(day)).font(.headline)
                         entriesList(for: day)
                     }
                 }
@@ -77,6 +77,13 @@ struct CoachScheduleScreen: View {
             .navigationTitle("Расписание")
             .sheet(item: $openedBooking) { ref in
                 BookingDetailView(bookingId: ref.id, container: container)
+            }
+            .onAppear {
+                switch container.uiPage {
+                case "week": mode = .week
+                case "tomorrow": selectedDay = Calendar.bitok.date(byAdding: .day, value: 1, to: day)
+                default: break
+                }
             }
             .sheet(item: $openedGroup) { ref in
                 GroupSessionSheet(container: container, groupId: ref.id)
@@ -144,7 +151,7 @@ struct CoachScheduleScreen: View {
             Button { shift(days: -1) } label: { Image(systemName: "chevron.left") }
                 .accessibilityLabel("Предыдущий день")
             Spacer()
-            Text(Calendar.current.isDateInToday(day) ? "Сегодня, \(Fmt.shortDay(day))" : Fmt.day(day).capitalized)
+            Text(Calendar.current.isDateInToday(day) ? "Сегодня, \(Fmt.shortDay(day))" : Fmt.day(day))
                 .font(.headline)
             Spacer()
             Button { shift(days: 1) } label: { Image(systemName: "chevron.right") }
@@ -226,7 +233,7 @@ struct CoachScheduleScreen: View {
                 let free = backend.coachFreeSlots(of: me, on: weekDay).count
                 VStack(alignment: .leading, spacing: Space.s) {
                     HStack {
-                        Text(Fmt.day(weekDay).capitalized).font(.subheadline.weight(.semibold))
+                        Text(Fmt.day(weekDay)).font(.subheadline.weight(.semibold))
                         Spacer()
                         Text(free > 0 ? "свободно: \(free)" : "").font(.caption).foregroundStyle(palette.textSecondary)
                     }
@@ -294,7 +301,7 @@ struct CoachScheduleScreen: View {
                             mode = .day
                         } label: {
                             VStack(spacing: 0) {
-                                Text(weekDay.formatted(.dateTime.weekday(.abbreviated).locale(Fmt.locale)).capitalized)
+                                Text(weekDay.formatted(.dateTime.weekday(.abbreviated).locale(Fmt.locale)).capitalizedFirst)
                                     .font(.caption2)
                                 Text(weekDay.formatted(.dateTime.day().locale(Fmt.locale))).font(.caption.bold())
                             }

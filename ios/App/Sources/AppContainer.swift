@@ -31,6 +31,30 @@ final class AppContainer {
             self.account = restored
             self.role = restored.role
         }
+        applyUITestArguments()
+    }
+
+    // MARK: - Скриншоты для «Помощи» (CI запускает приложение в симуляторе с аргументами)
+
+    /// Начальный раздел внутри вкладок: «players», «market», «week», «venues», «day».
+    var uiPage: String?
+
+    private func applyUITestArguments() {
+        let defaults = UserDefaults.standard
+        guard let raw = defaults.string(forKey: "uiAccount"), let account = DemoAccount(rawValue: raw) else { return }
+        if defaults.bool(forKey: "uiReset") { backend.reset() }
+        signIn(account)
+        switch defaults.string(forKey: "uiTab") {
+        case "people": selectedTab = .people
+        case "chat": selectedTab = .chat
+        case "content": selectedTab = .content
+        case "profile": selectedTab = .profile
+        default: selectedTab = .calendar
+        }
+        let people = ["alexey": DemoBackend.alexeyId, "veronika": DemoBackend.veronikaId,
+                      "ivan": DemoBackend.ivanId, "natasha": DemoBackend.natashaId]
+        if let chat = defaults.string(forKey: "uiChat"), let id = people[chat] { chatPath = [id] }
+        uiPage = defaults.string(forKey: "uiPage")
     }
 
     static func demo() -> AppContainer {

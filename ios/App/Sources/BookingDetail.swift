@@ -16,19 +16,29 @@ struct BookingRef: Identifiable, Hashable {
 /// Форматы дат и цен — всегда по-русски, независимо от языка телефона.
 enum Fmt {
     static let locale = Locale(identifier: "ru_RU")
-    static func time(_ date: Date) -> String { date.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute().locale(locale)) }
-    static func day(_ date: Date) -> String { date.formatted(.dateTime.weekday(.wide).day().month(.wide).locale(locale)) }
-    static func shortDay(_ date: Date) -> String { date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).locale(locale)) }
-    /// «Ноябрь 2026» — именительный падеж (LLLL).
-    static func monthYear(_ date: Date) -> String {
+
+    private static func formatter(_ pattern: String) -> DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = locale
-        formatter.dateFormat = "LLLL yyyy"
-        return formatter.string(from: date)
+        formatter.dateFormat = pattern
+        return formatter
     }
-    static func stamp(_ date: Date) -> String {
-        date.formatted(.dateTime.day().month(.abbreviated).hour(.twoDigits(amPM: .omitted)).minute().locale(locale))
-    }
+
+    private static let timeFormatter = formatter("HH:mm")
+    private static let dayFormatter = formatter("EEEE, d MMMM")
+    private static let shortDayFormatter = formatter("EE, d MMM")
+    private static let stampFormatter = formatter("EE, d MMM, HH:mm")
+    private static let monthFormatter = formatter("LLLL yyyy")
+
+    /// «14:00» — всегда две цифры в минутах.
+    static func time(_ date: Date) -> String { timeFormatter.string(from: date) }
+    /// «Воскресенье, 8 ноября».
+    static func day(_ date: Date) -> String { dayFormatter.string(from: date).capitalizedFirst }
+    /// «Вс, 8 нояб.».
+    static func shortDay(_ date: Date) -> String { shortDayFormatter.string(from: date).capitalizedFirst }
+    /// «Ноябрь 2026».
+    static func monthYear(_ date: Date) -> String { monthFormatter.string(from: date).capitalizedFirst }
+    static func stamp(_ date: Date) -> String { stampFormatter.string(from: date) }
     static func range(_ start: Date, minutes: Int) -> String {
         "\(time(start))–\(time(start.addingTimeInterval(TimeInterval(minutes * 60))))"
     }
@@ -36,6 +46,11 @@ enum Fmt {
         money.decimalValue.formatted(.currency(code: "RUB").precision(.fractionLength(0)).locale(locale))
     }
     static func rubles(_ value: Int64) -> String { price(.rubles(value)) }
+}
+
+extension String {
+    /// Заглавная только первая буква: «воскресенье, 8 ноября» → «Воскресенье, 8 ноября».
+    var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
 }
 
 /// Фото профиля: хранятся на устройстве (Documents/avatars/<id>.jpg). В проде — Media Service + CDN.

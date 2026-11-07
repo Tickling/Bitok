@@ -49,6 +49,7 @@ struct ChatRootView: View {
             .sheet(item: $profilePerson) { ref in
                 PersonProfileSheet(container: container, personId: ref.id)
             }
+            .onAppear { if container.uiPage == "players" { segment = .players } }
         }
     }
 
@@ -303,7 +304,7 @@ struct ChatThreadView: View {
         let isCoach = container.role == .trainer
         return VStack(alignment: .leading, spacing: Space.s) {
             Label("Предложение тренировки", systemImage: "calendar.badge.clock").font(.callout.weight(.semibold))
-            Text("\(Fmt.day(slot.startsAt).capitalized)").font(.callout)
+            Text("\(Fmt.day(slot.startsAt))").font(.callout)
             Text("\(Fmt.range(slot.startsAt, minutes: slot.durationMinutes)) · \(backend.placeTitle(slotId: slot.id))")
                 .font(.caption).foregroundStyle(palette.textSecondary)
             if let comment = invitation.comment, !comment.isEmpty {
