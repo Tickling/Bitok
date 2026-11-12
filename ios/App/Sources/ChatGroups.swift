@@ -90,6 +90,14 @@ struct GroupRow: View {
     let backend: DemoBackend
     let group: DemoChatGroup
 
+    /// «Иван: текст» или «N участников».
+    private var preview: String {
+        guard let last = backend.lastGroupMessage(group.id) else { return "\(group.members.count) участников" }
+        guard let from = last.from else { return last.text }
+        let first = backend.name(from).split(separator: " ").first.map(String.init) ?? ""
+        return first + ": " + last.text
+    }
+
     var body: some View {
         HStack(spacing: Space.m) {
             Image(systemName: "person.3.fill")
@@ -105,8 +113,7 @@ struct GroupRow: View {
                         Text(Fmt.time(last.date)).font(.caption).foregroundStyle(palette.textSecondary)
                     }
                 }
-                Text(backend.lastGroupMessage(group.id).map { ($0.from.map { backend.name($0).split(separator: " ").first.map(String.init) ?? "" } ?? "") + ($0.from == nil ? "" : ": ") + $0.text }
-                     ?? "\(group.members.count) участников")
+                Text(preview)
                     .font(.callout).foregroundStyle(palette.textSecondary).lineLimit(1)
             }
         }
