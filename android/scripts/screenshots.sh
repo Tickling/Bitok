@@ -22,7 +22,7 @@ shot() {  # имя, затем дополнительные extras
 shot student-calendar --es uiAccount IVAN --ez uiReset true --es uiTab CALENDAR --es uiPage day
 shot student-chat     --es uiAccount IVAN --es uiTab CHAT --es uiChat alexey
 shot student-players  --es uiAccount IVAN --es uiTab CHAT --es uiPage players
-shot student-progress --es uiAccount IVAN --es uiTab PEOPLE
+shot student-progress --es uiAccount IVAN --es uiTab PROFILE
 shot student-shop     --es uiAccount IVAN --es uiTab CONTENT --es uiPage market
 shot student-news     --es uiAccount IVAN --es uiTab CONTENT
 shot student-profile  --es uiAccount IVAN --es uiTab PROFILE

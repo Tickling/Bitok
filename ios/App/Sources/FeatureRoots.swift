@@ -35,11 +35,21 @@ struct ProgressRootView: View {
     }
 
     let container: AppContainer
+    /// Открыт из профиля (внутри его навигации) — без собственного NavigationStack.
+    var embedded = false
     @State private var segment: Segment = .progress
     @State private var showAchievements = true
 
     var body: some View {
-        NavigationStack {
+        if embedded {
+            content
+        } else {
+            NavigationStack { content }
+        }
+    }
+
+    private var content: some View {
+        Group {
             VStack(spacing: 0) {
                 Picker("Раздел", selection: $segment) {
                     ForEach(Segment.allCases) { Text($0.rawValue).tag($0) }
@@ -188,13 +198,13 @@ struct StudentDetailView: View {
                     } label: {
                         Label("Статистика и сравнение", systemImage: "chart.bar.xaxis").frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.cueSecondary)
                     NavigationLink {
                         ExercisesListView(container: container, studentId: studentId)
                     } label: {
                         Label("Упражнения", systemImage: "list.number").frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.cueSecondary)
                 }
 
                 StudentPriceCard(container: container, studentId: studentId)
@@ -254,13 +264,13 @@ struct StudentPriceCard: View {
             }
             HStack {
                 Button("Сохранить") { backend.setPrice(value, coach: coachId, student: studentId) }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.cueGlassProminent)
                 if custom {
                     Button("Вернуть базовую (\(Fmt.price(base)))") {
                         backend.setPrice(nil, coach: coachId, student: studentId)
                         value = NSDecimalNumber(decimal: base.decimalValue).int64Value
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.cueSecondary)
                 }
             }
             .font(.callout)

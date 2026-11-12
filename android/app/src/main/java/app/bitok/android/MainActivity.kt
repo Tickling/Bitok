@@ -109,6 +109,7 @@ sealed interface Route {
     data object Notices : Route
     data class PhotoViewer(val userId: String) : Route
     data object TrainingResult : Route
+    data object Progress : Route
     data class GroupChat(val id: String) : Route
     data object CreateGroup : Route
     data object Settings : Route
@@ -262,6 +263,7 @@ private fun RouteScreen(app: AppState, route: Route) {
         Route.Notices -> NoticesScreen(app)
         is Route.PhotoViewer -> PhotoViewerScreen(app, route.userId)
         Route.TrainingResult -> TrainingResultScreen(app)
+        Route.Progress -> ProgressScreen(app)
         is Route.GroupChat -> GroupChatScreen(app, route.id)
         Route.CreateGroup -> CreateGroupScreen(app)
         Route.Settings -> SettingsScreen(app)
@@ -287,9 +289,8 @@ private fun Tabs(app: AppState) {
                 val colors = NavigationBarItemDefaults.colors(selectedIconColor = p.accent, selectedTextColor = p.accent, indicatorColor = p.accent.copy(alpha = 0.14f))
                 NavigationBarItem(app.tab == Tab.CALENDAR, { app.tab = Tab.CALENDAR }, { Icon(Icons.Filled.CalendarMonth, null) },
                     label = { Text("Календарь") }, colors = colors)
-                NavigationBarItem(app.tab == Tab.PEOPLE, { app.tab = Tab.PEOPLE },
-                    { Icon(if (app.isCoach) Icons.Filled.Group else Icons.Filled.ShowChart, null) },
-                    label = { Text(if (app.isCoach) "Ученики" else "Прогресс") }, colors = colors)
+                if (app.isCoach) NavigationBarItem(app.tab == Tab.PEOPLE, { app.tab = Tab.PEOPLE }, { Icon(Icons.Filled.Group, null) },
+                    label = { Text("Ученики") }, colors = colors)
                 NavigationBarItem(app.tab == Tab.CHAT, { app.tab = Tab.CHAT }, {
                     BadgedBox(badge = { if (pending > 0) Badge { Text("$pending") } }) { Icon(Icons.AutoMirrored.Filled.Chat, null) }
                 }, label = { Text("Чат") }, colors = colors)

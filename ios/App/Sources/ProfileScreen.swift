@@ -29,6 +29,7 @@ struct ProfileRootView: View {
                         coachCard
                     } else {
                         playerCard
+                        progressBlock
                         nextTrainingCard
                         seasonCard
                         ProfileGiftsGrid(container: container, userId: me)
@@ -155,6 +156,46 @@ struct ProfileRootView: View {
         }
         .padding(Space.m)
         .glassCard()
+    }
+
+    // MARK: - Прогресс (у ученика — в профиле, отдельным блоком)
+
+    private var progressBlock: some View {
+        let progress = backend.progress(for: me)
+        return VStack(alignment: .leading, spacing: Space.s) {
+            HStack {
+                Label("Прогресс", systemImage: "chart.line.uptrend.xyaxis").font(.title3.weight(.bold))
+                Spacer()
+                Text(progress.overallRating.map(String.init) ?? "—").font(.system(size: 30, weight: .heavy).monospacedDigit())
+                    .foregroundStyle(palette.accent)
+            }
+            Text("Уровень: \(progress.current.level?.title ?? "Новичок") · оценки тренера по упражнениям")
+                .font(.caption).foregroundStyle(palette.textSecondary)
+            ForEach(MetricKey.allCases) { key in
+                let value = progress.current[key] ?? 0
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Text(key.title).font(.caption)
+                        Spacer()
+                        Text("\(value)").font(.caption.bold().monospacedDigit())
+                    }
+                    ProgressView(value: Double(value), total: 100).tint(palette.accent)
+                }
+            }
+            HStack(spacing: Space.s) {
+                NavigationLink {
+                    ProgressRootView(container: container, embedded: true)
+                } label: { Text("Подробнее") }
+                    .buttonStyle(.cueGlassProminent)
+                NavigationLink {
+                    ExercisesListView(container: container, studentId: me)
+                } label: { Label("Упражнения", systemImage: "list.number") }
+                    .buttonStyle(.cueSecondary)
+            }
+        }
+        .padding(Space.l)
+        .background(palette.accent.opacity(0.07), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(palette.accent.opacity(0.45), lineWidth: 2))
     }
 
     // MARK: - Карточка тренера

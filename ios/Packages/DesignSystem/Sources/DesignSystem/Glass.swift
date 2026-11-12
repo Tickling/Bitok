@@ -67,7 +67,10 @@ public struct CueGlassProminentButtonStyle: ButtonStyle {
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.headline)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
             .foregroundStyle(palette.onAccent)
+            .padding(.horizontal, Space.m)
             .frame(maxWidth: .infinity, minHeight: 50)
             .background(palette.accent, in: Capsule())
             .shadow(color: palette.accent.opacity(isEnabled ? 0.35 : 0), radius: 12, y: 6)
@@ -79,6 +82,36 @@ public struct CueGlassProminentButtonStyle: ButtonStyle {
 
 public extension ButtonStyle where Self == CueGlassProminentButtonStyle {
     static var cueGlassProminent: CueGlassProminentButtonStyle { CueGlassProminentButtonStyle() }
+}
+
+/// Второстепенная кнопка: та же капсула и ширина, что у главной, но светлая с обводкой.
+/// Для `role: .destructive` текст красный. Длинный текст не обрезается — уменьшается.
+public struct CueSecondaryButtonStyle: ButtonStyle {
+    @Environment(\.palette) private var palette
+    @Environment(\.isEnabled) private var isEnabled
+
+    public init() {}
+
+    public func makeBody(configuration: Configuration) -> some View {
+        let color = configuration.role == .destructive ? palette.statusCancelled : palette.accent
+        configuration.label
+            .font(.callout.weight(.semibold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .foregroundStyle(color)
+            .padding(.horizontal, Space.m)
+            .frame(maxWidth: .infinity, minHeight: 46)
+            .background(color.opacity(configuration.isPressed ? 0.18 : 0.08), in: Capsule())
+            .overlay(Capsule().strokeBorder(color.opacity(0.45), lineWidth: 1))
+            .opacity(isEnabled ? 1 : 0.4)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .animation(.spring(duration: 0.2), value: configuration.isPressed)
+            .contentShape(Capsule())
+    }
+}
+
+public extension ButtonStyle where Self == CueSecondaryButtonStyle {
+    static var cueSecondary: CueSecondaryButtonStyle { CueSecondaryButtonStyle() }
 }
 
 /// Пилюля статуса: цвет + иконка + текст (цвет не единственный носитель смысла).

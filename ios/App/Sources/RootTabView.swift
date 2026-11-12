@@ -12,16 +12,12 @@ struct RootTabView: View {
                 .tabItem { Label("Календарь", systemImage: "calendar") }
                 .tag(AppTab.calendar)
 
-            Group {
-                if container.role == .trainer {
-                    StudentsRootView(container: container)
-                        .tabItem { Label("Ученики", systemImage: "person.2") }
-                } else {
-                    ProgressRootView(container: container)
-                        .tabItem { Label("Прогресс", systemImage: "chart.xyaxis.line") }
-                }
+            // У ученика «Прогресс» теперь в профиле (отдельный блок); у тренера — вкладка «Ученики».
+            if container.role == .trainer {
+                StudentsRootView(container: container)
+                    .tabItem { Label("Ученики", systemImage: "person.2") }
+                    .tag(AppTab.people)
             }
-            .tag(AppTab.people)
 
             ChatRootView(container: container)
                 .tabItem { Label("Чат", systemImage: "bubble.left.and.bubble.right") }

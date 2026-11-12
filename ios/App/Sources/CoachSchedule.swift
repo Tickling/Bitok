@@ -121,18 +121,17 @@ struct CoachScheduleScreen: View {
                         }
                         .buttonStyle(.plain)
                         HStack {
-                            Button("Отклонить") {
+                            Button("Отклонить", role: .destructive) {
                                 run { try backend.reject(booking.id, reason: CancellationReason(code: .scheduleConflict)) }
                             }
-                            .buttonStyle(.bordered)
-                            .tint(palette.statusCancelled)
+                            .buttonStyle(.cueSecondary)
                             Button("Подтвердить") { run { try backend.approve(booking.id) } }
-                                .buttonStyle(.borderedProminent)
+                                .buttonStyle(.cueGlassProminent)
                         }
                         Button { counterBooking = booking } label: {
                             Label("Предложить другое время", systemImage: "calendar.badge.clock")
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.cueSecondary)
                     }
                     .padding(Space.m)
                     .frame(maxWidth: .infinity, alignment: .leading)

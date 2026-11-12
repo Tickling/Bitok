@@ -240,7 +240,7 @@ struct ListingDetail: View {
                             container.backend.deleteListing(listing.id)
                             dismiss()
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.cueSecondary)
                     } else if container.role == .student {
                         if !listing.category.isService {
                             Button {

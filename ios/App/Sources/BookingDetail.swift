@@ -336,41 +336,40 @@ struct BookingDetailView: View {
                         .buttonStyle(.cueGlassProminent)
                 }
                 if allowed.contains(.reject) {
-                    Button("Отклонить…", role: .destructive) { showReject = true }.buttonStyle(.bordered)
+                    Button("Отклонить…", role: .destructive) { showReject = true }.buttonStyle(.cueSecondary)
                 }
                 if booking.status == .awaitingCoachApproval || (booking.status == .confirmed && booking.startsAt > Date()) {
                     Button { showCounter = true } label: {
                         Label("Предложить другое время", systemImage: "calendar.badge.clock")
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.cueSecondary)
                 }
                 if !backend.swapCandidates(for: booking.id).isEmpty {
                     Button { showSwap = true } label: {
                         Label("Поменять местами с другим учеником", systemImage: "arrow.left.arrow.right")
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.cueSecondary)
                 }
                 if booking.status == .confirmed {
                     Button("Завершить тренировку (демо)") { run { try backend.complete(booking.id) } }
                         .buttonStyle(.cueGlassProminent)
-                    Button("Отметить неявку (демо)") { run { try backend.markNoShow(booking.id) } }.buttonStyle(.bordered)
+                    Button("Отметить неявку (демо)") { run { try backend.markNoShow(booking.id) } }.buttonStyle(.cueSecondary)
                 }
                 if booking.status == .completed && !backend.isEvaluated(booking.id) {
                     Button("Оценить ученика") { showEvaluation = true }.buttonStyle(.cueGlassProminent)
                 }
                 if booking.status == .confirmed && allowed.contains(.cancel) {
-                    Button("Отменить тренировку", role: .destructive) { showCancel = true }.buttonStyle(.bordered)
+                    Button("Отменить тренировку", role: .destructive) { showCancel = true }.buttonStyle(.cueSecondary)
                 }
                 Button("Написать ученику") {
                     dismiss()
                     container.openChat(with: booking.studentId)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.cueSecondary)
             } else {
                 if allowed.contains(.cancel) {
                     Button("Отменить запись", role: .destructive) { showCancel = true }
-                        .buttonStyle(.borderedProminent)
-                        .tint(palette.statusCancelled)
+                        .buttonStyle(.cueSecondary)
                     Button {
                         run {
                             try backend.cancel(booking.id, by: me, reason: CancellationReason(code: .scheduleConflict))
@@ -380,23 +379,23 @@ struct BookingDetailView: View {
                     } label: {
                         Label("Перенести на другое время", systemImage: "arrow.triangle.2.circlepath")
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.cueSecondary)
                 }
                 if booking.status.holdsSlot {
                     Button { Task { await addToCalendar(booking) } } label: {
                         Label("Добавить в календарь", systemImage: "calendar.badge.plus")
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.cueSecondary)
                     Button { Task { await remind(booking) } } label: {
                         Label("Напомнить за 2 часа", systemImage: "bell")
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.cueSecondary)
                 }
                 Button("Написать тренеру") {
                     dismiss()
                     container.openChat(with: booking.trainerId)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.cueSecondary)
             }
         }
         .frame(maxWidth: .infinity)

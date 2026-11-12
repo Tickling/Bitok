@@ -65,6 +65,7 @@ fun ProfileScreen(app: AppState) {
     Screen(if (app.isCoach) "Тренер" else "Игрок", app) {
         if (app.isCoach) CoachCard(app) else {
             PlayerCard(app)
+            ProgressBlock(app)
             NextTraining(app)
             Season(app)
             ProfileGifts(app, app.me)
@@ -635,6 +636,31 @@ fun AppIconScreen(app: AppState) {
                 }
                 if (row.size == 1) Spacer(Modifier.weight(1f))
             }
+        }
+    }
+}
+
+/** «Прогресс» в профиле ученика — отдельный выделенный блок. */
+@Composable
+private fun ProgressBlock(app: AppState) {
+    val p = LocalPalette.current
+    val b = app.backend
+    val progress = b.progress(app.me)
+    val rating = b.rating(app.me)
+    Column(
+        Modifier.fillMaxWidth().background(p.accent.copy(alpha = 0.08f), RoundedCornerShape(22.dp))
+            .border(2.dp, p.accent.copy(alpha = 0.45f), RoundedCornerShape(22.dp)).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("📈 Прогресс", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = p.text, modifier = Modifier.weight(1f))
+            Text(rating?.toString() ?: "—", fontSize = 28.sp, fontWeight = FontWeight.Black, color = p.accent)
+        }
+        Secondary("Уровень: ${b.level(rating)} · оценки тренера по упражнениям")
+        Metric.entries.forEach { MetricBar(it.title, progress[it] ?: 0) }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PrimaryButton("Подробнее", Modifier.weight(1f)) { app.push(Route.Progress) }
+            SecondaryButton("📋 Упражнения", Modifier.weight(1f)) { app.push(Route.Exercises(app.me)) }
         }
     }
 }

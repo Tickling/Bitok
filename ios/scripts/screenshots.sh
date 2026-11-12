@@ -28,7 +28,7 @@ shot() {  # имя, затем аргументы приложения
 shot student-calendar -uiReset YES -uiAccount student -uiTab calendar -uiPage day
 shot student-chat     -uiAccount student -uiTab chat -uiChat alexey
 shot student-players  -uiAccount student -uiTab chat -uiPage players
-shot student-progress -uiAccount student -uiTab people
+shot student-progress -uiAccount student -uiTab profile
 shot student-shop     -uiAccount student -uiTab content -uiPage market
 shot student-news     -uiAccount student -uiTab content
 shot student-profile  -uiAccount student -uiTab profile

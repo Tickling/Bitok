@@ -405,7 +405,7 @@ struct GroupSessionSheet: View {
 
             if isCoach {
                 Button("Отменить групповую", role: .destructive) { confirmCancel = true }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.cueSecondary)
                     .frame(maxWidth: .infinity)
                     .confirmationDialog("Отменить тренировку? Участники получат сообщение.", isPresented: $confirmCancel,
                                         titleVisibility: .visible) {
@@ -416,7 +416,7 @@ struct GroupSessionSheet: View {
                     }
             } else if joined {
                 Button("Не смогу прийти", role: .destructive) { backend.leave(group: session.id, student: me) }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.cueSecondary)
                     .frame(maxWidth: .infinity)
             } else {
                 Button(session.freePlaces > 0 ? "Записаться · \(Fmt.rubles(session.priceRubles))" : "Мест нет") {

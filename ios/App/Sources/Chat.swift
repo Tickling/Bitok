@@ -367,18 +367,17 @@ struct ChatThreadView: View {
             if booking.status == .awaitingCoachApproval {
                 if isCoach {
                     HStack {
-                        Button("Отклонить") {
+                        Button("Отклонить", role: .destructive) {
                             run { try backend.reject(booking.id, reason: CancellationReason(code: .scheduleConflict)) }
                         }
-                        .buttonStyle(.bordered)
-                        .tint(palette.statusCancelled)
+                        .buttonStyle(.cueSecondary)
                         Button("Подтвердить") { run { try backend.approve(booking.id) } }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(.cueGlassProminent)
                     }
                     Button { counterBooking = BookingRef(id: booking.id) } label: {
                         Label("Предложить другое время", systemImage: "calendar.badge.clock")
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.cueSecondary)
                 } else {
                     HStack(spacing: Space.s) {
                         ProgressView()
@@ -428,10 +427,10 @@ struct ChatThreadView: View {
                         Text("Ждём ответа ученика").font(.caption).foregroundStyle(palette.textSecondary)
                     }
                 } else {
-                    HStack(spacing: Space.xs) {
-                        Button("Принять") { answer(message, .accept) }.buttonStyle(.borderedProminent)
-                        Button("Другое время") { answer(message, .otherTime) }.buttonStyle(.bordered)
-                        Button("Нет") { answer(message, .decline) }.buttonStyle(.bordered).tint(palette.statusCancelled)
+                    VStack(spacing: Space.xs) {
+                        Button("Принять") { answer(message, .accept) }.buttonStyle(.cueGlassProminent)
+                        Button("Другое время") { answer(message, .otherTime) }.buttonStyle(.cueSecondary)
+                        Button("Нет", role: .destructive) { answer(message, .decline) }.buttonStyle(.cueSecondary)
                     }
                     .font(.caption.weight(.semibold))
                 }
@@ -477,12 +476,11 @@ struct ChatThreadView: View {
                         Button(isPlay ? "Сыграем!" : "Да, обменяться") {
                             run { try backend.answerPeerRequest(messageId: message.id, by: me, accept: true) }
                         }
-                        .buttonStyle(.borderedProminent)
-                        Button("Нет") {
+                        .buttonStyle(.cueGlassProminent)
+                        Button("Нет", role: .destructive) {
                             run { try backend.answerPeerRequest(messageId: message.id, by: me, accept: false) }
                         }
-                        .buttonStyle(.bordered)
-                        .tint(palette.statusCancelled)
+                        .buttonStyle(.cueSecondary)
                     }
                     .font(.caption.weight(.semibold))
                 }
@@ -496,7 +494,7 @@ struct ChatThreadView: View {
                         } label: {
                             Label("Обменяться номерами", systemImage: "phone.arrow.up.right")
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.cueSecondary)
                         .font(.caption.weight(.semibold))
                     }
                 } else {
@@ -805,7 +803,7 @@ struct PersonProfileSheet: View {
                     dismiss()
                     container.openChat(with: coach.id)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.cueSecondary)
             }
             .padding(Space.l)
         }

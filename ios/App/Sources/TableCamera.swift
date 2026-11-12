@@ -698,11 +698,11 @@ struct TrainingResultView: View {
                                 .buttonStyle(.cueGlassProminent)
                             }
                             Button { saveToPhotos() } label: { Label("Сохранить в галерею", systemImage: "photo.on.rectangle") }
-                                .buttonStyle(.bordered)
+                                .buttonStyle(.cueSecondary)
                             Button { saveInApp() } label: {
                                 Label(savedLocally ? "Сохранено в приложении ✓" : "Сохранить в приложении", systemImage: "tray.and.arrow.down")
                             }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(.cueSecondary)
                             .disabled(savedLocally)
                         }
                     }
