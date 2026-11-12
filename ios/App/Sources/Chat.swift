@@ -19,6 +19,8 @@ struct ChatRootView: View {
     @State private var segment: Segment = .chats
     @State private var profilePerson: PersonRef?
     @State private var showNotices = false
+    @State private var openedGroup: GroupRef?
+    @State private var creatingGroup = false
 
     private var backend: DemoBackend { container.backend }
     private var me: UserID { container.currentUserId }
@@ -45,6 +47,12 @@ struct ChatRootView: View {
             .background(ThemedBackground())
             .navigationTitle("Чат")
             .toolbar {
+                if container.role == .student {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button { creatingGroup = true } label: { Image(systemName: "person.3.sequence") }
+                            .accessibilityLabel("Новая группа")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     // Уведомления — колокольчик с числом новых.
                     Button { showNotices = true } label: {
@@ -77,6 +85,10 @@ struct ChatRootView: View {
                     .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Готово") { showNotices = false } } }
                 }
             }
+            .navigationDestination(item: $openedGroup) { ref in GroupChatView(container: container, groupId: ref.id) }
+            .sheet(isPresented: $creatingGroup) {
+                CreateGroupView(container: container) { id in openedGroup = GroupRef(id: id) }
+            }
             .navigationDestination(for: UserID.self) { otherId in
                 ChatThreadView(container: container, otherId: otherId)
             }
@@ -87,7 +99,12 @@ struct ChatRootView: View {
         }
     }
 
+    @ViewBuilder
     private var chatsList: some View {
+        ForEach(backend.chatGroups(for: me)) { group in
+            Button { openedGroup = GroupRef(id: group.id) } label: { GroupRow(backend: backend, group: group) }
+                .buttonStyle(.plain)
+        }
         ForEach(backend.chatPartners(of: me)) { person in
             NavigationLink(value: person.id) {
                 HStack(spacing: Space.m) {
@@ -843,6 +860,10 @@ struct PersonProfileSheet: View {
                 } else {
                     Label("Телефон откроется, если вы обменяетесь номерами в чате", systemImage: "phone.down")
                         .font(.caption).foregroundStyle(palette.textSecondary)
+                }
+
+                if let birthday = backend.publicBirthday(of: personId) {
+                    Label(birthday, systemImage: "gift").font(.callout).foregroundStyle(palette.textSecondary)
                 }
 
                 ProfileGiftsGrid(container: container, userId: personId)

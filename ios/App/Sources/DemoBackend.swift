@@ -90,6 +90,10 @@ struct DemoProfile: Codable, Hashable, Sendable {
     var city: String
     var discipline: String
     var about: String
+    /// Дата рождения. Другим ученикам по умолчанию не видна; тренер видит всегда.
+    var birthDate: Date? = nil
+    /// Что видят другие ученики: hidden (по умолчанию), year — только год, dayMonth — только день и месяц.
+    var birthdayVisibility: String? = nil
 
     var fullName: String { [firstName, lastName].filter { !$0.isEmpty }.joined(separator: " ") }
 }
@@ -111,6 +115,8 @@ private struct DemoSnapshot: Codable {
     var subscriptions: [UserID: Date]? = nil
     var exerciseStars: [UserID: [String: Int]]? = nil
     var trainingVideos: [TrainingVideo]? = nil
+    var chatGroups: [DemoChatGroup]? = nil
+    var groupMessages: [DemoGroupMessage]? = nil
     var slots: [BookingSlot]
     var bookings: [Booking]
     var records: [ProgressRecord]
@@ -178,6 +184,8 @@ final class DemoBackend {
     /// Лучшие звёзды ученика за упражнение (самостоятельное выполнение с камерой).
     var exerciseStars: [UserID: [String: Int]] = [:]
     var trainingVideos: [TrainingVideo] = []
+    var chatGroupsStore: [DemoChatGroup] = []
+    var groupMessagesStore: [DemoGroupMessage] = []
 
     private static let storageKey = "demoBackend.v6"
 
@@ -214,7 +222,7 @@ final class DemoBackend {
         let parts = (coaches.first { $0.id == id }?.name ?? students.first { $0.id == id }?.name ?? "").split(separator: " ")
         return DemoProfile(firstName: parts.first.map(String.init) ?? "", lastName: parts.dropFirst().joined(separator: " "),
                            city: "Москва", discipline: isCoach(id) && id == DemoBackend.veronikaId ? "Пул" : "Русский бильярд",
-                           about: "")
+                           about: "", birthDate: Self.seedBirthday(id))
     }
 
     func updateProfile(_ profile: DemoProfile, for id: UserID) {
@@ -685,6 +693,8 @@ final class DemoBackend {
         subscriptions = [:]
         exerciseStars = [:]
         trainingVideos = []
+        chatGroupsStore = []
+        groupMessagesStore = []
         coaches = Self.baseCoaches
         seed()
     }
@@ -720,7 +730,8 @@ final class DemoBackend {
                                     groups: groups, news: news, listings: listings, gifts: gifts, customExercises: customExercises,
                                     exerciseResults: exerciseResults, readMarks: readMarks, noticesSeen: noticesSeen,
                                     groupBookings: groupBookings, subscriptions: subscriptions, exerciseStars: exerciseStars,
-                                    trainingVideos: trainingVideos, slots: slots, bookings: bookings, records: records, events: events,
+                                    trainingVideos: trainingVideos, chatGroups: chatGroupsStore, groupMessages: groupMessagesStore,
+                                    slots: slots, bookings: bookings, records: records, events: events,
                                     messages: messages, privacy: privacy)
         if let data = try? JSONEncoder().encode(snapshot) {
             UserDefaults.standard.set(data, forKey: Self.storageKey)
@@ -750,6 +761,8 @@ final class DemoBackend {
         subscriptions = snapshot.subscriptions ?? [:]
         exerciseStars = snapshot.exerciseStars ?? [:]
         trainingVideos = snapshot.trainingVideos ?? []
+        chatGroupsStore = snapshot.chatGroups ?? []
+        groupMessagesStore = snapshot.groupMessages ?? []
         syncCoaches()
     }
 

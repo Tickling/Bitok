@@ -113,7 +113,7 @@ struct StudentsRootView: View {
         return HStack(spacing: Space.m) {
             Avatar(initials: student.initials, size: 44, userId: student.id)
             VStack(alignment: .leading, spacing: 2) {
-                Text(student.name).font(.headline)
+                Text(student.name + (backend.isBirthdayToday(student.id) ? " 🎂" : "")).font(.headline)
                 Text(student.phone).font(.caption).foregroundStyle(palette.textSecondary)
                 if waiting {
                     Text("✍️ Ждёт оценки").font(.caption.weight(.semibold)).foregroundStyle(palette.statusPending)
@@ -148,6 +148,11 @@ struct StudentDetailView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(student?.name ?? "Ученик").font(.title3.weight(.semibold))
                         Text(progress.current.level?.title ?? "Пока без оценок").foregroundStyle(palette.textSecondary)
+                        if let birthday = backend.birthdayForCoach(of: studentId) {
+                            Text((backend.isBirthdayToday(studentId) ? "🎂 Сегодня день рождения! " : "🎂 ") + birthday)
+                                .font(.caption.weight(backend.isBirthdayToday(studentId) ? .bold : .regular))
+                                .foregroundStyle(backend.isBirthdayToday(studentId) ? palette.accent : palette.textSecondary)
+                        }
                         if let phone = student?.phone, let url = URL(string: "tel:\(phone.filter { $0.isNumber || $0 == "+" })") {
                             Link(destination: url) { Label(phone, systemImage: "phone") }
                         }

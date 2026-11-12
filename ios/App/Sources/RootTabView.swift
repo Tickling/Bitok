@@ -37,6 +37,7 @@ struct RootTabView: View {
                 .tabItem { Label("Профиль", systemImage: "person.crop.circle") }
                 .tag(AppTab.profile)
         }
+        .onAppear { container.backend.checkBirthdays(for: container.currentUserId) }
         // Неоткрытый подарок — сразу красивая распаковка.
         .fullScreenCover(item: Binding(
             get: { container.backend.unopenedGift(for: container.currentUserId) },

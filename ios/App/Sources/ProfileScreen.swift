@@ -345,6 +345,26 @@ struct EditProfileView: View {
                         .lineLimit(2...5)
                 }
             }
+            Section {
+                Toggle("Указать дату рождения", isOn: Binding(get: { profile.birthDate != nil },
+                                                               set: { profile.birthDate = $0 ? (profile.birthDate ?? Calendar.current.date(byAdding: .year, value: -18, to: Date())) : nil }))
+                if let date = profile.birthDate {
+                    DatePicker("Дата рождения", selection: Binding(get: { date }, set: { profile.birthDate = $0 }),
+                               in: ...Date(), displayedComponents: .date)
+                        .environment(\.locale, Fmt.locale)
+                    if !isCoach {
+                        Picker("Видят другие ученики", selection: Binding(get: { BirthdayVisibility(rawValue: profile.birthdayVisibility ?? "hidden") ?? .hidden },
+                                                                         set: { profile.birthdayVisibility = $0.rawValue })) {
+                            ForEach(BirthdayVisibility.allCases) { Text($0.title).tag($0) }
+                        }
+                    }
+                }
+            } header: {
+                Text("День рождения")
+            } footer: {
+                Text(isCoach ? "Ученики не видят вашу дату рождения." :
+                        "По умолчанию другие ученики её не видят. Тренер видит дату всегда, чтобы поздравить. Ученикам младше 14 лет «Биток Про» за полцены.")
+            }
             Section("Телефон") {
                 Text(container.account?.phone ?? "")
                     .foregroundStyle(.secondary)
@@ -520,7 +540,16 @@ struct SettingsView: View {
                 Section {
                     Toggle("Показывать прогресс другим ученикам", isOn: privacyBinding(\.showProgressToStudents))
                     Toggle("Показывать достижения другим ученикам", isOn: privacyBinding(\.showAchievementsToStudents))
-                    Toggle("Показывать меня в «Игроках»", isOn: privacyBinding(\.discoverableInPlayers))
+                    Toggle("Показывать меня в «Учениках»", isOn: privacyBinding(\.discoverableInPlayers))
+                    Picker("Дата рождения", selection: Binding(
+                        get: { BirthdayVisibility(rawValue: container.backend.profile(for: container.currentUserId).birthdayVisibility ?? "hidden") ?? .hidden },
+                        set: { value in
+                            var profile = container.backend.profile(for: container.currentUserId)
+                            profile.birthdayVisibility = value.rawValue
+                            container.backend.updateProfile(profile, for: container.currentUserId)
+                        })) {
+                        ForEach(BirthdayVisibility.allCases) { Text($0.title).tag($0) }
+                    }
                 } header: {
                     Text("Приватность")
                 } footer: {

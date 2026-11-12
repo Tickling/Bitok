@@ -286,12 +286,18 @@ final class TableCameraModel: NSObject, ObservableObject, AVCaptureVideoDataOutp
             quad = raw
         }
         smoothed = quad
-        let edge = 0.02
-        let touches = [quad.tl, quad.tr, quad.br, quad.bl].contains { $0.x < edge || $0.x > 1 - edge || $0.y < edge || $0.y > 1 - edge }
-        let hint: Hint = touches ? .stepBack : fraction < 0.12 ? .closer : quad.area < 0.12 ? .tilt : .ready
+        let edge: CGFloat = 0.02
+        let corners: [CGPoint] = [quad.tl, quad.tr, quad.br, quad.bl]
+        var touches = false
+        for corner in corners where corner.x < edge || corner.x > 1 - edge || corner.y < edge || corner.y > 1 - edge {
+            touches = true
+        }
+        let hint: Hint
+        if touches { hint = .stepBack } else if fraction < 0.12 { hint = .closer } else if quad.area < 0.12 { hint = .tilt } else { hint = .ready }
 
         // Шары на точках
-        let ballRadius = max(0.012, hypot(quad.tr.x - quad.tl.x, quad.tr.y - quad.tl.y) / 160 * 3.4)
+        let topEdge: CGFloat = hypot(quad.tr.x - quad.tl.x, quad.tr.y - quad.tl.y)
+        let ballRadius: Double = max(0.012, Double(topEdge) / 160 * 3.4)
         let statuses: [MarkStatus] = exercise.markPoints.map { point in
             let projected = quad.project(point)
             if grid.brightBlob(near: projected, radius: ballRadius * 1.3) != nil { return .ok }
@@ -479,12 +485,15 @@ struct TableCameraTrainer: View {
         Canvas { context, _ in
             guard let quad = camera.quad else { return }
             var outline = Path()
-            outline.addLines([quad.tl, quad.tr, quad.br, quad.bl, quad.tl].map { toScreen($0, size: size) })
+            let outlinePoints: [CGPoint] = [quad.tl, quad.tr, quad.br, quad.bl, quad.tl].map { toScreen($0, size: size) }
+            outline.addLines(outlinePoints)
             context.stroke(outline, with: .color(camera.hint == .ready ? .green : .yellow), lineWidth: 3)
             guard phase != .framing || mode == .perform else { return }
-            let edge = hypot(toScreen(quad.tr, size: size).x - toScreen(quad.tl, size: size).x,
-                             toScreen(quad.tr, size: size).y - toScreen(quad.tl, size: size).y)
-            let r = max(8, edge / 160 * 3.4) * (pulse ? 1.25 : 1)
+            let screenTL: CGPoint = toScreen(quad.tl, size: size)
+            let screenTR: CGPoint = toScreen(quad.tr, size: size)
+            let edge: CGFloat = hypot(screenTR.x - screenTL.x, screenTR.y - screenTL.y)
+            let pulseScale: CGFloat = pulse ? 1.25 : 1
+            let r: CGFloat = max(8, edge / 160 * 3.4) * pulseScale
             // Линия удара
             if let first = exercise.cueBalls.first, let target = exercise.targetPoint(for: 0) {
                 var line = Path()
@@ -801,9 +810,20 @@ struct PaywallView: View {
                     }
                     .padding(Space.l)
                     .glassCard()
+                    let youth = container.backend.hasYouthDiscount(container.currentUserId)
+                    if youth {
+                        Label("Вам меньше 14 лет — подписка за полцены 🎉", systemImage: "graduationcap.fill")
+                            .font(.callout.weight(.semibold)).foregroundStyle(palette.accent)
+                    }
                     VStack(spacing: Space.s) {
-                        plan(title: "Год", price: "2 490 ₽", note: "207 ₽ в месяц · выгода 30%", selected: yearly) { yearly = true }
-                        plan(title: "Месяц", price: "299 ₽", note: "Отмена в любой момент", selected: !yearly) { yearly = false }
+                        plan(title: "Год", price: youth ? "1 245 ₽" : "2 490 ₽",
+                             note: youth ? "104 ₽ в месяц · скидка 50% до 14 лет" : "207 ₽ в месяц · выгода 30%", selected: yearly) { yearly = true }
+                        plan(title: "Месяц", price: youth ? "149 ₽" : "299 ₽",
+                             note: youth ? "Скидка 50% для учеников младше 14 лет" : "Отмена в любой момент", selected: !yearly) { yearly = false }
+                    }
+                    if !youth {
+                        Text("Ученикам младше 14 лет — скидка 50% (укажите дату рождения в профиле)").font(.caption)
+                            .foregroundStyle(palette.textSecondary)
                     }
                     Text("Демо-режим: оплата не списывается. В приложении из App Store — покупка через Apple, на Android — через Google Play.")
                         .font(.caption).foregroundStyle(palette.textSecondary).multilineTextAlignment(.center)
