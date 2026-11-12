@@ -17,6 +17,7 @@ struct ContentRootView: View {
     @State private var composingNews = false
     @State private var composingListing = false
     @State private var openedListing: DemoListing?
+    @State private var showPaywall = false
 
     private var backend: DemoBackend { container.backend }
     private var isCoach: Bool { container.role == .trainer }
@@ -29,6 +30,9 @@ struct ContentRootView: View {
                         ForEach(Segment.allCases) { Text($0.rawValue).tag($0) }
                     }
                     .pickerStyle(.segmented)
+                    if container.role == .student && !backend.hasSubscription(container.currentUserId) {
+                        ProPromoCard { showPaywall = true }
+                    }
                     switch segment {
                     case .news: newsList
                     case .market: market
@@ -54,6 +58,9 @@ struct ContentRootView: View {
             .sheet(isPresented: $composingNews) { NewsComposer(container: container) }
             .sheet(isPresented: $composingListing) { ListingComposer(container: container, category: category ?? .cues) }
             .sheet(item: $openedListing) { listing in ListingDetail(container: container, listing: listing) }
+            .sheet(isPresented: $showPaywall) {
+                PaywallView(container: container) { container.selectedTab = .people }
+            }
         }
     }
 
@@ -392,5 +399,34 @@ struct ListingComposer: View {
                 }
             }
         }
+    }
+}
+
+/// Реклама подписки в «Контенте» для учеников без «Биток Про».
+struct ProPromoCard: View {
+    let onOpen: () -> Void
+
+    var body: some View {
+        Button(action: onOpen) {
+            HStack(spacing: 12) {
+                Image(systemName: "camera.viewfinder")
+                    .font(.system(size: 30, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 56, height: 56)
+                    .background(.white.opacity(0.18), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Биток Про").font(.headline).foregroundStyle(.white)
+                    Text("Камера расставит шары по упражнению, посчитает удары, покажет ошибки на видео и отправит их тренеру")
+                        .font(.caption).foregroundStyle(.white.opacity(0.9)).multilineTextAlignment(.leading)
+                    Text("Узнать больше →").font(.caption.weight(.bold)).foregroundStyle(.white)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(14)
+            .background(LinearGradient(colors: [Color(red: 0.12, green: 0.45, blue: 0.95), Color(red: 0.45, green: 0.18, blue: 0.85)],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing),
+                        in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 }

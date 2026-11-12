@@ -240,7 +240,9 @@ struct ProfileRootView: View {
             Divider().padding(.leading, 52)
             menuLink("Настройки", "gearshape") { SettingsView(container: container) }
             Divider().padding(.leading, 52)
-            menuLink("Помощь", "questionmark.circle") { HelpView(role: container.role) }
+            menuLink("Помощь", "questionmark.circle") {
+                HelpView(role: container.role, isPro: backend.hasSubscription(me))
+            }
         }
         .glassCard()
     }

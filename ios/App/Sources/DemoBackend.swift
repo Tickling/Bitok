@@ -127,6 +127,8 @@ final class DemoBackend {
     static let veronikaId = UserID(UUID(uuidString: "00000000-0000-0000-0000-0000000000C2")!)
     static let ivanId = UserID(UUID(uuidString: "00000000-0000-0000-0000-000000000001")!)
     static let natashaId = UserID(UUID(uuidString: "00000000-0000-0000-0000-000000000005")!)
+    /// Ученик с подпиской «Биток Про» — для проверки камеры-помощника.
+    static let dmitryId = UserID(UUID(uuidString: "00000000-0000-0000-0000-000000000006")!)
 
     /// Тренеры в исходном виде; правки профиля (DemoCoachInfo) и места накладываются в syncCoaches().
     static let baseCoaches: [DemoCoach] = [
@@ -146,6 +148,7 @@ final class DemoBackend {
         DemoPerson(id: UserID(UUID(uuidString: "00000000-0000-0000-0000-000000000003")!), name: "Олег Морозов", phone: "+7 903 555-01-02"),
         DemoPerson(id: UserID(UUID(uuidString: "00000000-0000-0000-0000-000000000004")!), name: "Анна Романова", phone: "+7 925 555-03-04"),
         DemoPerson(id: DemoBackend.natashaId, name: "Наталья Белова", phone: "+7 900 000-00-04"),
+        DemoPerson(id: DemoBackend.dmitryId, name: "Дмитрий Орлов", phone: "+7 900 000-00-05"),
     ]
 
     var slots: [BookingSlot] = []
@@ -810,6 +813,10 @@ final class DemoBackend {
         }
         seedExtras()
         seedExerciseResults()
+        // Дмитрий — с подпиской «Биток Про» на год и тренировкой у Алексея.
+        subscriptions[DemoBackend.dmitryId] = Calendar.current.date(byAdding: .year, value: 1, to: Date())
+        seedBooking(coach: alexey, student: DemoBackend.dmitryId, dayOffset: 3, finalStatus: .confirmed)
+        notify(DemoBackend.dmitryId, "Биток Про подключён ✨", "Откройте «Прогресс» → «Упражнения» → «Камера-помощник»")
         for student in [ivan, natasha] {
             notify(student, "Добро пожаловать в «Биток»", "Выберите тренера и запишитесь во вкладке «Календарь»")
         }

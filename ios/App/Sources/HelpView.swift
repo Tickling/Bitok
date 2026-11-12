@@ -6,6 +6,8 @@ import DesignSystem
 struct HelpView: View {
     @Environment(\.palette) private var palette
     let role: UserRole
+    /// Есть подписка «Биток Про» — показываем инструкцию к камере-помощнику первой.
+    var isPro = false
 
     private struct Topic: Identifiable {
         let id = UUID()
@@ -107,6 +109,11 @@ struct HelpView: View {
                      : "Коротко о том, где что находится и что можно делать.")
                     .foregroundStyle(palette.textSecondary)
             }
+            if isPro && role == .student {
+                Section("Биток Про: камера-помощник") {
+                    ProGuideContent()
+                }
+            }
             Section("Экраны с подсказками") {
                 ForEach(role == .trainer ? HelpShot.coach : HelpShot.student) { shot in
                     HelpShotCard(shot: shot)
@@ -145,5 +152,69 @@ struct HelpView: View {
         .scrollContentBackground(.hidden)
         .background(ThemedBackground())
         .navigationTitle("Помощь")
+    }
+}
+
+/// Инструкция к «Биток Про» (в «Помощи» и сразу после оформления подписки).
+struct ProGuideContent: View {
+    @Environment(\.palette) private var palette
+
+    private let steps: [(String, String)] = [
+        ("list.number", "Откройте «Прогресс» → «Упражнения» и выберите упражнение. На схеме видно, где стоят шары и где поставить штатив 📷."),
+        ("camera.viewfinder", "Нажмите «Камера-помощник» → «Расстановка». Встаньте у короткого борта: камера подскажет, отойти назад или подойти, пока весь стол не окажется в кадре."),
+        ("smallcircle.filled.circle", "Наклейте точки там, где светятся голубые круги, и поставьте на них шары. Зелёный — шар на месте, красный — подсказка, куда сдвинуть."),
+        ("camera.on.rectangle", "Режим «Выполнение»: поставьте телефон на штатив у противоположного борта, напротив себя (место показано на схеме). Нажмите «Начать запись»."),
+        ("target", "Бейте — приложение считает удары, хвалит за попадания и подбадривает после промахов."),
+        ("star.fill", "«Завершить» → звёзды: ⭐️ от 40%, ⭐️⭐️ от 60%, ⭐️⭐️⭐️ от 80%. Ошибки отмечены на видео с советом, как исправить."),
+        ("paperplane.fill", "Видео можно сохранить в галерею, в приложение или отправить тренеру. Если ошибка повторяется — отправьте тренеру кусочек видео с ней."),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.m) {
+            ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
+                HStack(alignment: .top, spacing: Space.m) {
+                    ZStack {
+                        Circle().fill(palette.accent).frame(width: 30, height: 30)
+                        Image(systemName: step.0).font(.caption.bold()).foregroundStyle(palette.onAccent)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Шаг \(index + 1)").font(.caption.weight(.semibold)).foregroundStyle(palette.textSecondary)
+                        Text(step.1).font(.callout)
+                    }
+                }
+            }
+            Text("Совет: хорошее освещение и однотонное сукно помогают камере. Телефон держите неподвижно.")
+                .font(.caption).foregroundStyle(palette.textSecondary)
+        }
+        .padding(.vertical, Space.xs)
+    }
+}
+
+/// Экран после оформления подписки.
+struct ProWelcomeView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.palette) private var palette
+    var onStart: () -> Void = {}
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: Space.l) {
+                    Label("Биток Про подключён ✨", systemImage: "checkmark.seal.fill").font(.title2.weight(.bold))
+                        .foregroundStyle(palette.accent)
+                    Text("Как пользоваться камерой-помощником").font(.headline)
+                    ProGuideContent()
+                    Text("Инструкция всегда доступна в «Профиль» → «Помощь».").font(.caption).foregroundStyle(palette.textSecondary)
+                }
+                .padding(Space.l)
+            }
+            .safeAreaInset(edge: .bottom) {
+                Button("Начать") { dismiss(); onStart() }
+                    .buttonStyle(.cueGlassProminent)
+                    .padding(.horizontal, Space.l)
+                    .padding(.bottom, Space.s)
+            }
+            .background(ThemedBackground())
+        }
     }
 }

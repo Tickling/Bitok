@@ -164,7 +164,7 @@ final class TableCameraModel: NSObject, ObservableObject, AVCaptureVideoDataOutp
     private(set) var videoURL: URL?
 
     // Слежение за ударом
-    private enum ShotState { case waiting, moving(since: Date, last: CGPoint), }
+    private enum ShotState { case waiting, moving(since: Date, last: CGPoint) }
     private var shotState: ShotState = .waiting
     private var stillSince: Date?
 
@@ -781,8 +781,9 @@ struct PaywallView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.palette) private var palette
     let container: AppContainer
-    let onSubscribed: () -> Void
+    var onSubscribed: () -> Void = {}
     @State private var yearly = true
+    @State private var showWelcome = false
 
     var body: some View {
         NavigationStack {
@@ -812,8 +813,7 @@ struct PaywallView: View {
             .safeAreaInset(edge: .bottom) {
                 Button("Оформить \(yearly ? "на год" : "на месяц")") {
                     container.backend.subscribe(container.currentUserId, months: yearly ? 12 : 1)
-                    dismiss()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { onSubscribed() }
+                    showWelcome = true
                 }
                 .buttonStyle(.cueGlassProminent)
                 .padding(.horizontal, Space.l)
@@ -821,6 +821,9 @@ struct PaywallView: View {
             }
             .background(ThemedBackground())
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Закрыть") { dismiss() } } }
+            .sheet(isPresented: $showWelcome, onDismiss: { dismiss() }) {
+                ProWelcomeView { DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { onSubscribed() } }
+            }
         }
     }
 
