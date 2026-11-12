@@ -31,7 +31,9 @@ fun ProgressScreen(app: AppState) {
     val b = app.backend
     val progress = b.progress(app.me)
     val rating = b.rating(app.me)
-    Screen("Прогресс", app) {
+    Screen("Прогресс", app, actions = {
+        androidx.compose.material3.TextButton({ app.push(Route.Exercises(app.me)) }) { Text("📋 Упражнения") }
+    }) {
         GlassCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {

@@ -67,6 +67,7 @@ fun ProfileScreen(app: AppState) {
             PlayerCard(app)
             NextTraining(app)
             Season(app)
+            ProfileGifts(app, app.me)
         }
         GlassCard(Modifier, null) {
             MenuRow(Icons.Filled.EditNote, "Редактировать профиль") { app.push(Route.EditProfile) }
@@ -75,6 +76,8 @@ fun ProfileScreen(app: AppState) {
                 MenuRow(Icons.Filled.Place, "Места и расписание") { app.push(Route.Venues) }
                 HorizontalDivider()
                 MenuRow(Icons.Filled.Groups, "Групповые тренировки") { app.push(Route.Groups) }
+                HorizontalDivider()
+                MenuRow(Icons.Filled.EditNote, "Упражнения и уроки") { app.push(Route.CoachExercises) }
             } else {
                 HorizontalDivider()
                 MenuRow(Icons.Filled.EmojiEvents, "Трофеи и достижения") { app.push(Route.Trophies) }
@@ -126,7 +129,9 @@ private fun PlayerCard(app: AppState) {
                 Text("👑 Чемпион клуба", fontSize = 13.sp, color = Color.White.copy(alpha = 0.9f))
             }
             Box(Modifier.size(92.dp).background(Brush.sweepGradient(listOf(Color(0xFFFFF6C8), Color(0xFFF2C94C), Color(0xFFB8860B), Color(0xFFFFF6C8))), RoundedCornerShape(46.dp)),
-                contentAlignment = Alignment.Center) { Avatar(b.person(app.me), 84.dp) }
+                contentAlignment = Alignment.Center) {
+                Box(Modifier.clickable { if (AvatarStore.get(app.context, app.me) != null) app.push(Route.PhotoViewer(app.me)) }) { Avatar(b.person(app.me), 84.dp) }
+            }
         }
         Row {
             Metric.entries.forEach { m ->
@@ -183,7 +188,7 @@ private fun CoachCard(app: AppState) {
     val waiting = b.state.bookings.count { it.coachId == app.me && it.status == BookingStatus.COMPLETED && !b.isEvaluated(it.id) }
     GradientCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Avatar(b.person(app.me), 72.dp)
+            Box(Modifier.clickable { if (AvatarStore.get(app.context, app.me) != null) app.push(Route.PhotoViewer(app.me)) }) { Avatar(b.person(app.me), 72.dp) }
             Spacer(Modifier.width(12.dp))
             Column {
                 Text(b.name(app.me), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
@@ -216,6 +221,8 @@ fun EditProfileScreen(app: AppState) {
     var city by remember { mutableStateOf(initial.city) }
     var discipline by remember { mutableStateOf(initial.discipline) }
     var about by remember { mutableStateOf(initial.about) }
+    var birth by remember { mutableStateOf(initial.birthDate?.toDate()) }
+    var visibility by remember { mutableStateOf(initial.birthdayVisibility) }
     var rank by remember { mutableStateOf(info?.rank ?: "") }
     var hours by remember { mutableStateOf(info?.hours ?: "") }
     var coachAbout by remember { mutableStateOf(info?.about ?: "") }
@@ -226,7 +233,7 @@ fun EditProfileScreen(app: AppState) {
     }
     Screen("Профиль", app, bottom = {
         PrimaryButton("Сохранить", Modifier.padding(16.dp), enabled = first.isNotBlank()) {
-            b.updateProfile(app.me, Profile(first.trim(), last.trim(), city.trim(), discipline, about.trim()))
+            b.updateProfile(app.me, Profile(first.trim(), last.trim(), city.trim(), discipline, about.trim(), birth?.at(12), visibility))
             if (app.isCoach) {
                 b.updateCoachInfo(app.me, CoachInfo(rank.trim(), hours.trim(), coachAbout.trim(), price.toIntOrNull() ?: b.coachInfo(app.me).price))
             }
@@ -234,7 +241,8 @@ fun EditProfileScreen(app: AppState) {
         }
     }) {
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Avatar(b.person(app.me), 96.dp)
+            // Нажатие на фото открывает просмотр; удаление — отдельной кнопкой.
+            Box(Modifier.clickable { if (AvatarStore.get(context, app.me) != null) app.push(Route.PhotoViewer(app.me)) }) { Avatar(b.person(app.me), 96.dp) }
             TextButton({ picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
                 Text(if (AvatarStore.get(context, app.me) == null) "📷 Загрузить фото" else "📷 Изменить фото")
             }
@@ -260,6 +268,31 @@ fun EditProfileScreen(app: AppState) {
         } else {
             OutlinedTextField(about, { about = it }, Modifier.fillMaxWidth(), label = { Text("Чего хотите добиться") }, minLines = 2)
         }
+        Title("День рождения")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Указать дату рождения", Modifier.weight(1f), color = LocalPalette.current.text)
+            Switch(birth != null, { birth = if (it) (birth ?: LocalDate.now().minusYears(18)) else null })
+        }
+        birth?.let { date ->
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                SecondaryButton("−") { birth = date.minusDays(1) }
+                Text(date.format(java.time.format.DateTimeFormatter.ofPattern("d MMMM yyyy", java.util.Locale("ru", "RU"))), Modifier.weight(1f),
+                    color = LocalPalette.current.text, fontWeight = FontWeight.SemiBold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                SecondaryButton("+") { if (date < LocalDate.now()) birth = date.plusDays(1) }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                SecondaryButton("−1 мес.", Modifier.weight(1f)) { birth = date.minusMonths(1) }
+                SecondaryButton("−1 год", Modifier.weight(1f)) { birth = date.minusYears(1) }
+                SecondaryButton("+1 год", Modifier.weight(1f)) { if (date.plusYears(1) < LocalDate.now()) birth = date.plusYears(1) }
+            }
+            if (!app.isCoach) {
+                Secondary("Видят другие ученики:")
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    BirthdayVisibility.entries.forEach { v -> Chip(v.title, v.key == visibility, Modifier.weight(1f)) { visibility = v.key } }
+                }
+            }
+        }
+        Secondary(if (app.isCoach) "Ученики не видят вашу дату рождения." else "По умолчанию другие ученики её не видят. Тренер видит дату всегда, чтобы поздравить. Ученикам младше 14 лет «Биток Про» за полцены.")
         Secondary("Телефон: ${app.account?.phone}")
     }
 }
@@ -316,7 +349,13 @@ fun SettingsScreen(app: AppState) {
                 Title("Приватность")
                 ToggleRow("Показывать прогресс другим ученикам", privacy.showProgress) { b.setPrivacy(privacy.copy(showProgress = it)) }
                 ToggleRow("Показывать достижения другим ученикам", privacy.showAchievements) { b.setPrivacy(privacy.copy(showAchievements = it)) }
-                ToggleRow("Показывать меня в «Игроках»", privacy.discoverable) { b.setPrivacy(privacy.copy(discoverable = it)) }
+                ToggleRow("Показывать меня в «Учениках»", privacy.discoverable) { b.setPrivacy(privacy.copy(discoverable = it)) }
+                Secondary("Дата рождения для других учеников:")
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    BirthdayVisibility.entries.forEach { v ->
+                        Chip(v.title, v.key == b.profile(app.me).birthdayVisibility, Modifier.weight(1f)) { b.updateProfile(app.me, b.profile(app.me).copy(birthdayVisibility = v.key)) }
+                    }
+                }
                 Secondary("Ваш тренер видит прогресс всегда. Телефон другим ученикам не показывается без обмена номерами.")
             }
         }
@@ -358,6 +397,12 @@ fun HelpScreen(app: AppState) {
     var opened by remember { mutableStateOf<String?>(topics.first().first) }
     Screen("Помощь", app) {
         Secondary(if (app.isCoach) "Коротко о том, где что находится в приложении тренера." else "Коротко о том, где что находится и что можно делать.", size = 15)
+        if (!app.isCoach && app.backend.hasSubscription(app.me)) {
+            GlassCard {
+                Title("Биток Про: камера-помощник")
+                ProGuide()
+            }
+        }
         Title("Экраны с подсказками")
         (if (app.isCoach) coachShots else studentShots).forEach { shot ->
             GlassCard {

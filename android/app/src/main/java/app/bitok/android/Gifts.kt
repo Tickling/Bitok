@@ -30,6 +30,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -66,6 +71,8 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.random.Random
+import androidx.compose.material3.Switch
+import androidx.compose.ui.platform.LocalContext as LocalCtx
 
 val GiftCard.colors: List<Color> get() = listOf(Color(from), Color(to))
 
@@ -89,6 +96,37 @@ fun GiftCardView(card: GiftCard, message: String, from: String, item: String, co
     }
 }
 
+/** Изображение подарка: фото товара или 🎱 на градиенте открытки, значок открытки в углу. */
+@Composable
+fun GiftArt(card: GiftCard, imageId: String?, size: androidx.compose.ui.unit.Dp) {
+    val context = LocalContext.current
+    val photo = MediaStore.get(context, imageId)
+    Box(Modifier.size(size), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxSize().clip(RoundedCornerShape(size * 0.22f)).background(Brush.linearGradient(card.colors)),
+            contentAlignment = Alignment.Center) {
+            if (photo != null) Image(photo.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            else Text("🎱", fontSize = (size.value * 0.5f).sp)
+        }
+        Text(card.emoji, fontSize = (size.value * 0.2f).sp,
+            modifier = Modifier.align(Alignment.TopEnd).offset(x = size * 0.08f, y = -size * 0.08f).background(Color.White, RoundedCornerShape(50)).padding(3.dp))
+    }
+}
+
+/** Узор фона из бильярдных значков (как фон подарков в Telegram). */
+@Composable
+fun GiftPattern(modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val symbols = listOf("●", "★", "✦", "◎", "✧")
+        val paint = android.graphics.Paint().apply { color = android.graphics.Color.argb(40, 255, 255, 255); textSize = 34f }
+        var i = 0; var y = 30f
+        while (y < size.height) {
+            var x = if ((y / 90).toInt() % 2 == 0) 20f else 64f
+            while (x < size.width) { drawContext.canvas.nativeCanvas.drawText(symbols[i % symbols.size], x, y, paint); x += 88f; i++ }
+            y += 90f
+        }
+    }
+}
+
 @Composable
 fun GiftComposerScreen(app: AppState, listingId: String) {
     val p = LocalPalette.current
@@ -97,32 +135,40 @@ fun GiftComposerScreen(app: AppState, listingId: String) {
     var recipient by remember { mutableStateOf<String?>(null) }
     var card by remember { mutableStateOf(GiftCard.BIRTHDAY) }
     var message by remember { mutableStateOf("") }
-    val context = LocalContext.current
-    Screen("Подарок", app, bottom = {
-        PrimaryButton(recipient?.let { "Подарить · ${b.person(it)?.firstName}" } ?: "Выберите, кому подарить", Modifier.padding(16.dp),
+    var hideName by remember { mutableStateOf(false) }
+    val name = recipient?.let { b.person(it)?.firstName } ?: "…"
+    val price = listing.price?.let { Fmt.rubles(it) } ?: "договорную цену"
+    Screen("Отправить подарок", app, bottom = {
+        PrimaryButton(if (recipient == null) "Выберите, кому подарить" else "🎁 Отправить подарок за $price", Modifier.padding(16.dp),
             enabled = recipient != null) {
             val to = recipient ?: return@PrimaryButton
-            b.sendGift(listing, app.me, to, card, message.trim())
+            b.sendGift(listing, app.me, to, card, message.trim(), hideName)
             app.openChat(to)
         }
     }) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            MediaStore.get(context, listing.imageId)?.let {
-                Image(it.asImageBitmap(), null, Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
-                androidx.compose.foundation.layout.Spacer(Modifier.width(10.dp))
-            }
-            Column {
-                Title(listing.title)
-                Secondary(listing.price?.let { Fmt.rubles(it) } ?: "Цена договорная")
+        Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(Brush.linearGradient(card.colors))) {
+            GiftPattern(Modifier.matchParentSize())
+            Column(Modifier.fillMaxWidth().padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Подарок стоимостью ${listing.price?.let { Fmt.rubles(it) } ?: "по договорённости"}", color = Color.White, fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold, modifier = Modifier.background(Color.Black.copy(alpha = 0.18f), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 5.dp))
+                Column(Modifier.fillMaxWidth().background(Color.White.copy(alpha = 0.14f), RoundedCornerShape(24.dp)).padding(18.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    GiftArt(card, listing.imageId, 120.dp)
+                    Text("Подарок для $name", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                    Text("${listing.title}\nМожно показать в профиле. Забрать — у продавца на тренировке.", color = Color.White.copy(alpha = 0.9f),
+                        textAlign = TextAlign.Center, fontSize = 14.sp)
+                }
+                OutlinedTextField(message, { message = it }, Modifier.fillMaxWidth(), placeholder = { Text("Ваше сообщение (необязательно)") },
+                    shape = RoundedCornerShape(50), colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = Color.White.copy(alpha = 0.9f), unfocusedContainerColor = Color.White.copy(alpha = 0.85f),
+                        focusedTextColor = Color.Black, unfocusedTextColor = Color.Black))
             }
         }
         Title("Кому")
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             b.players(app.me).forEach { player ->
                 Column(Modifier.clickable { recipient = player.id }, horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(Modifier.border(3.dp, if (recipient == player.id) p.accent else Color.Transparent, RoundedCornerShape(32.dp)).padding(3.dp)) {
-                        Avatar(player, 56.dp)
-                    }
+                    Box(Modifier.border(3.dp, if (recipient == player.id) p.accent else Color.Transparent, RoundedCornerShape(32.dp)).padding(3.dp)) { Avatar(player, 52.dp) }
                     Text(player.firstName, fontSize = 13.sp, color = p.text, fontWeight = if (recipient == player.id) FontWeight.Bold else FontWeight.Normal)
                 }
             }
@@ -130,115 +176,157 @@ fun GiftComposerScreen(app: AppState, listingId: String) {
         Title("Открытка")
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             GiftCard.entries.forEach { option ->
-                Column(
-                    Modifier.size(width = 108.dp, height = 78.dp)
-                        .background(Brush.linearGradient(option.colors), RoundedCornerShape(14.dp))
-                        .border(3.dp, if (option == card) p.accent else Color.Transparent, RoundedCornerShape(14.dp))
-                        .clickable { card = option },
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Text(option.emoji, fontSize = 28.sp)
-                    Text(option.title, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                }
+                Text("${option.emoji} ${option.title}", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.clip(RoundedCornerShape(50)).background(Brush.linearGradient(option.colors))
+                        .border(2.dp, if (option == card) p.text else Color.Transparent, RoundedCornerShape(50))
+                        .clickable { card = option }.padding(horizontal = 14.dp, vertical = 8.dp))
             }
         }
-        Title("Поздравление")
-        OutlinedTextField(message, { message = it }, Modifier.fillMaxWidth(), minLines = 3,
-            placeholder = { Text("Например: с днём рождения! Пусть каждый удар будет точным 🎱") })
-        Secondary("Так увидит получатель")
-        GiftCardView(card, message, b.name(app.me), listing.title)
+        GlassCard {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Скрыть моё имя", Modifier.weight(1f), color = p.text, fontSize = 16.sp)
+                Switch(hideName, { hideName = it })
+            }
+        }
+        Secondary("Вы можете скрыть имя и сообщение от всех, кто просматривает профиль $name. Скрытые имя и сообщение увидит только $name.")
     }
 }
 
-/** Распаковка подарка: коробка покачивается, по нажатию крышка улетает, появляется открытка и конфетти. */
+/** Сообщение о подарке в чате — как в Telegram. */
 @Composable
-fun GiftReveal(gift: Gift, fromName: String, onClose: () -> Unit) {
-    var opened by remember { mutableStateOf(false) }
+fun GiftMessage(app: AppState, gift: Gift, isMine: Boolean) {
+    val b = app.backend
+    val price = gift.price?.let { Fmt.rubles(it) } ?: "—"
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(if (isMine) "Вы отправили подарок стоимостью $price" else "${b.name(gift.fromId)} отправил(а) вам подарок стоимостью $price",
+            color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
+            modifier = Modifier.background(Color.Black.copy(alpha = 0.35f), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 5.dp))
+        Box(Modifier.width(240.dp).clip(RoundedCornerShape(22.dp)).background(Brush.verticalGradient(listOf(Color(0xFF383838), Color(0xFF1A1A1A))))) {
+            GiftPattern(Modifier.matchParentSize())
+            Column(Modifier.fillMaxWidth().padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                GiftArt(gift.card, b.listing(gift.listingId)?.imageId, 92.dp)
+                Text(gift.itemTitle, color = Color.White, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                Text("${gift.card.emoji} ${gift.card.title}", color = Color.White.copy(alpha = 0.85f), fontSize = 12.sp)
+                Text(if (isMine || gift.opened) "Посмотреть" else "Открыть", color = Color.White, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = 0.22f))
+                        .clickable { app.push(Route.GiftDetail(gift.id)) }.padding(horizontal = 20.dp, vertical = 8.dp))
+            }
+        }
+    }
+}
+
+private fun senderName(b: DemoBackend, gift: Gift, viewer: String) =
+    if (gift.hideName && viewer != gift.toId && viewer != gift.fromId) "Тайный отправитель" else b.name(gift.fromId)
+
+/** Подарок: красивая распаковка (первый раз) и подробности — как получить, переход к товару. */
+@Composable
+fun GiftContent(app: AppState, gift: Gift, animated: Boolean, onDone: () -> Unit) {
+    val b = app.backend
+    var revealed by remember { mutableStateOf(!animated) }
     val scope = rememberCoroutineScope()
-    val lid = remember { Animatable(0f) }
     val confetti = remember { Animatable(0f) }
-    val cardScale = remember { Animatable(0.2f) }
-    val wiggle by rememberInfiniteTransition(label = "wiggle")
-        .animateFloat(-4f, 4f, infiniteRepeatable(tween(180, easing = LinearEasing), RepeatMode.Reverse), label = "angle")
+    val rays by rememberInfiniteTransition(label = "rays").animateFloat(0f, 360f, infiniteRepeatable(tween(14000, easing = LinearEasing)), label = "a")
     val pieces = remember { List(90) { Triple(Random.nextFloat(), Random.nextFloat() * 0.5f, Random.nextFloat()) } }
     val colors = gift.card.colors + listOf(Color.White, Color(0xFFFFD54F))
-
-    Box(
-        Modifier.fillMaxSize().background(Brush.radialGradient(listOf(gift.card.colors[0].copy(alpha = 0.95f), Color.Black), radius = 1400f))
-            // Перехватываем нажатия, чтобы они не уходили на экран под анимацией.
-            .clickable(indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) {},
-        contentAlignment = Alignment.Center,
-    ) {
-        if (opened) {
-            Canvas(Modifier.fillMaxSize()) {
-                pieces.forEachIndexed { i, (x, delayPart, spin) ->
-                    val t = ((confetti.value - delayPart) / (1f - delayPart)).coerceIn(0f, 1f)
-                    if (t <= 0f) return@forEachIndexed
-                    val px = x * size.width + (spin - 0.5f) * 120f * t
-                    val py = -40f + (size.height + 80f) * t * t
-                    rotate(spin * 900f * t, Offset(px, py)) {
-                        drawRect(colors[i % colors.size], Offset(px - 5f, py - 8f), Size(10f + spin * 8f, 16f + spin * 8f))
-                    }
+    val isRecipient = gift.toId == app.me
+    val listing = b.listing(gift.listingId)
+    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(gift.card.colors + Color.Black))
+        .clickable(indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) {}) {
+        GiftPattern(Modifier.matchParentSize())
+        Canvas(Modifier.fillMaxSize()) {
+            val center = Offset(size.width / 2, size.height * 0.24f)
+            rotate(rays, center) {
+                for (k in 0 until 12) rotate(k * 30f, center) {
+                    drawPath(androidx.compose.ui.graphics.Path().apply {
+                        moveTo(center.x, center.y); lineTo(center.x - 40f, center.y - size.height); lineTo(center.x + 40f, center.y - size.height); close()
+                    }, Color.White.copy(alpha = if (revealed) 0.06f else 0.12f))
+                }
+            }
+            if (revealed) pieces.forEachIndexed { i, (x, d, spin) ->
+                val t = ((confetti.value - d) / (1f - d)).coerceIn(0f, 1f)
+                if (t > 0f) {
+                    val px = x * size.width + (spin - 0.5f) * 120f * t; val py = -40f + (size.height + 80f) * t * t
+                    rotate(spin * 900f * t, Offset(px, py)) { drawRect(colors[i % colors.size], Offset(px - 5f, py - 8f), Size(10f + spin * 8f, 16f + spin * 8f)) }
                 }
             }
         }
-        Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(24.dp)) {
-            Text(if (opened) "Вам подарок!" else "$fromName прислал(а) подарок", color = Color.White, fontSize = 24.sp,
-                fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-            Box(Modifier.height(340.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                if (opened) {
-                    Box(Modifier.scale(cardScale.value)) { GiftCardView(gift.card, gift.message, fromName, gift.itemTitle) }
+        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            if (!animated || revealed) {
+                Row(Modifier.fillMaxWidth()) {
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onDone) { Text("Закрыть", color = Color.White) }
                 }
-                if (!opened) {
-                    Box(
-                        Modifier.size(220.dp).rotate(if (lid.value == 0f) wiggle else 0f).scale(1f + 0.15f * lid.value)
-                            .clickable {
-                                scope.launch {
-                                    lid.animateTo(1f, tween(550))
-                                    opened = true
-                                    launch { cardScale.animateTo(1f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessLow)) }
-                                    confetti.animateTo(1f, tween(3200, easing = LinearEasing))
-                                }
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        // Коробка
-                        Box(Modifier.offset(y = 40.dp).size(170.dp, 140.dp).background(Brush.verticalGradient(gift.card.colors), RoundedCornerShape(14.dp))) {
-                            Box(Modifier.align(Alignment.Center).width(22.dp).height(140.dp).background(Color.White.copy(alpha = 0.9f)))
-                        }
-                        // Крышка с бантом
-                        Box(
-                            Modifier.offset(y = (-50 - 210 * lid.value).dp).rotate(-35f * lid.value),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Box(Modifier.size(190.dp, 44.dp).background(Brush.verticalGradient(gift.card.colors.reversed()), RoundedCornerShape(10.dp))) {
-                                Box(Modifier.align(Alignment.Center).width(22.dp).height(44.dp).background(Color.White.copy(alpha = 0.9f)))
-                            }
-                            Row(Modifier.offset(y = (-30).dp)) {
-                                Box(Modifier.size(46.dp, 30.dp).rotate(-25f).background(Color.White, RoundedCornerShape(50)))
-                                Box(Modifier.size(46.dp, 30.dp).rotate(25f).background(Color.White, RoundedCornerShape(50)))
-                            }
+            } else Spacer(Modifier.height(48.dp))
+            Spacer(Modifier.height(20.dp))
+            Box(Modifier.clickable(enabled = !revealed) {
+                revealed = true
+                scope.launch { confetti.animateTo(1f, tween(3200, easing = LinearEasing)) }
+            }) { GiftArt(gift.card, listing?.imageId, if (revealed) 150.dp else 190.dp) }
+            if (!revealed) {
+                Text("${senderName(b, gift, app.me)} прислал(а) вам подарок", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                Text("Нажмите, чтобы открыть", color = Color.White.copy(alpha = 0.85f))
+            } else {
+                Text(if (isRecipient) "Подарок для вас" else "Подарок для ${b.name(gift.toId)}", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text(gift.itemTitle, color = Color.White, fontWeight = FontWeight.SemiBold)
+                Text("От: ${senderName(b, gift, app.me)} · ${Fmt.shortDay(gift.at)}" +
+                    if (gift.hideName && (isRecipient || gift.fromId == app.me)) "\nИмя скрыто от других — его видите только вы" else "",
+                    color = Color.White.copy(alpha = 0.9f), textAlign = TextAlign.Center, fontSize = 14.sp)
+                GiftCardView(gift.card, gift.message, senderName(b, gift, app.me), gift.itemTitle, compact = true)
+                Column(Modifier.fillMaxWidth().background(Color.White.copy(alpha = 0.92f), RoundedCornerShape(22.dp)).padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("📦 Как получить", fontWeight = FontWeight.Bold, color = Color.Black)
+                    Text(b.pickupHint(gift), color = Color.Black, fontSize = 14.sp)
+                    if (listing != null) TextButton({ onDone(); app.push(Route.ListingDetail(listing.id)) }) { Text("→ Перейти к товару") }
+                    if (isRecipient) {
+                        TextButton({ onDone(); app.openChat(gift.sellerId) }) { Text("💬 Написать продавцу") }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Показывать в профиле", Modifier.weight(1f), color = Color.Black, fontSize = 14.sp)
+                            Switch(gift.showInProfile, { b.setShowInProfile(gift.id, it) })
                         }
                     }
                 }
-            }
-            if (!opened) {
-                Text("Нажмите на коробку, чтобы открыть", color = Color.White.copy(alpha = 0.85f))
-            } else {
-                PrimaryButton("Спасибо!", Modifier.padding(horizontal = 40.dp)) { onClose() }
+                PrimaryButton("Готово") { onDone() }
             }
         }
     }
 }
 
-/** Карточка подарка в чате. */
 @Composable
-fun GiftMessage(gift: Gift, fromName: String, isMine: Boolean, onOpen: () -> Unit) {
+fun GiftDetailScreen(app: AppState, id: String) {
+    val gift = app.backend.gift(id) ?: return Screen("Подарок", app) { Secondary("Подарок не найден") }
+    GiftContent(app, gift, animated = gift.toId == app.me && !gift.opened) {
+        if (gift.toId == app.me && !gift.opened) app.backend.markOpened(gift.id)
+        app.pop()
+    }
+}
+
+/** Неоткрытый подарок при входе — сразу распаковка. */
+@Composable
+fun GiftReveal(app: AppState, gift: Gift) {
+    GiftContent(app, gift, animated = true) { app.backend.markOpened(gift.id) }
+}
+
+/** Подарки в профиле. */
+@Composable
+fun ProfileGifts(app: AppState, userId: String) {
     val p = LocalPalette.current
-    Column(Modifier.width(260.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        GiftCardView(gift.card, gift.message, fromName, gift.itemTitle, compact = true)
-        if (isMine) Secondary(if (gift.opened) "Получатель открыл подарок ✓" else "Ждёт, когда откроют", size = 12)
-        else TextButton(onOpen) { Text(if (gift.opened) "Посмотреть ещё раз" else "Открыть подарок 🎁", color = p.accent) }
+    val b = app.backend
+    val owner = userId == app.me
+    val gifts = b.giftsOf(userId).filter { owner || it.showInProfile }
+    GlassCard {
+        Row { Title("Подарки"); Secondary("  ${gifts.size}") }
+        if (gifts.isEmpty()) Secondary(if (owner) "Здесь появятся подарки от других игроков" else "Подарков пока нет")
+        gifts.chunked(3).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { g ->
+                    Column(Modifier.weight(1f).clickable { app.push(Route.GiftDetail(g.id)) }, horizontalAlignment = Alignment.CenterHorizontally) {
+                        GiftArt(g.card, b.listing(g.listingId)?.imageId, 72.dp)
+                        Text(if (g.hideName && !owner) "Тайный отправитель" else b.name(g.fromId), fontSize = 11.sp, color = p.textSecondary, maxLines = 1)
+                    }
+                }
+                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
     }
 }

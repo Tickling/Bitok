@@ -98,6 +98,19 @@ sealed interface Route {
     data class CropAvatar(val uri: String) : Route
     data object AppIcon : Route
     data class GiftComposer(val listingId: String) : Route
+    data class GiftDetail(val id: String) : Route
+    data class ExerciseDetail(val id: String, val studentId: String) : Route
+    data class Exercises(val studentId: String) : Route
+    data class StudentStats(val studentId: String) : Route
+    data class CameraTrainer(val exerciseId: String) : Route
+    data class Paywall(val exerciseId: String?) : Route
+    data object ProWelcome : Route
+    data object CoachExercises : Route
+    data object Notices : Route
+    data class PhotoViewer(val userId: String) : Route
+    data object TrainingResult : Route
+    data class GroupChat(val id: String) : Route
+    data object CreateGroup : Route
     data object Settings : Route
     data object Help : Route
     data object Trophies : Route
@@ -118,6 +131,10 @@ class AppState(val context: Context) {
     var uiPage by mutableStateOf<String?>(null)
     /** Подарок, который пользователь открыл повторно из чата. */
     var replayGift by mutableStateOf<String?>(null)
+    /** Итог самостоятельного выполнения с камерой. */
+    var trainingResult by mutableStateOf<TrainingResult?>(null)
+    /** Упражнение, которое открыть в камере после оформления подписки. */
+    var pendingTrainer: String? = null
 
     fun applyUiTest(intent: Intent?) {
         val account = intent?.getStringExtra("uiAccount")?.let { runCatching { DemoAccount.valueOf(it) }.getOrNull() } ?: return
@@ -207,14 +224,9 @@ fun Root(app: AppState) {
         Tabs(app)
     }
     // Неоткрытый подарок — сразу красивая распаковка; из чата можно посмотреть ещё раз.
-    val gift = app.replayGift?.let { app.backend.gift(it) } ?: app.backend.unopenedGift(app.me)
-    if (gift != null) {
-        androidx.compose.runtime.key(gift.id) {
-            GiftReveal(gift, app.backend.name(gift.fromId)) {
-                if (!gift.opened) app.backend.markOpened(gift.id)
-                app.replayGift = null
-            }
-        }
+    val gift = app.backend.unopenedGift(app.me)
+    if (gift != null && !app.uiTest) {
+        androidx.compose.runtime.key(gift.id) { GiftReveal(app, gift) }
     }
     Alerts(app)
 }
@@ -239,6 +251,19 @@ private fun RouteScreen(app: AppState, route: Route) {
         is Route.CropAvatar -> CropAvatarScreen(app, route.uri)
         Route.AppIcon -> AppIconScreen(app)
         is Route.GiftComposer -> GiftComposerScreen(app, route.listingId)
+        is Route.GiftDetail -> GiftDetailScreen(app, route.id)
+        is Route.ExerciseDetail -> ExerciseDetailScreen(app, route.id, route.studentId)
+        is Route.Exercises -> ExercisesScreen(app, route.studentId)
+        is Route.StudentStats -> StudentStatsScreen(app, route.studentId)
+        is Route.CameraTrainer -> CameraTrainerScreen(app, route.exerciseId)
+        is Route.Paywall -> PaywallScreen(app, route.exerciseId)
+        Route.ProWelcome -> ProWelcomeScreen(app)
+        Route.CoachExercises -> CoachExercisesScreen(app)
+        Route.Notices -> NoticesScreen(app)
+        is Route.PhotoViewer -> PhotoViewerScreen(app, route.userId)
+        Route.TrainingResult -> TrainingResultScreen(app)
+        is Route.GroupChat -> GroupChatScreen(app, route.id)
+        Route.CreateGroup -> CreateGroupScreen(app)
         Route.Settings -> SettingsScreen(app)
         Route.Help -> HelpScreen(app)
         Route.Trophies -> TrophiesScreen(app)
@@ -251,7 +276,10 @@ private fun RouteScreen(app: AppState, route: Route) {
 @Composable
 private fun Tabs(app: AppState) {
     val p = LocalPalette.current
-    val pending = app.backend.pendingRequests(app.me).size
+    val pending = app.backend.pendingRequests(app.me).size + app.backend.totalUnread(app.me)
+    androidx.compose.runtime.LaunchedEffect(app.me) {
+        app.backend.checkBirthdays(app.me, app.context.getSharedPreferences("bitok", Context.MODE_PRIVATE))
+    }
     Scaffold(
         containerColor = Color.Transparent,
         bottomBar = {

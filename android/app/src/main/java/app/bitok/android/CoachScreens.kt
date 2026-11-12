@@ -170,6 +170,7 @@ private fun CoachBookingRow(app: AppState, booking: Booking) {
                 Text("${Fmt.time(booking.start)} · ${student?.name}", fontWeight = FontWeight.SemiBold, fontSize = 17.sp, color = p.text)
                 StatusPill(booking.status)
                 Secondary(b.place(booking.slotId))
+                if (b.isGroupBooking(booking.id)) Text("👥 Хочет в группу", color = p.accent2, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 Text("📞 ${student?.phone}", color = p.accent, fontSize = 14.sp)
                 if (booking.status == BookingStatus.COMPLETED && !b.isEvaluated(booking.id)) {
                     Text("✍️ Нужно оценить", color = p.pending, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
@@ -309,7 +310,7 @@ fun StudentsScreen(app: AppState) {
                     Avatar(student, 44.dp)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Title(student.name)
+                        Title(student.name + if (b.isBirthdayToday(student.id)) " 🎂" else "")
                         Secondary(student.phone)
                         if (waiting) Text("✍️ Ждёт оценки", color = p.pending, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     }
@@ -335,6 +336,11 @@ fun StudentDetailScreen(app: AppState, studentId: String) {
             Column(Modifier.weight(1f)) {
                 Title(student?.name ?: "")
                 Secondary(b.level(b.rating(studentId)))
+                b.birthdayForCoach(studentId)?.let {
+                    Text((if (b.isBirthdayToday(studentId)) "🎂 Сегодня день рождения! " else "🎂 ") + it, fontSize = 13.sp,
+                        color = if (b.isBirthdayToday(studentId)) p.accent else p.textSecondary,
+                        fontWeight = if (b.isBirthdayToday(studentId)) FontWeight.Bold else FontWeight.Normal)
+                }
                 Text("📞 ${student?.phone}", color = p.accent)
             }
             Text(b.rating(studentId)?.toString() ?: "—", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = p.accent)
@@ -359,6 +365,10 @@ fun StudentDetailScreen(app: AppState, studentId: String) {
                 }
             }
             Secondary("Новые записи этого ученика будут по этой цене. Другие ученики её не видят.")
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SecondaryButton("📊 Статистика", Modifier.weight(1f)) { app.push(Route.StudentStats(studentId)) }
+            SecondaryButton("📋 Упражнения", Modifier.weight(1f)) { app.push(Route.Exercises(studentId)) }
         }
         PrimaryButton("Написать ученику") { app.openChat(studentId) }
         Title("Тренировки")

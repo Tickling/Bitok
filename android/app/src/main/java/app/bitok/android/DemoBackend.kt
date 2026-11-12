@@ -45,6 +45,7 @@ class DemoBackend(private val prefs: SharedPreferences) {
         Person(Ids.OLEG, "Олег Морозов", "+7 903 555-01-02"),
         Person(Ids.ANNA, "Анна Романова", "+7 925 555-03-04"),
         Person(Ids.NATASHA, "Наталья Белова", "+7 900 000-00-04"),
+        Person(Ids.DMITRY, "Дмитрий Орлов", "+7 900 000-00-05"),
     )
 
     init {
@@ -53,12 +54,12 @@ class DemoBackend(private val prefs: SharedPreferences) {
         if (restored != null) state = restored else seed()
     }
 
-    private fun update(block: (DemoState) -> DemoState) {
+    fun update(block: (DemoState) -> DemoState) {
         state = block(state)
         prefs.edit().putString(KEY, json.encodeToString(DemoState.serializer(), state)).apply()
     }
 
-    private fun now() = System.currentTimeMillis()
+    fun now() = System.currentTimeMillis()
 
     // region Люди
 
@@ -75,7 +76,7 @@ class DemoBackend(private val prefs: SharedPreferences) {
     fun profile(id: String): Profile = state.profiles[id] ?: run {
         val parts = (coaches + students).firstOrNull { it.id == id }?.name.orEmpty().split(" ")
         Profile(parts.firstOrNull().orEmpty(), parts.drop(1).joinToString(" "), "Москва",
-            if (id == Ids.VERONIKA) "Пул" else "Русский бильярд", "")
+            if (id == Ids.VERONIKA) "Пул" else "Русский бильярд", "", seedBirthday(id))
     }
 
     fun updateProfile(id: String, profile: Profile) = update { it.copy(profiles = it.profiles + (id to profile)) }
@@ -414,8 +415,9 @@ class DemoBackend(private val prefs: SharedPreferences) {
 
     // region Чат и уведомления
 
+    /** Сообщения, удалённые «только у себя», первый участник (тот, кто смотрит) не видит. */
     fun conversation(a: String, b: String) =
-        state.messages.filter { (it.from == a && it.to == b) || (it.from == b && it.to == a) }.sortedBy { it.at }
+        state.messages.filter { ((it.from == a && it.to == b) || (it.from == b && it.to == a)) && a !in it.hiddenFor }.sortedBy { it.at }
 
     fun lastMessage(a: String, b: String) = conversation(a, b).lastOrNull()
 
@@ -472,14 +474,14 @@ class DemoBackend(private val prefs: SharedPreferences) {
         }
     }
 
-    private fun post(from: String, to: String, text: String, bookingId: String? = null) =
+    fun post(from: String, to: String, text: String, bookingId: String? = null) =
         update { it.copy(messages = it.messages + Message(newId(), from, to, text, now(), bookingId)) }
 
     /** Системные уведомления и напоминания (подключаются в AppState). */
     var notifier: Notifier? = null
     private var seeding = false
 
-    private fun notify(userId: String, title: String, body: String) {
+    fun notify(userId: String, title: String, body: String) {
         update { it.copy(notices = it.notices + Notice(newId(), userId, title, body, now())) }
         if (!seeding) notifier?.post(name(userId), title, body)
     }
@@ -549,8 +551,8 @@ class DemoBackend(private val prefs: SharedPreferences) {
     fun unopenedGift(userId: String) = state.gifts.filter { it.toId == userId && !it.opened }.minByOrNull { it.at }
     fun gift(id: String) = state.gifts.firstOrNull { it.id == id }
 
-    fun sendGift(listing: Listing, from: String, to: String, card: GiftCard, message: String) {
-        val gift = Gift(newId(), from, to, listing.id, listing.title, listing.sellerId, card, message, now())
+    fun sendGift(listing: Listing, from: String, to: String, card: GiftCard, message: String, hideName: Boolean = false) {
+        val gift = Gift(newId(), from, to, listing.id, listing.title, listing.sellerId, card, message, now(), hideName = hideName, price = listing.price)
         update { it.copy(gifts = it.gifts + gift, messages = it.messages + Message(newId(), from, to, "🎁 Подарок: ${listing.title}", now(), giftId = gift.id)) }
         post(from, listing.sellerId, "Покупаю «${listing.title}» в подарок для ${name(to)}. Передайте, пожалуйста, на тренировке 🎁")
         notify(to, "🎁 Вам подарок от ${name(from)}", "${card.emoji} ${card.title} Откройте приложение, чтобы распаковать")
@@ -635,6 +637,7 @@ class DemoBackend(private val prefs: SharedPreferences) {
         seedBooking(Ids.VERONIKA, Ids.ANNA, -2, BookingStatus.COMPLETED)
         seedBooking(Ids.VERONIKA, Ids.OLEG, 2, BookingStatus.AWAITING)
         seedBooking(Ids.VERONIKA, Ids.MARIA, 4, BookingStatus.CONFIRMED)
+        seedBooking(Ids.ALEXEY, Ids.DMITRY, 3, BookingStatus.CONFIRMED)
 
         val now = now()
         val messages = mutableListOf(
@@ -673,7 +676,9 @@ class DemoBackend(private val prefs: SharedPreferences) {
 
         state = DemoState()
         update {
-            s.copy(slots = freeSlots, bookings = bookings, evaluations = evaluations, messages = messages, groups = listOf(group),
+            s.copy(exerciseResults = seedResults(),
+                subscriptions = mapOf(Ids.DMITRY to now + 365 * 86_400_000L),
+                slots = freeSlots, bookings = bookings, evaluations = evaluations, messages = messages, groups = listOf(group),
                 news = news, listings = listings, notices = notices)
         }
     }
@@ -681,6 +686,6 @@ class DemoBackend(private val prefs: SharedPreferences) {
     // endregion
 
     companion object {
-        private const val KEY = "demoState.v2"
+        private const val KEY = "demoState.v3"
     }
 }

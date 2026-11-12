@@ -24,11 +24,12 @@ enum class BookingStatus(val title: String) {
 enum class SlotStatus { AVAILABLE, HELD, BOOKED }
 
 enum class Metric(val title: String, val short: String) {
-    STANCE("Стойка и удар", "СТО"),
-    AIMING("Прицеливание", "ПРЦ"),
-    POSITION("Позиционная игра", "ПОЗ"),
-    CUE_BALL("Контроль битка", "БИТ"),
-    TACTICS("Тактика", "ТАК"),
+    // Метрики по упражнениям подготовительного уровня
+    STANCE("Стойка и мост", "МОСТ"),
+    AIMING("Удар в середину", "СЕР"),
+    POSITION("Удар в угол", "УГОЛ"),
+    CUE_BALL("Сила и возврат битка", "СИЛА"),
+    TACTICS("Винт", "ВИНТ"),
 }
 
 @Serializable
@@ -134,6 +135,12 @@ data class Message(
     val invitation: Invitation? = null,
     val peer: PeerRequest? = null,
     val giftId: String? = null,
+    /** Время правки — сообщение помечается «изменено». */
+    val editedAt: Long? = null,
+    /** У кого сообщение удалено «только у себя». */
+    val hiddenFor: List<String> = emptyList(),
+    /** Видео выполнения упражнения (файл в files/videos). */
+    val videoFile: String? = null,
 )
 
 @Serializable
@@ -158,6 +165,10 @@ data class Gift(
     val message: String,
     val at: Long,
     val opened: Boolean = false,
+    /** «Скрыть моё имя»: другие в профиле получателя не видят отправителя. */
+    val hideName: Boolean = false,
+    val showInProfile: Boolean = true,
+    val price: Int? = null,
 )
 
 @Serializable
@@ -219,6 +230,10 @@ data class Profile(
     val city: String,
     val discipline: String,
     val about: String,
+    /** Дата рождения (epoch ms). Другим ученикам по умолчанию не видна; тренер видит всегда. */
+    val birthDate: Long? = null,
+    /** hidden (по умолчанию), year — только год, dayMonth — только день и месяц. */
+    val birthdayVisibility: String = "hidden",
 ) {
     val fullName: String get() = listOf(firstName, lastName).filter { it.isNotBlank() }.joinToString(" ")
 }
@@ -246,6 +261,19 @@ data class DemoState(
     val news: List<News> = emptyList(),
     val listings: List<Listing> = emptyList(),
     val gifts: List<Gift> = emptyList(),
+    val customExercises: List<Exercise> = emptyList(),
+    val exerciseResults: List<ExerciseResult> = emptyList(),
+    /** «userId|partnerId» → время, когда чат последний раз открывали. */
+    val readMarks: Map<String, Long> = emptyMap(),
+    val noticesSeen: Map<String, Long> = emptyMap(),
+    val groupBookings: Set<String> = emptySet(),
+    /** Подписка «Биток Про»: до какого времени действует. */
+    val subscriptions: Map<String, Long> = emptyMap(),
+    /** «userId|exerciseId» → лучшие звёзды. */
+    val stars: Map<String, Int> = emptyMap(),
+    val videos: List<TrainingVideo> = emptyList(),
+    val chatGroups: List<ChatGroup> = emptyList(),
+    val groupMessages: List<GroupMessage> = emptyList(),
     val profiles: Map<String, Profile> = emptyMap(),
     val coachInfo: Map<String, CoachInfo> = emptyMap(),
     /** Ключ «coachId|studentId» → цена в рублях. */
@@ -258,7 +286,8 @@ enum class DemoAccount(val displayName: String, val phone: String, val role: Rol
     ALEXEY("Алексей Воронов", "+7 900 000-00-01", Role.COACH, Ids.ALEXEY),
     VERONIKA("Вероника Смирнова", "+7 900 000-00-03", Role.COACH, Ids.VERONIKA),
     IVAN("Иван Петров", "+7 900 000-00-02", Role.STUDENT, Ids.IVAN),
-    NATASHA("Наталья Белова", "+7 900 000-00-04", Role.STUDENT, Ids.NATASHA);
+    NATASHA("Наталья Белова", "+7 900 000-00-04", Role.STUDENT, Ids.NATASHA),
+    DMITRY("Дмитрий Орлов (Про)", "+7 900 000-00-05", Role.STUDENT, Ids.DMITRY);
 
     val roleTitle: String get() = if (role == Role.COACH) "Тренер" else "Ученик"
 
@@ -279,4 +308,90 @@ object Ids {
     const val OLEG = "student-oleg"
     const val ANNA = "student-anna"
     const val NATASHA = "student-natasha"
+    /** Ученик с подпиской «Биток Про». */
+    const val DMITRY = "student-dmitry"
 }
+
+@Serializable
+data class TablePoint(val x: Double, val y: Double)
+
+/** Лузы; SHORT_RAIL — короткий борт напротив битка (возврат, сила удара). */
+@Serializable
+enum class Pocket(val x: Double, val y: Double) {
+    TOP_LEFT(0.0, 0.0), TOP_MIDDLE(80.0, 0.0), TOP_RIGHT(160.0, 0.0),
+    BOTTOM_LEFT(0.0, 80.0), BOTTOM_MIDDLE(80.0, 80.0), BOTTOM_RIGHT(160.0, 80.0), SHORT_RAIL(0.0, 40.0)
+}
+
+@Serializable
+data class Exercise(
+    val id: String,
+    val number: Int,
+    val level: String = "Подготовительный уровень",
+    val title: String,
+    val details: List<String>,
+    val metric: Metric,
+    val cueBalls: List<TablePoint>,
+    val objectBalls: List<TablePoint> = emptyList(),
+    val targets: List<Pocket>,
+    val attempts: Int = 10,
+    val spin: Boolean = false,
+    val rack: Boolean = false,
+    val importedBy: String? = null,
+) {
+    fun target(index: Int): Pocket? = if (targets.isEmpty()) null else targets[minOf(index, targets.size - 1)]
+
+    fun targetPoint(index: Int): TablePoint? {
+        val t = target(index) ?: return null
+        return if (t == Pocket.SHORT_RAIL && index < cueBalls.size) TablePoint(0.0, cueBalls[index].y) else TablePoint(t.x, t.y)
+    }
+
+    val markPoints: List<TablePoint> get() = if (rack) rackPoints(TablePoint(45.0, 40.0)) + cueBalls else cueBalls + objectBalls
+
+    /** Где поставить штатив: за лузой на продолжении линии удара, лицом к ученику. */
+    val tripod: Pair<TablePoint, String>
+        get() {
+            val cue = cueBalls.firstOrNull() ?: TablePoint(80.0, 40.0)
+            val t = targetPoint(0) ?: TablePoint(160 - cue.x, if (cue.y < 40) 80.0 else 0.0)
+            val dx = t.x - cue.x; val dy = t.y - cue.y
+            val len = maxOf(1.0, kotlin.math.hypot(dx, dy))
+            val p = TablePoint((t.x + dx / len * 15).coerceIn(-15.0, 175.0), (t.y + dy / len * 15).coerceIn(-15.0, 95.0))
+            val side = when {
+                t.x <= 0.1 -> "у левого короткого борта, напротив отметки ${t.y.toInt()}"
+                t.x >= 159.9 -> "у правого короткого борта, напротив отметки ${t.y.toInt()}"
+                t.y <= 0.1 -> "у верхнего длинного борта, напротив отметки ${t.x.toInt()}"
+                else -> "у нижнего длинного борта, напротив отметки ${t.x.toInt()}"
+            }
+            val corner = (t.x <= 0.1 || t.x >= 159.9) && (t.y <= 0.1 || t.y >= 79.9)
+            return p to "Штатив: ${if (corner) "за угловой лузой, " else ""}$side, в 50 см от стола, высота 1,6–1,8 м. Камера смотрит на вас вдоль линии удара."
+        }
+
+    companion object {
+        fun rackPoints(apex: TablePoint): List<TablePoint> {
+            val d = 4.6
+            return (0 until 5).flatMap { row -> (0..row).map { col -> TablePoint(apex.x - row * d * 0.866, apex.y - row * d / 2 + col * d) } }
+        }
+    }
+}
+
+@Serializable
+data class ExerciseResult(
+    val id: String,
+    val studentId: String,
+    val coachId: String,
+    val exerciseId: String,
+    val made: Int,
+    val attempts: Int,
+    val at: Long,
+) {
+    val percent: Int get() = if (attempts == 0) 0 else Math.round(made * 100f / attempts)
+}
+
+@Serializable
+data class TrainingVideo(val id: String, val studentId: String, val exerciseId: String, val file: String, val at: Long)
+
+@Serializable
+data class ChatGroup(val id: String, val title: String, val members: List<String>, val creatorId: String, val at: Long)
+
+/** from == null — системное сообщение («Иван покинул группу»). */
+@Serializable
+data class GroupMessage(val id: String, val groupId: String, val from: String?, val text: String, val at: Long)

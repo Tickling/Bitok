@@ -76,6 +76,7 @@ fun ContentScreen(app: AppState) {
             }
         }
     }) {
+        if (!app.isCoach && !b.hasSubscription(app.me)) ProPromoCard { app.push(Route.Paywall(null)) }
         Segmented(ContentSegment.entries, segment, { it.title }) { segment = it }
         when (segment) {
             ContentSegment.NEWS -> {

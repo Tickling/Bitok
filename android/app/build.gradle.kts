@@ -13,7 +13,7 @@ android {
         applicationId = "app.bitok.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
+        versionCode = 10
         versionName = "0.1.0"
     }
 
@@ -44,4 +44,19 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    // Камера-помощник «Биток Про»: превью, анализ кадров, запись видео
+    val camerax = "1.4.1"
+    implementation("androidx.camera:camera-core:$camerax")
+    implementation("androidx.camera:camera-camera2:$camerax")
+    implementation("androidx.camera:camera-lifecycle:$camerax")
+    implementation("androidx.camera:camera-video:$camerax")
+    implementation("androidx.camera:camera-view:$camerax")
+    // Просмотр и обрезка видео (фрагмент с ошибкой для тренера)
+    val media3 = "1.5.1"
+    implementation("androidx.media3:media3-exoplayer:$media3")
+    implementation("androidx.media3:media3-ui:$media3")
+    implementation("androidx.media3:media3-transformer:$media3")
+    implementation("androidx.media3:media3-effect:$media3")
+    // Текст из PDF для импорта упражнений
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 }

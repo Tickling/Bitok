@@ -1,9 +1,16 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 
 // Чаты, «Игроки клуба», уведомления; диалог с карточками заявок, предложений и запросов между учениками.
 package app.bitok.android
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -49,18 +56,27 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private enum class ChatSegment(val title: String) { CHATS("Чаты"), PLAYERS("Игроки"), NOTICES("Уведомления") }
+private enum class ChatSegment(val title: String) { CHATS("Чаты"), PLAYERS("Ученики") }
 
 @Composable
 fun ChatListScreen(app: AppState) {
     val p = LocalPalette.current
     val b = app.backend
     var segment by remember { mutableStateOf(if (app.uiPage == "players") ChatSegment.PLAYERS else ChatSegment.CHATS) }
-    Screen("Чат", app) {
-        val options = ChatSegment.entries.filter { !app.isCoach || it != ChatSegment.PLAYERS }
-        Segmented(options, segment, { it.title }) { segment = it }
+    Screen("Чат", app, actions = {
+        // Уведомления — колокольчик с числом новых.
+        IconButton({ app.push(Route.Notices) }) {
+            BadgedBox(badge = { val n = b.unseenNotices(app.me); if (n > 0) Badge { Text(if (n > 99) "99+" else "$n") } }) {
+                Icon(Icons.Filled.Notifications, "Уведомления", tint = p.accent)
+            }
+        }
+    }) {
+        if (!app.isCoach) Segmented(ChatSegment.entries, segment, { it.title }) { segment = it }
         when (segment) {
-            ChatSegment.CHATS -> b.chatPartners(app.me).forEach { person ->
+            ChatSegment.CHATS -> {
+                if (!app.isCoach) SecondaryButton("👥 Новая группа", Modifier.fillMaxWidth()) { app.push(Route.CreateGroup) }
+                b.chatGroups(app.me).forEach { GroupRow(app, it) }
+                b.chatPartners(app.me).forEach { person ->
                 val last = b.lastMessage(app.me, person.id)
                 GlassCard(onClick = { app.push(Route.Chat(person.id)) }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -71,10 +87,17 @@ fun ChatListScreen(app: AppState) {
                                 Text(person.name, Modifier.weight(1f), fontWeight = FontWeight.SemiBold, color = p.text)
                                 last?.let { Secondary(Fmt.time(it.at)) }
                             }
-                            Secondary(last?.text ?: if (b.isCoach(person.id)) "Тренер" else "Ученик")
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Secondary(last?.text ?: if (b.isCoach(person.id)) "Тренер" else "Ученик", Modifier.weight(1f))
+                                // Непрочитанные — синий кружок с числом внутри карточки чата
+                                val unread = b.unread(app.me, person.id)
+                                if (unread > 0) Text("$unread", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.background(Color(0xFF3380FF), RoundedCornerShape(50)).padding(horizontal = 7.dp, vertical = 2.dp))
+                            }
                         }
                     }
                 }
+            }
             }
             ChatSegment.PLAYERS -> b.players(app.me).forEach { player ->
                 GlassCard(onClick = { app.push(Route.PersonProfile(player.id)) }) {
@@ -83,7 +106,9 @@ fun ChatListScreen(app: AppState) {
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Title(player.name)
-                            Secondary(b.level(b.rating(player.id)))
+                            val coaches = b.coachesOf(player.id).map { it.firstName }
+                            Secondary(if (coaches.isEmpty()) "Пока без тренера" else "Тренер: " + coaches.joinToString(), size = 12)
+                            Secondary(b.level(b.rating(player.id)), size = 11)
                         }
                         val rating = b.publicRating(player.id)
                         if (rating != null) Text("$rating", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = p.accent)
@@ -92,18 +117,25 @@ fun ChatListScreen(app: AppState) {
                     }
                 }
             }
-            ChatSegment.NOTICES -> {
-                val notices = b.notices(app.me)
-                if (notices.isEmpty()) Secondary("Уведомлений пока нет")
-                notices.forEach { n ->
-                    GlassCard {
-                        Row {
-                            Text(n.title, Modifier.weight(1f), fontWeight = FontWeight.SemiBold, color = p.text)
-                            Secondary(Fmt.stamp(n.at), size = 12)
-                        }
-                        Secondary(n.body, size = 14)
-                    }
+        }
+    }
+}
+
+@Composable
+fun NoticesScreen(app: AppState) {
+    val p = LocalPalette.current
+    val b = app.backend
+    DisposableEffect(Unit) { onDispose { b.markNoticesSeen(app.me) } }
+    Screen("Уведомления", app) {
+        val notices = b.notices(app.me)
+        if (notices.isEmpty()) Secondary("Уведомлений пока нет")
+        notices.forEach { n ->
+            GlassCard {
+                Row {
+                    Text(n.title, Modifier.weight(1f), fontWeight = FontWeight.SemiBold, color = p.text)
+                    Secondary(Fmt.stamp(n.at), size = 12)
                 }
+                Secondary(n.body, size = 14)
             }
         }
     }
@@ -118,7 +150,31 @@ fun ChatThreadScreen(app: AppState, otherId: String) {
     val listState = rememberLazyListState()
     var draft by remember { mutableStateOf("") }
     var menu by remember { mutableStateOf(false) }
-    LaunchedEffect(messages.size) { if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1) }
+    var editing by remember { mutableStateOf<Message?>(null) }
+    var actions by remember { mutableStateOf<Message?>(null) }
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
+        b.markRead(me, otherId)
+    }
+    actions?.let { message ->
+        val mineMessage = message.from == me
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { actions = null },
+            title = { Text("Сообщение") },
+            text = {
+                Column {
+                    TextButton({ clipboard.setText(androidx.compose.ui.text.AnnotatedString(message.text)); actions = null }) { Text("Копировать") }
+                    if (mineMessage) TextButton({ editing = message; draft = message.text; actions = null }) { Text("Изменить") }
+                    TextButton({ b.deleteMessage(message.id, me, false); actions = null }) { Text("Удалить у меня", color = p.cancelled) }
+                    if (mineMessage) TextButton({ b.deleteMessage(message.id, me, true); actions = null }) {
+                        Text("Удалить у меня и у ${b.person(otherId)?.firstName ?: "собеседника"}", color = p.cancelled)
+                    }
+                }
+            },
+            confirmButton = { TextButton({ actions = null }) { Text("Отмена") } },
+        )
+    }
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -144,7 +200,7 @@ fun ChatThreadScreen(app: AppState, otherId: String) {
             }
         }
         LazyColumn(Modifier.weight(1f).padding(horizontal = 12.dp), state = listState, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(messages, key = { it.id }) { message -> MessageView(app, message, otherId) }
+            items(messages, key = { it.id }) { message -> MessageView(app, message, otherId) { actions = it } }
         }
         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
             when {
@@ -162,9 +218,13 @@ fun ChatThreadScreen(app: AppState, otherId: String) {
                     }
                 }
             }
-            OutlinedTextField(draft, { draft = it }, Modifier.weight(1f), placeholder = { Text("Сообщение") }, maxLines = 4,
+            OutlinedTextField(draft, { draft = it }, Modifier.weight(1f), placeholder = { Text(if (editing == null) "Сообщение" else "Изменить сообщение") }, maxLines = 4,
                 shape = RoundedCornerShape(22.dp))
-            IconButton({ b.send(me, otherId, draft); draft = "" }, enabled = draft.isNotBlank()) {
+            IconButton({
+                val e = editing
+                if (e != null) { b.editMessage(e.id, me, draft); editing = null } else b.send(me, otherId, draft)
+                draft = ""
+            }, enabled = draft.isNotBlank()) {
                 Icon(Icons.AutoMirrored.Filled.Send, "Отправить", tint = p.accent)
             }
         }
@@ -172,7 +232,7 @@ fun ChatThreadScreen(app: AppState, otherId: String) {
 }
 
 @Composable
-private fun MessageView(app: AppState, message: Message, otherId: String) {
+private fun MessageView(app: AppState, message: Message, otherId: String, onLongPress: (Message) -> Unit) {
     val p = LocalPalette.current
     val b = app.backend
     val mine = message.from == app.me
@@ -180,17 +240,25 @@ private fun MessageView(app: AppState, message: Message, otherId: String) {
         val booking = message.bookingId?.let { b.booking(it) }
         val gift = message.giftId?.let { b.gift(it) }
         when {
-            gift != null -> GiftMessage(gift, b.name(gift.fromId), mine) { app.replayGift = gift.id }
+            message.videoFile != null -> Column(horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
+                VideoBox(app.context, message.videoFile, Modifier.width(230.dp).height(300.dp))
+                Text(message.text, color = p.text, fontSize = 14.sp, modifier = Modifier.widthIn(max = 260.dp))
+                Secondary(Fmt.time(message.at), size = 11)
+            }
+            gift != null -> GiftMessage(app, gift, mine)
             message.peer != null -> PeerCard(app, message, message.peer, otherId)
             message.invitation != null -> InvitationCard(app, message, message.invitation)
             booking != null -> BookingCard(app, message, booking)
             else -> Column(
                 Modifier.widthIn(max = 280.dp)
+                    .clip(RoundedCornerShape(18.dp))
                     .background(if (mine) p.accent else p.surface, RoundedCornerShape(18.dp))
+                    // Долгое нажатие: копировать, изменить своё, удалить
+                    .combinedClickable(onClick = {}, onLongClick = { onLongPress(message) })
                     .padding(horizontal = 12.dp, vertical = 8.dp),
             ) {
                 Text(message.text, color = if (mine) p.onAccent else p.text)
-                Text(Fmt.time(message.at), fontSize = 11.sp, color = (if (mine) p.onAccent else p.textSecondary).copy(alpha = 0.7f),
+                Text((if (message.editedAt != null) "изменено · " else "") + Fmt.time(message.at), fontSize = 11.sp, color = (if (mine) p.onAccent else p.textSecondary).copy(alpha = 0.7f),
                     modifier = Modifier.align(Alignment.End))
             }
         }
@@ -338,6 +406,10 @@ fun PersonProfileScreen(app: AppState, personId: String) {
                 TextButton({ uri.openUri("tel:" + person?.phone?.filter { it.isDigit() || it == '+' }) }) { Text("📞 ${person?.phone}") }
             } else {
                 Secondary("Телефон откроется, если вы обменяетесь номерами в чате")
+            }
+            b.publicBirthday(personId)?.let { Secondary("🎂 $it", size = 14) }
+            ProfileGifts(app, personId)
+            if (false) {
             }
             PrimaryButton("Написать") { app.openChat(personId) }
         }

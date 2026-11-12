@@ -197,10 +197,13 @@ fun ConfirmBookingScreen(app: AppState, slotId: String) {
     val b = app.backend
     val slot = b.slot(slotId) ?: return Screen("Запись", app) { Secondary("Слот уже заняли") }
     var comment by remember { mutableStateOf("") }
+    var isGroup by remember { mutableStateOf(false) }
     Screen("Проверьте запись", app, bottom = {
         PrimaryButton("Записаться", Modifier.padding(16.dp)) {
             app.run {
-                b.book(slot.id, app.me, comment.trim().ifEmpty { null })
+                val text = comment.trim()
+                val booking = b.book(slot.id, app.me, if (isGroup) "👥 Групповая тренировка" + (if (text.isEmpty()) "" else ". $text") else text.ifEmpty { null })
+                if (isGroup) b.markGroup(booking.id)
                 app.openChat(slot.coachId)
             }
         }
@@ -219,6 +222,13 @@ fun ConfirmBookingScreen(app: AppState, slotId: String) {
             InfoRow(Icons.Filled.Place, b.place(slot.id))
             InfoRow(Icons.Filled.Domain, b.address(slot.id))
             InfoRow(Icons.Filled.Payments, "${Fmt.rubles(b.price(slot.coachId, app.me))} · оплата в клубе")
+        }
+        GlassCard {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("👥 Запись на групповую тренировку", Modifier.weight(1f), color = LocalPalette.current.text)
+                androidx.compose.material3.Switch(isGroup, { isGroup = it })
+            }
+            Secondary("Тренер увидит, что вы хотите заниматься в группе (игровая тренировка с другими учениками).")
         }
         Title("Комментарий тренеру")
         OutlinedTextField(comment, { comment = it }, Modifier.fillMaxWidth(), placeholder = { Text("Например: хочу поработать над выходом") }, minLines = 2)
@@ -328,14 +338,25 @@ fun EvaluateScreen(app: AppState, bookingId: String) {
     val current = b.progress(booking.studentId)
     val scores = remember { mutableStateMapOf<Metric, Int>().apply { Metric.entries.forEach { put(it, current[it] ?: 50) } } }
     var comment by remember { mutableStateOf("") }
+    val made = remember { mutableStateMapOf<String, Int>() }
     Screen("Оценка: ${b.person(booking.studentId)?.firstName}", app, bottom = {
         PrimaryButton("Сохранить оценку", Modifier.padding(16.dp)) {
             app.run {
-                b.evaluate(bookingId, scores.toMap(), comment.trim().ifEmpty { null })
+                // Результаты упражнений → процент попаданий по метрике заменяет значение слайдера.
+                val results = made.mapNotNull { (id, m) -> b.exercise(id)?.let { ExerciseResult(newId(), booking.studentId, booking.coachId, id, m, it.attempts, System.currentTimeMillis()) } }
+                val final = scores.toMutableMap()
+                results.groupBy { b.exercise(it.exerciseId)?.metric ?: Metric.AIMING }.forEach { (metric, items) -> final[metric] = items.sumOf { it.percent } / items.size }
+                b.addResults(results)
+                b.evaluate(bookingId, final, comment.trim().ifEmpty { null })
                 app.pop()
             }
         }
     }) {
+        GlassCard {
+            Title("Упражнения на тренировке")
+            Secondary("Отметьте выполненные упражнения и сколько забито — навыки пересчитаются по результатам.")
+            ExerciseResultsEditor(app, made)
+        }
         Metric.entries.forEach { m ->
             GlassCard {
                 Row { Text(m.title, Modifier.weight(1f), color = LocalPalette.current.text); Text("${scores[m]}", fontWeight = FontWeight.Bold) }
