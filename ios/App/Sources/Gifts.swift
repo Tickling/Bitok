@@ -53,6 +53,10 @@ struct DemoGift: Codable, Identifiable, Hashable, Sendable {
     let message: String
     var date = Date()
     var opened = false
+    /// «Скрыть моё имя»: в профиле получателя другие не видят отправителя (сам получатель видит).
+    var hideName: Bool? = nil
+    /// Получатель показывает подарок в своём профиле.
+    var showInProfile: Bool? = nil
 }
 
 extension DemoBackend {
@@ -63,9 +67,9 @@ extension DemoBackend {
 
     func gift(_ id: UUID) -> DemoGift? { gifts.first { $0.id == id } }
 
-    func sendGift(listing: DemoListing, from: UserID, to: UserID, card: GiftCard, message: String) {
+    func sendGift(listing: DemoListing, from: UserID, to: UserID, card: GiftCard, message: String, hideName: Bool) {
         let gift = DemoGift(fromId: from, toId: to, listingId: listing.id, itemTitle: listing.title, priceRubles: listing.priceRubles,
-                            sellerId: listing.sellerId, card: card, message: message)
+                            sellerId: listing.sellerId, card: card, message: message, hideName: hideName, showInProfile: true)
         gifts.append(gift)
         messages.append(DemoMessage(id: UUID(), from: from, to: to, text: "🎁 Подарок: \(listing.title)", date: Date(), giftId: gift.id))
         // Продавцу — заказ: кому передать товар.
@@ -76,6 +80,29 @@ extension DemoBackend {
         save()
     }
 
+    func gifts(of userId: UserID) -> [DemoGift] {
+        gifts.filter { $0.toId == userId }.sorted { $0.date > $1.date }
+    }
+
+    func setShowInProfile(_ id: UUID, _ value: Bool) {
+        guard let index = gifts.firstIndex(where: { $0.id == id }) else { return }
+        gifts[index].showInProfile = value
+        save()
+    }
+
+    func listing(_ id: UUID) -> DemoListing? { listings.first { $0.id == id } }
+
+    /// Где забрать подарок: у продавца на ближайшей тренировке получателя, иначе — в его основном клубе.
+    func pickupHint(for gift: DemoGift) -> String {
+        let seller = name(gift.sellerId)
+        if let next = bookings.filter({ $0.studentId == gift.toId && $0.trainerId == gift.sellerId && $0.status.holdsSlot && $0.startsAt > Date() })
+            .min(by: { $0.startsAt < $1.startsAt }) {
+            return "Заберите у тренера \(seller) на тренировке \(Fmt.shortDay(next.startsAt)) в \(Fmt.time(next.startsAt)), \(placeTitle(slotId: next.slotId))."
+        }
+        let club = coach(gift.sellerId).map { "«\($0.clubName)», \($0.clubAddress)" } ?? "клубе"
+        return "Заберите у \(seller) в \(club). Напишите продавцу, чтобы договориться о времени."
+    }
+
     func markOpened(_ id: UUID) {
         guard let index = gifts.firstIndex(where: { $0.id == id }) else { return }
         gifts[index].opened = true
@@ -83,6 +110,362 @@ extension DemoBackend {
         post(from: gift.toId, to: gift.fromId, text: "Спасибо за подарок! 😍", bookingId: nil)
         notify(gift.fromId, "\(name(gift.toId)) открыл(а) подарок", gift.itemTitle)
         save()
+    }
+}
+
+// MARK: - Общие элементы
+
+/// Узор фона в стиле подарков Telegram, но из бильярдных значков.
+struct GiftPattern: View {
+    var body: some View {
+        Canvas { context, size in
+            let symbols = ["circle.circle", "star.fill", "sparkle", "trophy", "seal", "circle.grid.cross"]
+            var index = 0
+            for y in stride(from: 12.0, to: size.height, by: 46) {
+                for x in stride(from: (Int(y / 46) % 2 == 0 ? 14.0 : 36.0), to: size.width, by: 44) {
+                    let symbol = context.resolve(Image(systemName: symbols[index % symbols.count]))
+                    context.opacity = 0.16
+                    context.draw(symbol, at: CGPoint(x: x, y: y))
+                    index += 1
+                }
+            }
+        }
+        .foregroundStyle(.white)
+        .allowsHitTesting(false)
+    }
+}
+
+/// Изображение подарка: фото товара или значок на градиенте открытки.
+struct GiftArt: View {
+    let gift: DemoGift?
+    let card: GiftCard
+    let imageId: String?
+    var size: CGFloat = 120
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: size * 0.22, style: .continuous)
+                .fill(LinearGradient(colors: card.colors, startPoint: .topLeading, endPoint: .bottomTrailing))
+            if let photo = MediaStore.shared.image(imageId) {
+                Image(uiImage: photo).resizable().scaledToFill()
+                    .frame(width: size, height: size)
+                    .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
+            } else {
+                Text("🎱").font(.system(size: size * 0.5))
+            }
+            Text(card.emoji).font(.system(size: size * 0.22))
+                .padding(size * 0.04)
+                .background(.white, in: Circle())
+                .offset(x: size * 0.38, y: -size * 0.38)
+        }
+        .frame(width: size, height: size)
+        .shadow(color: card.colors[0].opacity(0.5), radius: size * 0.12, y: size * 0.05)
+    }
+}
+
+// MARK: - Оформление подарка (как в Telegram, в стиле «Битка»)
+
+struct GiftComposer: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.palette) private var palette
+    let container: AppContainer
+    let listing: DemoListing
+    var onSent: () -> Void = {}
+    @State private var recipient: UserID?
+    @State private var card: GiftCard = .birthday
+    @State private var message = ""
+    @State private var hideName = false
+
+    private var backend: DemoBackend { container.backend }
+    private var recipientName: String { recipient.map { backend.person($0)?.name.split(separator: " ").first.map(String.init) ?? "" } ?? "…" }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: Space.l) {
+                    // Карточка подарка на узорном фоне
+                    VStack(spacing: Space.m) {
+                        Text("Подарок стоимостью \(listing.priceRubles.map(Fmt.rubles) ?? "по договорённости")")
+                            .font(.caption.weight(.semibold)).foregroundStyle(.white)
+                            .padding(.horizontal, Space.m).padding(.vertical, 6)
+                            .background(.black.opacity(0.18), in: Capsule())
+                        VStack(spacing: Space.s) {
+                            GiftArt(gift: nil, card: card, imageId: listing.imageId, size: 120)
+                            Text("Подарок для \(recipientName)").font(.title3.weight(.bold)).foregroundStyle(.white)
+                            Text("\(listing.title)\nМожно показать в профиле. Забрать — у продавца на тренировке.")
+                                .font(.callout).multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.9))
+                        }
+                        .padding(Space.l)
+                        .frame(maxWidth: .infinity)
+                        .background(.white.opacity(0.14), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                        TextField("Ваше сообщение (необязательно)", text: $message, axis: .vertical)
+                            .lineLimit(1...4)
+                            .padding(Space.m)
+                            .background(.white.opacity(0.85), in: Capsule())
+                            .foregroundStyle(.black)
+                    }
+                    .padding(Space.l)
+                    .background {
+                        ZStack {
+                            LinearGradient(colors: card.colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+                            GiftPattern()
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                    }
+
+                    VStack(alignment: .leading, spacing: Space.s) {
+                        Text("Кому").font(.headline)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: Space.m) {
+                                ForEach(backend.players(for: container.currentUserId)) { player in
+                                    Button { recipient = player.id } label: {
+                                        VStack(spacing: 4) {
+                                            Avatar(initials: player.initials, size: 52, userId: player.id)
+                                                .overlay(Circle().strokeBorder(recipient == player.id ? palette.accent : .clear, lineWidth: 3))
+                                            Text(player.name.split(separator: " ").first.map(String.init) ?? player.name)
+                                                .font(.caption.weight(recipient == player.id ? .bold : .regular))
+                                                .foregroundStyle(palette.textPrimary)
+                                        }
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        Text("Открытка").font(.headline).padding(.top, Space.s)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: Space.s) {
+                                ForEach(GiftCard.allCases) { option in
+                                    Button { withAnimation(.spring(duration: 0.3)) { card = option } } label: {
+                                        Text(option.title)
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundStyle(.white)
+                                            .padding(.horizontal, Space.m).padding(.vertical, Space.s)
+                                            .background(LinearGradient(colors: option.colors, startPoint: .leading, endPoint: .trailing), in: Capsule())
+                                            .overlay(Capsule().strokeBorder(card == option ? palette.textPrimary : .clear, lineWidth: 2))
+                                            .overlay(alignment: .leading) { Text(option.emoji).offset(x: -6, y: -12) }
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.vertical, 8)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: Space.s) {
+                        Toggle("Скрыть моё имя", isOn: $hideName)
+                            .padding(Space.m)
+                            .glassCard()
+                        Text("Вы можете скрыть имя и сообщение от всех, кто просматривает профиль \(recipientName). Скрытые имя и сообщение увидит только \(recipientName).")
+                            .font(.caption).foregroundStyle(palette.textSecondary)
+                    }
+                }
+                .padding(Space.l)
+            }
+            .safeAreaInset(edge: .bottom) {
+                Button {
+                    guard let recipient else { return }
+                    backend.sendGift(listing: listing, from: container.currentUserId, to: recipient, card: card,
+                                     message: message.trimmingCharacters(in: .whitespacesAndNewlines), hideName: hideName)
+                    dismiss()
+                    onSent()
+                } label: {
+                    Label(recipient == nil ? "Выберите, кому подарить"
+                                           : "Отправить подарок за \(listing.priceRubles.map(Fmt.rubles) ?? "договорную цену")",
+                          systemImage: "gift.fill")
+                }
+                .buttonStyle(.cueGlassProminent)
+                .disabled(recipient == nil)
+                .padding(.horizontal, Space.l)
+                .padding(.bottom, Space.s)
+            }
+            .background(ThemedBackground())
+            .navigationTitle("Отправить подарок")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } } }
+        }
+    }
+}
+
+// MARK: - Сообщение о подарке в чате
+
+struct GiftMessageCard: View {
+    @Environment(\.palette) private var palette
+    let gift: DemoGift
+    let fromName: String
+    let isMine: Bool
+    let imageId: String?
+    let onOpen: () -> Void
+
+    var body: some View {
+        VStack(spacing: Space.s) {
+            Text(isMine ? "Вы отправили подарок стоимостью \(gift.priceRubles.map(Fmt.rubles) ?? "—")"
+                        : "\(fromName) отправил(а) вам подарок стоимостью \(gift.priceRubles.map(Fmt.rubles) ?? "—")")
+                .font(.caption.weight(.semibold))
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.white)
+                .padding(.horizontal, Space.m).padding(.vertical, 6)
+                .background(.black.opacity(0.35), in: Capsule())
+            VStack(spacing: Space.s) {
+                GiftArt(gift: gift, card: gift.card, imageId: imageId, size: 92)
+                Text(gift.itemTitle).font(.headline).foregroundStyle(.white).multilineTextAlignment(.center)
+                Text("\(gift.card.emoji) \(gift.card.title)").font(.caption).foregroundStyle(.white.opacity(0.85))
+                Button(action: onOpen) {
+                    Text(isMine || gift.opened ? "Посмотреть" : "Открыть")
+                        .font(.callout.weight(.semibold)).foregroundStyle(.white)
+                        .padding(.horizontal, Space.l).padding(.vertical, Space.s)
+                        .background(.white.opacity(0.22), in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(Space.l)
+            .frame(width: 240)
+            .background {
+                ZStack {
+                    LinearGradient(colors: [Color(white: 0.22), Color(white: 0.10)], startPoint: .top, endPoint: .bottom)
+                    GiftPattern()
+                    RadialGradient(colors: [gift.card.colors[0].opacity(0.45), .clear], center: .top, startRadius: 4, endRadius: 200)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - Подарок: просмотр, «как получить», переход к товару
+
+struct GiftDetailView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.palette) private var palette
+    let container: AppContainer
+    let giftId: UUID
+    /// Первая распаковка — с анимацией.
+    var animated = false
+    @State private var revealed = false
+    @State private var spin = false
+    @State private var burst = false
+    @State private var openedListing: DemoListing?
+
+    private var backend: DemoBackend { container.backend }
+
+    var body: some View {
+        if let gift = backend.gift(giftId) {
+            content(gift)
+        }
+    }
+
+    private func content(_ gift: DemoGift) -> some View {
+        let me = container.currentUserId
+        let isRecipient = gift.toId == me
+        let listing = backend.listing(gift.listingId)
+        return ZStack {
+            LinearGradient(colors: gift.card.colors.map { $0.opacity(0.95) } + [.black], startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea()
+            GiftPattern().ignoresSafeArea()
+            // Лучи за подарком
+            AngularGradient(colors: [.white.opacity(0.0), .white.opacity(0.35), .white.opacity(0.0), .white.opacity(0.35), .white.opacity(0.0)],
+                            center: .center)
+                .frame(width: 520, height: 520)
+                .mask(Circle().frame(width: 520, height: 520))
+                .rotationEffect(.degrees(spin ? 360 : 0))
+                .offset(y: -170)
+                .opacity(revealed ? 0.55 : 0.9)
+                .allowsHitTesting(false)
+            if burst {
+                ConfettiView(colors: gift.card.colors + [.white, .yellow], active: burst).ignoresSafeArea().allowsHitTesting(false)
+            }
+            ScrollView {
+                VStack(spacing: Space.l) {
+                    GiftArt(gift: gift, card: gift.card, imageId: listing?.imageId, size: revealed ? 150 : 190)
+                        .scaleEffect(revealed ? 1 : 0.92)
+                        .rotation3DEffect(.degrees(revealed ? 0 : 12), axis: (x: 0, y: 1, z: 0))
+                        .padding(.top, 60)
+                        .onTapGesture(perform: reveal)
+
+                    if revealed {
+                        VStack(spacing: Space.s) {
+                            Text(isRecipient ? "Подарок для вас" : "Подарок для \(backend.name(gift.toId))")
+                                .font(.title2.weight(.bold))
+                            Text(gift.itemTitle).font(.headline)
+                            Text(senderLine(gift, isRecipient: isRecipient)).font(.callout).opacity(0.9)
+                        }
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+
+                        GiftCardView(card: gift.card, message: gift.message, from: senderName(gift, isRecipient: true), item: gift.itemTitle,
+                                     compact: true)
+                            .transition(.scale.combined(with: .opacity))
+
+                        VStack(alignment: .leading, spacing: Space.s) {
+                            Label("Как получить", systemImage: "shippingbox").font(.headline)
+                            Text(backend.pickupHint(for: gift)).font(.callout)
+                            if let listing {
+                                Button {
+                                    openedListing = listing
+                                } label: {
+                                    Label("Перейти к товару", systemImage: "arrow.right.circle.fill")
+                                }
+                                .font(.callout.weight(.semibold))
+                            }
+                            if isRecipient {
+                                Button {
+                                    dismiss()
+                                    container.openChat(with: gift.sellerId)
+                                } label: {
+                                    Label("Написать продавцу", systemImage: "bubble.left")
+                                }
+                                .font(.callout.weight(.semibold))
+                                Toggle("Показывать в профиле", isOn: Binding(get: { gift.showInProfile ?? true },
+                                                                             set: { backend.setShowInProfile(gift.id, $0) }))
+                                    .font(.callout)
+                            }
+                        }
+                        .padding(Space.l)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+
+                        Button("Готово") {
+                            if isRecipient && !gift.opened { backend.markOpened(gift.id) }
+                            dismiss()
+                        }
+                        .buttonStyle(.cueGlassProminent)
+                    } else {
+                        Text("\(senderName(gift, isRecipient: isRecipient)) прислал(а) вам подарок")
+                            .font(.title3.weight(.bold)).foregroundStyle(.white)
+                        Text("Нажмите, чтобы открыть").foregroundStyle(.white.opacity(0.85))
+                    }
+                }
+                .padding(Space.l)
+            }
+        }
+        .onAppear {
+            withAnimation(.linear(duration: 14).repeatForever(autoreverses: false)) { spin = true }
+            if !animated { revealed = true }
+        }
+        .sheet(item: $openedListing) { item in ListingDetail(container: container, listing: item) }
+    }
+
+    private func senderName(_ gift: DemoGift, isRecipient: Bool) -> String {
+        if gift.hideName == true && !isRecipient && gift.fromId != container.currentUserId { return "Тайный отправитель" }
+        return backend.name(gift.fromId)
+    }
+
+    private func senderLine(_ gift: DemoGift, isRecipient: Bool) -> String {
+        var line = "От: \(senderName(gift, isRecipient: isRecipient)) · \(Fmt.shortDay(gift.date))"
+        if gift.hideName == true && (isRecipient || gift.fromId == container.currentUserId) {
+            line += "\nИмя скрыто от других — его видите только вы"
+        }
+        return line
+    }
+
+    private func reveal() {
+        guard !revealed else { return }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) { revealed = true }
+        burst = false
+        DispatchQueue.main.async { burst = true }
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
 }
 
@@ -100,225 +483,20 @@ struct GiftCardView: View {
             Text(card.emoji).font(.system(size: compact ? 30 : 56))
             Text(card.title).font(compact ? .headline : .title2.weight(.bold)).fontDesign(.serif)
             if !message.isEmpty {
-                Text("«\(message)»").font(compact ? .caption : .body).multilineTextAlignment(.center).lineLimit(compact ? 2 : 6)
+                Text("«\(message)»").font(compact ? .callout : .body).multilineTextAlignment(.center).lineLimit(6)
             }
-            Text("🎁 \(item)").font(compact ? .caption2.weight(.semibold) : .callout.weight(.semibold))
-            Text("— \(from)").font(compact ? .caption2 : .callout).opacity(0.85)
+            Text("— \(from)").font(compact ? .caption : .callout).opacity(0.85)
         }
         .foregroundStyle(.white)
-        .padding(compact ? 12 : 24)
+        .padding(compact ? 14 : 24)
         .frame(maxWidth: .infinity)
         .background(LinearGradient(colors: card.colors, startPoint: .topLeading, endPoint: .bottomTrailing),
-                    in: RoundedRectangle(cornerRadius: compact ? 16 : 24, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: compact ? 16 : 24, style: .continuous).strokeBorder(.white.opacity(0.35), lineWidth: 1))
-        .shadow(color: card.colors[0].opacity(0.45), radius: compact ? 6 : 18, y: 8)
+                    in: RoundedRectangle(cornerRadius: compact ? 18 : 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: compact ? 18 : 24, style: .continuous).strokeBorder(.white.opacity(0.35), lineWidth: 1))
     }
 }
 
-// MARK: - Оформление подарка
-
-struct GiftComposer: View {
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.palette) private var palette
-    let container: AppContainer
-    let listing: DemoListing
-    var onSent: () -> Void = {}
-    @State private var recipient: UserID?
-    @State private var card: GiftCard = .birthday
-    @State private var message = ""
-
-    private var backend: DemoBackend { container.backend }
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: Space.l) {
-                    HStack {
-                        if let photo = MediaStore.shared.image(listing.imageId) {
-                            Image(uiImage: photo).resizable().scaledToFill().frame(width: 56, height: 56)
-                                .clipShape(RoundedRectangle(cornerRadius: Radius.m, style: .continuous))
-                        }
-                        VStack(alignment: .leading) {
-                            Text(listing.title).font(.headline)
-                            Text(listing.priceRubles.map(Fmt.rubles) ?? "Цена договорная").foregroundStyle(palette.textSecondary)
-                        }
-                    }
-
-                    Text("Кому").font(.headline)
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: Space.m) {
-                            ForEach(backend.players(for: container.currentUserId)) { player in
-                                Button { recipient = player.id } label: {
-                                    VStack(spacing: 4) {
-                                        Avatar(initials: player.initials, size: 56, userId: player.id)
-                                            .overlay(Circle().strokeBorder(recipient == player.id ? palette.accent : .clear, lineWidth: 3))
-                                        Text(player.name.split(separator: " ").first.map(String.init) ?? player.name)
-                                            .font(.caption.weight(recipient == player.id ? .bold : .regular))
-                                            .foregroundStyle(palette.textPrimary)
-                                    }
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-
-                    Text("Открытка").font(.headline)
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: Space.s) {
-                            ForEach(GiftCard.allCases) { option in
-                                Button { withAnimation(.spring(duration: 0.3)) { card = option } } label: {
-                                    VStack(spacing: 4) {
-                                        Text(option.emoji).font(.system(size: 30))
-                                        Text(option.title).font(.caption2.weight(.semibold)).foregroundStyle(.white).lineLimit(1)
-                                    }
-                                    .frame(width: 104, height: 76)
-                                    .background(LinearGradient(colors: option.colors, startPoint: .topLeading, endPoint: .bottomTrailing),
-                                                in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                        .strokeBorder(card == option ? palette.accent : .clear, lineWidth: 3))
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-
-                    Text("Поздравление").font(.headline)
-                    TextField("Например: с днём рождения! Пусть каждый удар будет точным 🎱", text: $message, axis: .vertical)
-                        .lineLimit(3...6)
-                        .padding(Space.m)
-                        .glassCard(cornerRadius: Radius.m)
-
-                    Text("Так увидит получатель").font(.caption).foregroundStyle(palette.textSecondary)
-                    GiftCardView(card: card, message: message, from: backend.name(container.currentUserId), item: listing.title)
-                }
-                .padding(Space.l)
-            }
-            .safeAreaInset(edge: .bottom) {
-                Button(recipient.map { "Подарить · \(backend.name($0).split(separator: " ").first ?? "")" } ?? "Выберите, кому подарить") {
-                    guard let recipient else { return }
-                    backend.sendGift(listing: listing, from: container.currentUserId, to: recipient, card: card,
-                                     message: message.trimmingCharacters(in: .whitespacesAndNewlines))
-                    dismiss()
-                    onSent()
-                }
-                .buttonStyle(.cueGlassProminent)
-                .disabled(recipient == nil)
-                .padding(.horizontal, Space.l)
-                .padding(.bottom, Space.s)
-            }
-            .background(ThemedBackground())
-            .navigationTitle("Подарок")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } } }
-        }
-    }
-}
-
-// MARK: - Распаковка у получателя
-
-struct GiftRevealView: View {
-    @Environment(\.dismiss) private var dismiss
-    let gift: DemoGift
-    let fromName: String
-    var onClose: () -> Void = {}
-
-    private enum Phase { case closed, opening, opened }
-    @State private var phase: Phase = .closed
-    @State private var wiggle = false
-    @State private var confetti = false
-
-    var body: some View {
-        ZStack {
-            RadialGradient(colors: [gift.card.colors[0].opacity(0.9), .black], center: .center, startRadius: 40, endRadius: 520)
-                .ignoresSafeArea()
-
-            if phase == .opened {
-                ConfettiView(colors: gift.card.colors + [.white, .yellow], active: confetti)
-                    .ignoresSafeArea()
-                    .allowsHitTesting(false)
-            }
-
-            VStack(spacing: 28) {
-                Text(phase == .opened ? "Вам подарок!" : "\(fromName) прислал(а) подарок")
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(.white)
-                    .multilineTextAlignment(.center)
-
-                ZStack {
-                    if phase == .opened {
-                        GiftCardView(card: gift.card, message: gift.message, from: fromName, item: gift.itemTitle)
-                            .transition(.scale(scale: 0.2).combined(with: .opacity))
-                    } else {
-                        giftBox
-                    }
-                }
-                .frame(height: 340)
-
-                if phase == .closed {
-                    Text("Нажмите на коробку, чтобы открыть").foregroundStyle(.white.opacity(0.85))
-                } else if phase == .opened {
-                    Button("Спасибо!") {
-                        onClose()
-                        dismiss()
-                    }
-                    .buttonStyle(.cueGlassProminent)
-                    .padding(.horizontal, 40)
-                }
-            }
-            .padding()
-        }
-        .onAppear {
-            withAnimation(.easeInOut(duration: 0.18).repeatForever(autoreverses: true)) { wiggle = true }
-        }
-    }
-
-    private var giftBox: some View {
-        let lidUp = phase == .opening
-        return ZStack {
-            // Коробка
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(LinearGradient(colors: gift.card.colors, startPoint: .top, endPoint: .bottom))
-                .frame(width: 170, height: 140)
-                .overlay(Rectangle().fill(.white.opacity(0.9)).frame(width: 22))
-                .offset(y: 40)
-            // Крышка с бантом
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(LinearGradient(colors: gift.card.colors.reversed(), startPoint: .top, endPoint: .bottom))
-                    .frame(width: 190, height: 44)
-                    .overlay(Rectangle().fill(.white.opacity(0.9)).frame(width: 22))
-                HStack(spacing: -6) {
-                    Ellipse().fill(.white).frame(width: 46, height: 30).rotationEffect(.degrees(-25))
-                    Ellipse().fill(.white).frame(width: 46, height: 30).rotationEffect(.degrees(25))
-                }
-                .offset(y: -30)
-            }
-            .offset(y: lidUp ? -260 : -50)
-            .rotationEffect(.degrees(lidUp ? -35 : 0))
-            .opacity(lidUp ? 0 : 1)
-        }
-        .rotationEffect(.degrees(phase == .closed ? (wiggle ? 4 : -4) : 0))
-        .scaleEffect(phase == .opening ? 1.15 : 1)
-        .onTapGesture(perform: open)
-        .accessibilityLabel("Подарок. Нажмите, чтобы открыть")
-        .accessibilityAddTraits(.isButton)
-    }
-
-    private func open() {
-        guard phase == .closed else { return }
-        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
-        withAnimation(.easeOut(duration: 0.6)) { phase = .opening }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
-            withAnimation(.spring(response: 0.55, dampingFraction: 0.65)) { phase = .opened }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { confetti = true }
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
-        }
-    }
-}
-
-/// Конфетти: частицы падают сверху с вращением.
+/// Конфетти: частицы разлетаются сверху с вращением.
 struct ConfettiView: View {
     let colors: [Color]
     let active: Bool
@@ -338,9 +516,9 @@ struct ConfettiView: View {
         (0..<90).map { i in
             var generator = SeededRandom(seed: UInt64(i + 1))
             return Piece(id: i, x: CGFloat.random(in: 0...1, using: &generator),
-                         delay: Double.random(in: 0...0.8, using: &generator),
-                         duration: Double.random(in: 2.2...3.8, using: &generator),
-                         size: CGFloat.random(in: 6...12, using: &generator),
+                         delay: Double.random(in: 0...0.6, using: &generator),
+                         duration: Double.random(in: 2.2...3.6, using: &generator),
+                         size: CGFloat.random(in: 6...11, using: &generator),
                          spin: Double.random(in: 180...900, using: &generator),
                          color: colors[i % colors.count],
                          drift: CGFloat.random(in: -60...60, using: &generator))
@@ -374,24 +552,47 @@ struct SeededRandom: RandomNumberGenerator {
     }
 }
 
-/// Карточка подарка в чате.
-struct GiftMessageCard: View {
+/// Подарки в профиле.
+struct ProfileGiftsGrid: View {
     @Environment(\.palette) private var palette
-    let gift: DemoGift
-    let fromName: String
-    let isMine: Bool
-    let onOpen: () -> Void
+    let container: AppContainer
+    let userId: UserID
+    @State private var opened: GiftRef?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            GiftCardView(card: gift.card, message: gift.message, from: fromName, item: gift.itemTitle, compact: true)
-            if !isMine {
-                Button(gift.opened ? "Посмотреть ещё раз" : "Открыть подарок 🎁", action: onOpen).font(.caption.weight(.semibold))
+        let isOwner = userId == container.currentUserId
+        let gifts = container.backend.gifts(of: userId).filter { isOwner || ($0.showInProfile ?? true) }
+        VStack(alignment: .leading, spacing: Space.s) {
+            HStack {
+                Text("Подарки").font(.headline)
+                Text("\(gifts.count)").font(.caption.bold()).foregroundStyle(palette.textSecondary)
+            }
+            if gifts.isEmpty {
+                Text(isOwner ? "Здесь появятся подарки от других игроков" : "Подарков пока нет")
+                    .font(.callout).foregroundStyle(palette.textSecondary)
             } else {
-                Text(gift.opened ? "Получатель открыл подарок ✓" : "Ждёт, когда откроют").font(.caption)
-                    .foregroundStyle(palette.textSecondary)
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Space.s), count: 3), spacing: Space.s) {
+                    ForEach(gifts) { gift in
+                        Button { opened = GiftRef(id: gift.id) } label: {
+                            VStack(spacing: 4) {
+                                GiftArt(gift: gift, card: gift.card, imageId: container.backend.listing(gift.listingId)?.imageId, size: 72)
+                                Text(gift.hideName == true && !isOwner ? "Тайный отправитель" : container.backend.name(gift.fromId))
+                                    .font(.caption2).foregroundStyle(palette.textSecondary).lineLimit(1)
+                            }
+                            .padding(Space.s)
+                            .frame(maxWidth: .infinity)
+                            .glassCard()
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
             }
         }
-        .frame(maxWidth: 260)
+        .padding(Space.m)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassCard()
+        .sheet(item: $opened) { ref in GiftDetailView(container: container, giftId: ref.id) }
     }
 }
+
+struct GiftRef: Identifiable, Hashable { let id: UUID }

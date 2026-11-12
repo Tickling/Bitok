@@ -10,11 +10,12 @@ public enum MetricKey: String, Codable, Sendable, CaseIterable, Identifiable {
 
     public var title: String {
         switch self {
-        case .stanceAndStroke: "Стойка и удар"
-        case .aiming: "Прицеливание"
-        case .positionPlay: "Позиционная игра"
-        case .cueBallControl: "Контроль битка"
-        case .tacticalThinking: "Тактика"
+        // Метрики по упражнениям подготовительного уровня (ANALYTICS.md, раздел «Упражнения»).
+        case .stanceAndStroke: "Стойка и мост"
+        case .aiming: "Удар в середину"
+        case .positionPlay: "Удар в угол"
+        case .cueBallControl: "Сила и возврат битка"
+        case .tacticalThinking: "Винт"
         }
     }
 
@@ -22,9 +23,9 @@ public enum MetricKey: String, Codable, Sendable, CaseIterable, Identifiable {
         switch self {
         case .stanceAndStroke: "figure.stand"
         case .aiming: "scope"
-        case .positionPlay: "point.topleft.down.to.point.bottomright.curvepath"
+        case .positionPlay: "arrow.up.left"
         case .cueBallControl: "circle.circle"
-        case .tacticalThinking: "brain.head.profile"
+        case .tacticalThinking: "arrow.clockwise.circle"
         }
     }
 }

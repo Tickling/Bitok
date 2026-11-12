@@ -198,6 +198,10 @@ struct CoachScheduleScreen: View {
                 Text("\(Fmt.time(booking.startsAt)) · \(student?.name ?? "Ученик")").font(.headline)
                 booking.status.pill
                 Text(backend.placeTitle(slotId: booking.slotId)).font(.caption).foregroundStyle(palette.textSecondary)
+                if backend.isGroupBooking(booking.id) {
+                    Label("Хочет в группу", systemImage: "person.3.fill").font(.caption.weight(.semibold))
+                        .foregroundStyle(palette.accentSecondary)
+                }
                 if let phone = student?.phone {
                     Label(phone, systemImage: "phone").font(.callout).foregroundStyle(palette.accent)
                 }

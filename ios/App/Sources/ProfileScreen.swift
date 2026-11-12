@@ -16,6 +16,7 @@ struct ProfileRootView: View {
     @AppStorage("profile.title") private var titleCode = TitleChoice.champion.rawValue
 
     @State private var autoPage: String?
+    @State private var viewingMyPhoto = false
 
     private var backend: DemoBackend { container.backend }
     private var me: UserID { container.currentUserId }
@@ -30,6 +31,7 @@ struct ProfileRootView: View {
                         playerCard
                         nextTrainingCard
                         seasonCard
+                        ProfileGiftsGrid(container: container, userId: me)
                     }
                     menu
                 }
@@ -38,6 +40,7 @@ struct ProfileRootView: View {
             .background(ThemedBackground())
             .navigationTitle(container.role == .trainer ? "Тренер" : "Игрок")
             .onAppear { autoPage = container.uiPage }
+            .fullScreenCover(isPresented: $viewingMyPhoto) { PhotoViewer(userId: me, name: backend.name(me)) }
             .navigationDestination(isPresented: Binding(get: { autoPage == "venues" }, set: { if !$0 { autoPage = nil } })) {
                 VenuesView(container: container)
             }
@@ -69,6 +72,7 @@ struct ProfileRootView: View {
                 ProfileFrameView(style: frame.style) {
                     Avatar(initials: person?.initials ?? "?", size: 84, userId: me)
                 }
+                .onTapGesture { if AvatarStore.shared.image(for: me) != nil { viewingMyPhoto = true } }
             }
             HStack {
                 ForEach(MetricKey.allCases) { key in
@@ -93,11 +97,11 @@ struct ProfileRootView: View {
 
     static func short(_ key: MetricKey) -> String {
         switch key {
-        case .stanceAndStroke: "СТО"
-        case .aiming: "ПРЦ"
-        case .positionPlay: "ПОЗ"
-        case .cueBallControl: "БИТ"
-        case .tacticalThinking: "ТАК"
+        case .stanceAndStroke: "МОСТ"
+        case .aiming: "СЕР"
+        case .positionPlay: "УГОЛ"
+        case .cueBallControl: "СИЛА"
+        case .tacticalThinking: "ВИНТ"
         }
     }
 
@@ -167,6 +171,7 @@ struct ProfileRootView: View {
             VStack(alignment: .leading, spacing: Space.m) {
                 HStack(spacing: Space.m) {
                     Avatar(initials: backend.person(me)?.initials ?? "?", size: 72, userId: me)
+                        .onTapGesture { if AvatarStore.shared.image(for: me) != nil { viewingMyPhoto = true } }
                     VStack(alignment: .leading, spacing: 2) {
                         Text(backend.name(me)).font(.title3.weight(.bold))
                         Text(coach.rank).font(.callout).opacity(0.85)
@@ -213,6 +218,8 @@ struct ProfileRootView: View {
                 menuLink("Места и расписание", "mappin.and.ellipse") { VenuesView(container: container) }
                 Divider().padding(.leading, 52)
                 menuLink("Групповые тренировки", "person.3") { CoachGroupsView(container: container) }
+                Divider().padding(.leading, 52)
+                menuLink("Упражнения и уроки", "list.number") { CoachExercisesView(container: container) }
             }
             if container.role == .student {
                 Divider().padding(.leading, 52)
@@ -271,6 +278,8 @@ struct EditProfileView: View {
     @State private var loaded = false
     @State private var photoItem: PhotosPickerItem?
     @State private var cropping: CropImage?
+    @State private var viewingPhoto = false
+    @State private var confirmDeletePhoto = false
 
     private var isCoach: Bool { container.role == .trainer }
 
@@ -280,13 +289,19 @@ struct EditProfileView: View {
         Form {
             Section {
                 VStack(spacing: Space.s) {
-                    Avatar(initials: initials, size: 96, userId: container.currentUserId)
+                    // Нажатие на фото открывает просмотр; удаление — только отдельной кнопкой с подтверждением.
+                    Button { viewingPhoto = AvatarStore.shared.image(for: container.currentUserId) != nil } label: {
+                        Avatar(initials: initials, size: 96, userId: container.currentUserId)
+                    }
+                    .buttonStyle(.borderless)
                     PhotosPicker(selection: $photoItem, matching: .images) {
                         Label(AvatarStore.shared.image(for: container.currentUserId) == nil ? "Загрузить фото" : "Изменить фото",
                               systemImage: "camera")
                     }
+                    .buttonStyle(.borderless)
                     if AvatarStore.shared.image(for: container.currentUserId) != nil {
-                        Button("Удалить фото", role: .destructive) { AvatarStore.shared.set(nil, for: container.currentUserId) }
+                        Button("Удалить фото", role: .destructive) { confirmDeletePhoto = true }
+                            .buttonStyle(.borderless)
                             .font(.caption)
                     }
                 }
@@ -363,6 +378,12 @@ struct EditProfileView: View {
                 }
                 photoItem = nil
             }
+        }
+        .fullScreenCover(isPresented: $viewingPhoto) {
+            PhotoViewer(userId: container.currentUserId, name: container.backend.name(container.currentUserId))
+        }
+        .confirmationDialog("Удалить фото профиля?", isPresented: $confirmDeletePhoto, titleVisibility: .visible) {
+            Button("Удалить", role: .destructive) { AvatarStore.shared.set(nil, for: container.currentUserId) }
         }
         .sheet(item: $cropping) { item in
             PhotoCropView(image: item.image) { result in
@@ -597,4 +618,37 @@ enum TextSize: Int, CaseIterable, Identifiable {
 struct CropImage: Identifiable {
     let id = UUID()
     let image: UIImage
+}
+
+/// Просмотр фото профиля на весь экран (масштаб двумя пальцами).
+struct PhotoViewer: View {
+    @Environment(\.dismiss) private var dismiss
+    let userId: UserID
+    let name: String
+    @State private var scale: CGFloat = 1
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black.ignoresSafeArea()
+            if let image = AvatarStore.shared.image(for: userId) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .scaleEffect(scale)
+                    .gesture(MagnifyGesture().onChanged { scale = max(1, min(4, $0.magnification)) }
+                        .onEnded { _ in withAnimation(.spring) { scale = 1 } })
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            VStack(alignment: .trailing) {
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark.circle.fill").font(.largeTitle).foregroundStyle(.white.opacity(0.85))
+                }
+                Spacer()
+            }
+            .padding()
+            Text(name).font(.headline).foregroundStyle(.white)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .padding(.bottom, 40)
+        }
+    }
 }

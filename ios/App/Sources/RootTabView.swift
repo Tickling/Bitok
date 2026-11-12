@@ -25,7 +25,8 @@ struct RootTabView: View {
 
             ChatRootView(container: container)
                 .tabItem { Label("Чат", systemImage: "bubble.left.and.bubble.right") }
-                .badge(container.backend.pendingRequests(of: container.currentUserId).count)
+                .badge(container.backend.pendingRequests(of: container.currentUserId).count
+                       + container.backend.totalUnread(for: container.currentUserId))
                 .tag(AppTab.chat)
 
             ContentRootView(container: container)
@@ -41,9 +42,7 @@ struct RootTabView: View {
             get: { container.backend.unopenedGift(for: container.currentUserId) },
             set: { _ in }
         )) { gift in
-            GiftRevealView(gift: gift, fromName: container.backend.name(gift.fromId)) {
-                container.backend.markOpened(gift.id)
-            }
+            GiftDetailView(container: container, giftId: gift.id, animated: true)
         }
     }
 }

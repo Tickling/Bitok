@@ -159,6 +159,9 @@ struct BookingRow: View {
                     .font(.callout.weight(.semibold))
                     .foregroundStyle(palette.textPrimary)
                 booking.status.pill
+                if subtitle == nil && (booking.studentComment ?? "").hasPrefix("👥") {
+                    Text("👥 Групповая").font(.caption.weight(.semibold)).foregroundStyle(palette.accentSecondary)
+                }
                 if let subtitle {
                     Text(subtitle).font(.caption).foregroundStyle(palette.textSecondary)
                 }
@@ -443,6 +446,7 @@ struct EvaluationView: View {
     let bookingId: BookingID
     let container: AppContainer
     @State private var scores: [MetricKey: Double] = [:]
+    @State private var exerciseMade: [String: Int] = [:]
     @State private var comment = ""
     @State private var loaded = false
     @State private var errorText: String?
@@ -454,6 +458,13 @@ struct EvaluationView: View {
                     LabeledContent("Ученик", value: container.backend.name(booking.studentId))
                     LabeledContent("Тренировка", value: "\(Fmt.shortDay(booking.startsAt)) · \(Fmt.time(booking.startsAt))")
                 }
+            }
+            Section {
+                ExerciseResultsEditor(exercises: container.backend.allExercises, made: $exerciseMade)
+            } header: {
+                Text("Упражнения на тренировке")
+            } footer: {
+                Text("Отметьте выполненные упражнения и сколько забито. Навыки ниже пересчитаются по этим результатам.")
             }
             Section("Навыки, 0–100") {
                 ForEach(MetricKey.allCases) { key in
@@ -498,9 +509,20 @@ struct EvaluationView: View {
 
     private func save() {
         do {
-            try container.backend.evaluate(bookingId: bookingId,
-                                           scores: scores.mapValues { Int($0.rounded()) },
-                                           comment: comment.isEmpty ? nil : comment)
+            guard let booking = container.backend.booking(bookingId) else { return }
+            // Результаты упражнений → процент попаданий по метрике заменяет значение слайдера.
+            let results = exerciseMade.compactMap { id, made -> ExerciseResult? in
+                guard let exercise = container.backend.exercise(id) else { return nil }
+                return ExerciseResult(studentId: booking.studentId, coachId: booking.trainerId, exerciseId: id,
+                                      made: made, attempts: exercise.attempts)
+            }
+            var final = scores.mapValues { Int($0.rounded()) }
+            let byMetric = Dictionary(grouping: results) { container.backend.exercise($0.exerciseId)?.metric ?? .aiming }
+            for (metric, items) in byMetric {
+                final[metric] = items.map(\.percent).reduce(0, +) / items.count
+            }
+            container.backend.addResults(results)
+            try container.backend.evaluate(bookingId: bookingId, scores: final, comment: comment.isEmpty ? nil : comment)
             dismiss()
         } catch {
             errorText = DemoBackend.message(for: error)

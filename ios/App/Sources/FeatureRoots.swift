@@ -30,7 +30,7 @@ struct CalendarRootView: View {
 
 struct ProgressRootView: View {
     enum Segment: String, CaseIterable, Identifiable {
-        case progress = "Прогресс", achievements = "Достижения"
+        case progress = "Прогресс", exercises = "Упражнения", achievements = "Достижения"
         var id: Self { self }
     }
 
@@ -52,6 +52,8 @@ struct ProgressRootView: View {
                     ProgressScreen(viewModel: ProgressViewModel(studentId: container.currentUserId, repository: container.progress))
                         // Новая оценка тренера → экран перечитывает данные.
                         .id(container.backend.records.count)
+                case .exercises:
+                    ExercisesListView(container: container, studentId: container.currentUserId)
                 case .achievements:
                     AchievementsScreen(stats: DemoContent.stats(for: container.currentUserId),
                                        medalCards: DemoContent.medalCards, inProgress: [],
@@ -174,6 +176,21 @@ struct StudentDetailView: View {
                 }
                 .padding(Space.m)
                 .glassCard()
+
+                HStack(spacing: Space.s) {
+                    NavigationLink {
+                        StudentStatsView(container: container, studentId: studentId)
+                    } label: {
+                        Label("Статистика и сравнение", systemImage: "chart.bar.xaxis").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    NavigationLink {
+                        ExercisesListView(container: container, studentId: studentId)
+                    } label: {
+                        Label("Упражнения", systemImage: "list.number").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                }
 
                 StudentPriceCard(container: container, studentId: studentId)
 

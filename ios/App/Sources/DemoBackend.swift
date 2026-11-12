@@ -59,6 +59,12 @@ struct DemoMessage: Codable, Identifiable, Hashable, Sendable {
     var peerRequest: DemoPeerRequest? = nil
     /** Подарок: в чате показывается открытка. */
     var giftId: UUID? = nil
+    /// Сообщение изменено (время правки).
+    var editedAt: Date? = nil
+    /// У кого сообщение удалено «только у себя».
+    var hiddenFor: [UserID]? = nil
+    /// Видео выполнения упражнения (имя файла в Documents/videos).
+    var videoFile: String? = nil
 }
 
 /// Запрос одного ученика другому. Номера телефонов открываются только после согласия обоих (BR-030.2).
@@ -97,6 +103,14 @@ private struct DemoSnapshot: Codable {
     var news: [DemoNews]? = nil
     var listings: [DemoListing]? = nil
     var gifts: [DemoGift]? = nil
+    var customExercises: [Exercise]? = nil
+    var exerciseResults: [ExerciseResult]? = nil
+    var readMarks: [UserID: [UserID: Date]]? = nil
+    var noticesSeen: [UserID: Date]? = nil
+    var groupBookings: Set<BookingID>? = nil
+    var subscriptions: [UserID: Date]? = nil
+    var exerciseStars: [UserID: [String: Int]]? = nil
+    var trainingVideos: [TrainingVideo]? = nil
     var slots: [BookingSlot]
     var bookings: [Booking]
     var records: [ProgressRecord]
@@ -148,15 +162,29 @@ final class DemoBackend {
     var news: [DemoNews] = []
     var listings: [DemoListing] = []
     var gifts: [DemoGift] = []
+    var customExercises: [Exercise] = []
+    var exerciseResults: [ExerciseResult] = []
+    /// Когда пользователь последний раз открывал чат с собеседником (для «непрочитанных»).
+    var readMarks: [UserID: [UserID: Date]] = [:]
+    /// Когда пользователь последний раз открывал колокольчик.
+    var noticesSeen: [UserID: Date] = [:]
+    /// Брони, которые ученик отметил как запись на групповую тренировку.
+    var groupBookings: Set<BookingID> = []
+    /// Подписка «Биток Про»: до какой даты действует.
+    var subscriptions: [UserID: Date] = [:]
+    /// Лучшие звёзды ученика за упражнение (самостоятельное выполнение с камерой).
+    var exerciseStars: [UserID: [String: Int]] = [:]
+    var trainingVideos: [TrainingVideo] = []
 
-    private static let storageKey = "demoBackend.v5"
+    private static let storageKey = "demoBackend.v6"
 
     init() {
         // Данные прошлых версий (v1 — один тренер, v2 — без Натальи) пересоздаются.
         UserDefaults.standard.removeObject(forKey: "demoBackend.v1")
         UserDefaults.standard.removeObject(forKey: "demoBackend.v2")
         UserDefaults.standard.removeObject(forKey: "demoBackend.v3")   // v3 — без мест, групп и магазина
-        UserDefaults.standard.removeObject(forKey: "demoBackend.v4")   // v4 — без круглосуточного тест-зала
+        UserDefaults.standard.removeObject(forKey: "demoBackend.v4")
+        UserDefaults.standard.removeObject(forKey: "demoBackend.v5")   // v5 — без упражнений   // v4 — без круглосуточного тест-зала
         if let data = UserDefaults.standard.data(forKey: Self.storageKey),
            let snapshot = try? JSONDecoder().decode(DemoSnapshot.self, from: data) {
             apply(snapshot)
@@ -589,7 +617,9 @@ final class DemoBackend {
     // MARK: - Чат и уведомления
 
     func conversation(between a: UserID, and b: UserID) -> [DemoMessage] {
-        messages.filter { ($0.from == a && $0.to == b) || ($0.from == b && $0.to == a) }.sorted { $0.date < $1.date }
+        // Сообщения, удалённые «только у себя», первый участник (тот, кто смотрит) не видит.
+        messages.filter { (($0.from == a && $0.to == b) || ($0.from == b && $0.to == a)) && !($0.hiddenFor ?? []).contains(a) }
+            .sorted { $0.date < $1.date }
     }
 
     func lastMessage(_ a: UserID, _ b: UserID) -> DemoMessage? { conversation(between: a, and: b).last }
@@ -644,6 +674,14 @@ final class DemoBackend {
         news = []
         listings = []
         gifts = []
+        customExercises = []
+        exerciseResults = []
+        readMarks = [:]
+        noticesSeen = [:]
+        groupBookings = []
+        subscriptions = [:]
+        exerciseStars = [:]
+        trainingVideos = []
         coaches = Self.baseCoaches
         seed()
     }
@@ -676,7 +714,10 @@ final class DemoBackend {
 
     func save() {
         let snapshot = DemoSnapshot(profiles: profiles, venues: venues, coachInfo: coachInfo, studentPrices: studentPrices,
-                                    groups: groups, news: news, listings: listings, gifts: gifts, slots: slots, bookings: bookings, records: records, events: events,
+                                    groups: groups, news: news, listings: listings, gifts: gifts, customExercises: customExercises,
+                                    exerciseResults: exerciseResults, readMarks: readMarks, noticesSeen: noticesSeen,
+                                    groupBookings: groupBookings, subscriptions: subscriptions, exerciseStars: exerciseStars,
+                                    trainingVideos: trainingVideos, slots: slots, bookings: bookings, records: records, events: events,
                                     messages: messages, privacy: privacy)
         if let data = try? JSONEncoder().encode(snapshot) {
             UserDefaults.standard.set(data, forKey: Self.storageKey)
@@ -698,6 +739,14 @@ final class DemoBackend {
         news = snapshot.news ?? []
         listings = snapshot.listings ?? []
         gifts = snapshot.gifts ?? []
+        customExercises = snapshot.customExercises ?? []
+        exerciseResults = snapshot.exerciseResults ?? []
+        readMarks = snapshot.readMarks ?? [:]
+        noticesSeen = snapshot.noticesSeen ?? [:]
+        groupBookings = snapshot.groupBookings ?? []
+        subscriptions = snapshot.subscriptions ?? [:]
+        exerciseStars = snapshot.exerciseStars ?? [:]
+        trainingVideos = snapshot.trainingVideos ?? []
         syncCoaches()
     }
 
@@ -760,6 +809,7 @@ final class DemoBackend {
                                         date: Date().addingTimeInterval(-4 * 3600), bookingId: booking.id))
         }
         seedExtras()
+        seedExerciseResults()
         for student in [ivan, natasha] {
             notify(student, "Добро пожаловать в «Биток»", "Выберите тренера и запишитесь во вкладке «Календарь»")
         }

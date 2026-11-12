@@ -264,6 +264,7 @@ struct BookingConfirmSheet: View {
     let container: AppContainer
     let onBooked: (Booking) -> Void
     @State private var comment = ""
+    @State private var isGroup = false
     @State private var errorText: String?
 
     var body: some View {
@@ -288,6 +289,16 @@ struct BookingConfirmSheet: View {
                             "\(Fmt.price(container.backend.price(coach: slot.trainerId, student: container.currentUserId))) · оплата в клубе")
                     }
                     .padding(Space.l)
+                    .glassCard()
+
+                    VStack(alignment: .leading, spacing: Space.xs) {
+                        Toggle(isOn: $isGroup) {
+                            Label("Запись на групповую тренировку", systemImage: "person.3")
+                        }
+                        Text("Тренер увидит, что вы хотите заниматься в группе (игровая тренировка с другими учениками).")
+                            .font(.caption).foregroundStyle(palette.textSecondary)
+                    }
+                    .padding(Space.m)
                     .glassCard()
 
                     VStack(alignment: .leading, spacing: Space.s) {
@@ -331,7 +342,9 @@ struct BookingConfirmSheet: View {
         do {
             let text = comment.trimmingCharacters(in: .whitespacesAndNewlines)
             let booking = try container.backend.book(slotId: slot.id, studentId: container.currentUserId,
-                                                     comment: text.isEmpty ? nil : text)
+                                                     comment: isGroup ? "👥 Групповая тренировка" + (text.isEmpty ? "" : ". \(text)")
+                                                                      : (text.isEmpty ? nil : text))
+            if isGroup { container.backend.markGroup(booking.id) }
             onBooked(booking)
         } catch {
             errorText = DemoBackend.message(for: error)

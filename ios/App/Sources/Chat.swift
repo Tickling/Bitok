@@ -6,10 +6,11 @@ import BookingDomain
 import BookingUI
 import ChatDomain
 import ProgressDomain
+import AVKit
 
 struct ChatRootView: View {
     enum Segment: String, CaseIterable, Identifiable {
-        case chats = "Чаты", players = "Игроки", notifications = "Уведомления"
+        case chats = "Чаты", players = "Ученики"
         var id: Self { self }
     }
 
@@ -17,6 +18,7 @@ struct ChatRootView: View {
     @Bindable var container: AppContainer
     @State private var segment: Segment = .chats
     @State private var profilePerson: PersonRef?
+    @State private var showNotices = false
 
     private var backend: DemoBackend { container.backend }
     private var me: UserID { container.currentUserId }
@@ -25,24 +27,56 @@ struct ChatRootView: View {
         NavigationStack(path: $container.chatPath) {
             ScrollView {
                 VStack(alignment: .leading, spacing: Space.m) {
-                    Picker("Раздел", selection: $segment) {
-                        // «Игроки клуба» — только для учеников (FR-030)
-                        ForEach(Segment.allCases.filter { container.role == .student || $0 != .players }) {
-                            Text($0.rawValue).tag($0)
+                    // «Ученики клуба» — только для учеников (FR-030)
+                    if container.role == .student {
+                        Picker("Раздел", selection: $segment) {
+                            ForEach(Segment.allCases) { Text($0.rawValue).tag($0) }
                         }
+                        .pickerStyle(.segmented)
                     }
-                    .pickerStyle(.segmented)
 
                     switch segment {
                     case .chats: chatsList
                     case .players: playersList
-                    case .notifications: notificationsList
                     }
                 }
                 .padding(Space.l)
             }
             .background(ThemedBackground())
             .navigationTitle("Чат")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    // Уведомления — колокольчик с числом новых.
+                    Button { showNotices = true } label: {
+                        Image(systemName: "bell")
+                            .font(.title3)
+                            .overlay(alignment: .topTrailing) {
+                                let count = backend.unseenNotices(for: me)
+                                if count > 0 {
+                                    Text(count > 99 ? "99+" : "\(count)")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 4)
+                                        .frame(minWidth: 16, minHeight: 16)
+                                        .background(.red, in: Capsule())
+                                        .offset(x: 8, y: -6)
+                                }
+                            }
+                    }
+                    .accessibilityLabel("Уведомления")
+                }
+            }
+            .sheet(isPresented: $showNotices, onDismiss: { backend.markNoticesSeen(me) }) {
+                NavigationStack {
+                    ScrollView {
+                        VStack(spacing: Space.s) { notificationsList }.padding(Space.l)
+                    }
+                    .background(ThemedBackground())
+                    .navigationTitle("Уведомления")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Готово") { showNotices = false } } }
+                }
+            }
             .navigationDestination(for: UserID.self) { otherId in
                 ChatThreadView(container: container, otherId: otherId)
             }
@@ -66,10 +100,24 @@ struct ChatRootView: View {
                                 Text(Fmt.time(last.date)).font(.caption).foregroundStyle(palette.textSecondary)
                             }
                         }
-                        Text(backend.lastMessage(me, person.id)?.text ?? (backend.isCoach(person.id) ? "Тренер" : "Ученик"))
-                            .font(.callout)
-                            .foregroundStyle(palette.textSecondary)
-                            .lineLimit(1)
+                        HStack {
+                            Text(backend.lastMessage(me, person.id)?.text ?? (backend.isCoach(person.id) ? "Тренер" : "Ученик"))
+                                .font(.callout)
+                                .foregroundStyle(palette.textSecondary)
+                                .lineLimit(1)
+                            Spacer()
+                            // Непрочитанные — синий кружок с числом
+                            let unread = backend.unreadCount(for: me, from: person.id)
+                            if unread > 0 {
+                                Text("\(unread)")
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(.white)
+                                    .frame(minWidth: 20, minHeight: 20)
+                                    .padding(.horizontal, unread > 9 ? 4 : 0)
+                                    .background(Color(red: 0.2, green: 0.5, blue: 1.0), in: Capsule())
+                                    .accessibilityLabel("Непрочитанных: \(unread)")
+                            }
+                        }
                     }
                 }
                 .padding(Space.m)
@@ -86,8 +134,11 @@ struct ChatRootView: View {
                     Avatar(initials: player.initials, size: 40, userId: player.id)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(player.name).font(.headline)
-                        Text(backend.progress(for: player.id).current.level?.title ?? "Новичок")
+                        let coaches = backend.coachesOf(player.id).map { $0.name.split(separator: " ").first.map(String.init) ?? $0.name }
+                        Text(coaches.isEmpty ? "Пока без тренера" : "Тренер: " + coaches.joined(separator: ", "))
                             .font(.caption).foregroundStyle(palette.textSecondary)
+                        Text(backend.progress(for: player.id).current.level?.title ?? "Новичок")
+                            .font(.caption2).foregroundStyle(palette.textSecondary)
                     }
                     Spacer()
                     if let rating = backend.publicRating(of: player.id) {
@@ -141,6 +192,8 @@ struct ChatThreadView: View {
     @State private var swapBooking: BookingRef?
     @State private var counterBooking: BookingRef?
     @State private var replayGift: DemoGift?
+    @State private var editing: DemoMessage?
+    @State private var deleting: DemoMessage?
 
     private var backend: DemoBackend { container.backend }
     private var me: UserID { container.currentUserId }
@@ -160,6 +213,18 @@ struct ChatThreadView: View {
             .onChange(of: messages.count) { _, _ in scrollToBottom(proxy, animated: true) }
         }
         .safeAreaInset(edge: .bottom) { composer }
+        .onAppear { backend.markRead(me, partner: otherId) }
+        .onChange(of: messages.count) { _, _ in backend.markRead(me, partner: otherId) }
+        .confirmationDialog("Удалить сообщение?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                            titleVisibility: .visible, presenting: deleting) { message in
+            Button("Удалить у меня", role: .destructive) { backend.deleteMessage(message.id, by: me, forEveryone: false) }
+            if message.from == me {
+                Button("Удалить у меня и у \(backend.person(otherId)?.name.split(separator: " ").first.map(String.init) ?? "собеседника")",
+                       role: .destructive) {
+                    backend.deleteMessage(message.id, by: me, forEveryone: true)
+                }
+            }
+        }
         .background(ThemedBackground())
         .navigationTitle(backend.name(otherId))
         .navigationBarTitleDisplayMode(.inline)
@@ -190,9 +255,7 @@ struct ChatThreadView: View {
             ProposeSlotSheet(container: container, studentId: otherId)
         }
         .fullScreenCover(item: $replayGift) { gift in
-            GiftRevealView(gift: gift, fromName: backend.name(gift.fromId)) {
-                if !gift.opened { backend.markOpened(gift.id) }
-            }
+            GiftDetailView(container: container, giftId: gift.id, animated: gift.toId == me && !gift.opened)
         }
         .sheet(item: $counterBooking) { ref in
             ProposeSlotSheet(container: container, studentId: otherId, replacing: ref.id)
@@ -217,8 +280,18 @@ struct ChatThreadView: View {
     @ViewBuilder
     private func messageView(_ message: DemoMessage) -> some View {
         let mine = message.from == me
-        if let giftId = message.giftId, let gift = backend.gift(giftId) {
-            GiftMessageCard(gift: gift, fromName: backend.name(gift.fromId), isMine: mine) { replayGift = gift }
+        if let file = message.videoFile {
+            VStack(alignment: mine ? .trailing : .leading, spacing: 4) {
+                VideoPlayer(player: AVPlayer(url: DemoBackend.videoURL(file)))
+                    .frame(width: 220, height: 300)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.l, style: .continuous))
+                Text(message.text).font(.callout).frame(maxWidth: 240, alignment: mine ? .trailing : .leading)
+                Text(Fmt.time(message.date)).font(.caption2).foregroundStyle(palette.textSecondary)
+            }
+            .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
+        } else if let giftId = message.giftId, let gift = backend.gift(giftId) {
+            GiftMessageCard(gift: gift, fromName: backend.name(gift.fromId), isMine: mine,
+                            imageId: backend.listing(gift.listingId)?.imageId) { replayGift = gift }
                 .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
         } else if let request = message.peerRequest {
             peerRequestCard(message: message, request: request)
@@ -234,7 +307,7 @@ struct ChatThreadView: View {
                 if mine { Spacer(minLength: 48) }
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(message.text).frame(maxWidth: .infinity, alignment: .leading)
-                    Text(Fmt.time(message.date)).font(.caption2).opacity(0.7)
+                    Text((message.editedAt != nil ? "изменено · " : "") + Fmt.time(message.date)).font(.caption2).opacity(0.7)
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, Space.m)
@@ -246,6 +319,17 @@ struct ChatThreadView: View {
                     }
                 }
                 .glassCard(cornerRadius: Radius.l)
+                .contextMenu {
+                    // Долгое нажатие: копировать, изменить своё, удалить
+                    Button { UIPasteboard.general.string = message.text } label: { Label("Копировать", systemImage: "doc.on.doc") }
+                    if mine {
+                        Button {
+                            editing = message
+                            draft = message.text
+                        } label: { Label("Изменить", systemImage: "pencil") }
+                    }
+                    Button(role: .destructive) { deleting = message } label: { Label("Удалить", systemImage: "trash") }
+                }
                 .frame(maxWidth: 280, alignment: mine ? .trailing : .leading)
                 if !mine { Spacer(minLength: 48) }
             }
@@ -470,22 +554,38 @@ struct ChatThreadView: View {
                 }
                 .accessibilityLabel("Предложить сыграть или обменяться номерами")
             }
-            TextField("Сообщение", text: $draft, axis: .vertical)
+            TextField(editing == nil ? "Сообщение" : "Изменить сообщение", text: $draft, axis: .vertical)
                 .lineLimit(1...4)
                 .padding(.horizontal, Space.m)
                 .padding(.vertical, Space.s)
                 .glassCard(cornerRadius: 22)
             Button {
-                backend.send(from: me, to: otherId, text: draft)
+                if let editing {
+                    backend.editMessage(editing.id, by: me, text: draft)
+                    self.editing = nil
+                } else {
+                    backend.send(from: me, to: otherId, text: draft)
+                }
                 draft = ""
             } label: {
-                Image(systemName: "arrow.up.circle.fill").font(.system(size: 34))
+                Image(systemName: editing == nil ? "arrow.up.circle.fill" : "checkmark.circle.fill").font(.system(size: 34))
             }
             .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .accessibilityLabel("Отправить")
         }
         .padding(.horizontal, Space.l)
         .padding(.vertical, Space.s)
+        .overlay(alignment: .top) {
+            if editing != nil {
+                HStack {
+                    Label("Редактирование", systemImage: "pencil").font(.caption.weight(.semibold))
+                    Spacer()
+                    Button("Отмена") { editing = nil; draft = "" }.font(.caption)
+                }
+                .padding(.horizontal, Space.l)
+                .offset(y: -18)
+            }
+        }
     }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool) {
@@ -745,6 +845,8 @@ struct PersonProfileSheet: View {
                         .font(.caption).foregroundStyle(palette.textSecondary)
                 }
 
+                ProfileGiftsGrid(container: container, userId: personId)
+
                 Button("Написать") {
                     dismiss()
                     container.openChat(with: personId)
@@ -753,7 +855,7 @@ struct PersonProfileSheet: View {
             }
             .padding(Space.l)
         }
-        .navigationTitle("Игрок")
+        .navigationTitle("Ученик")
         .navigationBarTitleDisplayMode(.inline)
     }
 }
