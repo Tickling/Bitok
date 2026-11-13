@@ -21,16 +21,6 @@ struct DemoGroupMessage: Codable, Identifiable, Hashable, Sendable {
 }
 
 extension DemoBackend {
-    /// Друзья ученика: с кем обменялись номерами или договорились сыграть.
-    func friends(of userId: UserID) -> [DemoPerson] {
-        students.filter { other in
-            other.id != userId && conversation(between: userId, and: other.id).contains {
-                $0.peerRequest?.status == .accepted
-            }
-        }
-        .compactMap { person($0.id) }
-    }
-
     func chatGroups(for userId: UserID) -> [DemoChatGroup] {
         chatGroupsStore.filter { $0.members.contains(userId) }
             .sorted { (lastGroupMessage($0.id)?.date ?? $0.date) > (lastGroupMessage($1.id)?.date ?? $1.date) }

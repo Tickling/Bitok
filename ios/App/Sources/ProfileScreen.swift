@@ -264,6 +264,9 @@ struct ProfileRootView: View {
             }
             if container.role == .student {
                 Divider().padding(.leading, 52)
+                menuLink("Друзья · \(backend.friends(of: me).count)" + (backend.incomingFriendRequests(me).isEmpty ? "" : " · новые запросы"),
+                         "person.2") { FriendsView(container: container) }
+                Divider().padding(.leading, 52)
                 menuLink("Трофеи и достижения", "trophy") {
                     AchievementsScreen(stats: DemoContent.stats(for: me), medalCards: DemoContent.medalCards,
                                        inProgress: [], showToStudents: Binding(

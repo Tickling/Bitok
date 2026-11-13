@@ -451,9 +451,14 @@ class DemoBackend(private val prefs: SharedPreferences) {
     fun sendPeer(kind: PeerKind, from: String, to: String) {
         if (isCoach(from) || isCoach(to) || hasPendingPeer(kind, from, to)) return
         if (kind == PeerKind.PHONES && phonesShared(from, to)) return
-        val text = if (kind == PeerKind.PLAY) "Давай сыграем партию? 🎱" else "Хотите обменяться номерами телефонов?"
+        if (kind == PeerKind.FRIEND && areFriends(from, to)) return
+        val (text, title) = when (kind) {
+            PeerKind.PLAY -> "Давай сыграем партию? 🎱" to "${name(from)} предлагает сыграть"
+            PeerKind.PHONES -> "Хотите обменяться номерами телефонов?" to "${name(from)} предлагает обменяться номерами"
+            PeerKind.FRIEND -> "Хочу добавить вас в друзья 🤝" to "${name(from)} хочет добавить вас в друзья"
+        }
         update { it.copy(messages = it.messages + Message(newId(), from, to, text, now(), peer = PeerRequest(kind, PeerStatus.SENT))) }
-        notify(to, if (kind == PeerKind.PLAY) "${name(from)} предлагает сыграть" else "${name(from)} предлагает обменяться номерами", text)
+        notify(to, title, text)
     }
 
     fun answerPeer(messageId: String, userId: String, accept: Boolean) {
@@ -464,13 +469,16 @@ class DemoBackend(private val prefs: SharedPreferences) {
                 if (it.id == messageId) it.copy(peer = peer.copy(status = if (accept) PeerStatus.ACCEPTED else PeerStatus.DECLINED)) else it
             })
         }
+        // Любое согласие (сыграть, номера, дружба) делает учеников друзьями.
+        if (accept) addFriends(message.from, userId)
         when {
+            accept && peer.kind == PeerKind.FRIEND -> notify(message.from, "${name(userId)} теперь у вас в друзьях 🤝", "Можно создать общую группу или договориться сыграть")
             accept && peer.kind == PeerKind.PLAY -> {
                 post(userId, message.from, "Давай! Когда тебе удобно?")
                 notify(message.from, "${name(userId)}: согласие сыграть", "Договоритесь о времени в чате")
             }
             accept -> notify(message.from, "Номера открыты 📞", "${name(userId)}: ${person(userId)?.phone}")
-            else -> notify(message.from, "${name(userId)} отказался(ась)", if (peer.kind == PeerKind.PLAY) "Приглашение сыграть" else "Обмен номерами")
+            else -> notify(message.from, "${name(userId)} отказался(ась)", when (peer.kind) { PeerKind.PLAY -> "Приглашение сыграть"; PeerKind.PHONES -> "Обмен номерами"; PeerKind.FRIEND -> "Запрос в друзья" })
         }
     }
 
@@ -642,6 +650,8 @@ class DemoBackend(private val prefs: SharedPreferences) {
         val now = now()
         val messages = mutableListOf(
             Message(newId(), Ids.ALEXEY, Ids.IVAN, "Привет! Жду на тренировке, поработаем над выходом на дальний борт 🎱", now - 3 * 3_600_000),
+            // Мария хочет дружить с Иваном — входящий запрос для демо.
+            Message(newId(), Ids.MARIA, Ids.IVAN, "Хочу добавить вас в друзья 🤝", now - 1_800_000, peer = PeerRequest(PeerKind.FRIEND, PeerStatus.SENT)),
             Message(newId(), Ids.NATASHA, Ids.ALEXEY, "Алексей, добрый день! А можно пораньше? В 18:00 не очень удобно", now - 2 * 3_600_000),
             Message(newId(), Ids.VERONIKA, Ids.IVAN, "Здравствуйте! Если захотите попробовать пул — записывайтесь на утро 🙂", now - 5 * 3_600_000),
         )
@@ -678,6 +688,7 @@ class DemoBackend(private val prefs: SharedPreferences) {
         update {
             s.copy(exerciseResults = seedResults(),
                 subscriptions = mapOf(Ids.DMITRY to now + 365 * 86_400_000L),
+                friendships = mapOf(Ids.IVAN to setOf(Ids.NATASHA), Ids.NATASHA to setOf(Ids.IVAN)),
                 slots = freeSlots, bookings = bookings, evaluations = evaluations, messages = messages, groups = listOf(group),
                 news = news, listings = listings, notices = notices)
         }

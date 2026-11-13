@@ -116,7 +116,7 @@ enum class InvitationStatus { SENT, ACCEPTED, DECLINED, OTHER_TIME }
 data class Invitation(val slotId: String, val status: InvitationStatus, val comment: String? = null, val bookingId: String? = null)
 
 @Serializable
-enum class PeerKind { PLAY, PHONES }
+enum class PeerKind { PLAY, PHONES, FRIEND }
 
 @Serializable
 enum class PeerStatus { SENT, ACCEPTED, DECLINED }
@@ -274,6 +274,8 @@ data class DemoState(
     val videos: List<TrainingVideo> = emptyList(),
     val chatGroups: List<ChatGroup> = emptyList(),
     val groupMessages: List<GroupMessage> = emptyList(),
+    /** Друзья: связь взаимная, хранится у обоих. */
+    val friendships: Map<String, Set<String>> = emptyMap(),
     val profiles: Map<String, Profile> = emptyMap(),
     val coachInfo: Map<String, CoachInfo> = emptyMap(),
     /** Ключ «coachId|studentId» → цена в рублях. */

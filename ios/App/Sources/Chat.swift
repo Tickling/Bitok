@@ -144,8 +144,12 @@ struct ChatRootView: View {
         }
     }
 
+    @ViewBuilder
     private var playersList: some View {
-        ForEach(backend.players(for: me)) { player in
+        FriendsSections(container: container) { profilePerson = PersonRef(id: $0) }
+        let others = backend.players(for: me).filter { !backend.areFriends(me, $0.id) }
+        if !others.isEmpty { Label("Все ученики", systemImage: "person.3").font(.headline).padding(.top, Space.s) }
+        ForEach(others) { player in
             Button { profilePerson = PersonRef(id: player.id) } label: {
                 HStack(spacing: Space.m) {
                     Avatar(initials: player.initials, size: 40, userId: player.id)
@@ -459,9 +463,10 @@ struct ChatThreadView: View {
     private func peerRequestCard(message: DemoMessage, request: DemoPeerRequest) -> some View {
         let mine = message.from == me
         let isPlay = request.kind == .playInvite
+        let isFriend = request.kind == .friendRequest
         return VStack(alignment: .leading, spacing: Space.s) {
-            Label(isPlay ? "Приглашение сыграть" : "Обмен номерами",
-                  systemImage: isPlay ? "circle.circle" : "phone.arrow.up.right")
+            Label(isFriend ? "Запрос в друзья" : isPlay ? "Приглашение сыграть" : "Обмен номерами",
+                  systemImage: isFriend ? "person.badge.plus" : isPlay ? "circle.circle" : "phone.arrow.up.right")
                 .font(.callout.weight(.semibold))
             Text(message.text).font(.callout)
             switch request.status {
@@ -473,7 +478,7 @@ struct ChatThreadView: View {
                     }
                 } else {
                     HStack(spacing: Space.s) {
-                        Button(isPlay ? "Сыграем!" : "Да, обменяться") {
+                        Button(isFriend ? "Принять" : isPlay ? "Сыграем!" : "Да, обменяться") {
                             run { try backend.answerPeerRequest(messageId: message.id, by: me, accept: true) }
                         }
                         .buttonStyle(.cueGlassProminent)
@@ -485,7 +490,10 @@ struct ChatThreadView: View {
                     .font(.caption.weight(.semibold))
                 }
             case .accepted:
-                if isPlay {
+                if isFriend {
+                    Label("Теперь вы друзья 🤝", systemImage: "checkmark.circle.fill")
+                        .font(.caption.weight(.semibold)).foregroundStyle(palette.statusConfirmed)
+                } else if isPlay {
                     Label("Договорились сыграть ✓", systemImage: "checkmark.circle.fill")
                         .font(.caption.weight(.semibold)).foregroundStyle(palette.statusConfirmed)
                     if !backend.phonesShared(me, otherId) && !backend.hasPendingRequest(.phoneExchange, between: me, and: otherId) {
@@ -550,6 +558,14 @@ struct ChatThreadView: View {
             } else if container.role == .student {
                 // Ученик ↔ ученик: пригласить сыграть или предложить обменяться номерами.
                 Menu {
+                    if !backend.areFriends(me, otherId) {
+                        Button {
+                            run { try backend.sendPeerRequest(.friendRequest, from: me, to: otherId) }
+                        } label: {
+                            Label("Добавить в друзья", systemImage: "person.badge.plus")
+                        }
+                        .disabled(backend.friendStatus(me, otherId) != .none)
+                    }
                     Button {
                         run { try backend.sendPeerRequest(.playInvite, from: me, to: otherId) }
                     } label: {
@@ -858,6 +874,10 @@ struct PersonProfileSheet: View {
                 } else {
                     Label("Телефон откроется, если вы обменяетесь номерами в чате", systemImage: "phone.down")
                         .font(.caption).foregroundStyle(palette.textSecondary)
+                }
+
+                if container.role == .student && personId != container.currentUserId {
+                    FriendButton(container: container, otherId: personId)
                 }
 
                 if let birthday = backend.publicBirthday(of: personId) {

@@ -81,6 +81,8 @@ fun ProfileScreen(app: AppState) {
                 MenuRow(Icons.Filled.EditNote, "Упражнения и уроки") { app.push(Route.CoachExercises) }
             } else {
                 HorizontalDivider()
+                MenuRow(Icons.Filled.Groups, "Друзья · ${b.friends(app.me).size}" + if (b.incomingFriendRequests(app.me).isNotEmpty()) " · новые запросы" else "") { app.push(Route.Friends) }
+                HorizontalDivider()
                 MenuRow(Icons.Filled.EmojiEvents, "Трофеи и достижения") { app.push(Route.Trophies) }
             }
             HorizontalDivider()

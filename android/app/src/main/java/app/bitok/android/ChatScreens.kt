@@ -100,7 +100,13 @@ fun ChatListScreen(app: AppState) {
                 }
             }
             }
-            ChatSegment.PLAYERS -> b.players(app.me).forEach { player ->
+            ChatSegment.PLAYERS -> {
+                FriendsSections(app)
+                Title("Все ученики")
+            }
+        }
+        if (segment == ChatSegment.PLAYERS) {
+            b.players(app.me).filter { !b.areFriends(app.me, it.id) }.forEach { player ->
                 GlassCard(onClick = { app.push(Route.PersonProfile(player.id)) }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Avatar(player, 40.dp)
@@ -210,6 +216,9 @@ fun ChatThreadScreen(app: AppState, otherId: String) {
                 else -> Box {
                     IconButton({ menu = true }) { Icon(Icons.Filled.AddCircleOutline, "Сыграть или обменяться номерами", tint = p.accent) }
                     DropdownMenu(menu, { menu = false }) {
+                        if (!b.areFriends(me, otherId)) DropdownMenuItem({ Text("👤+ Добавить в друзья") },
+                            enabled = b.friendStatus(me, otherId) == FriendStatus.NONE,
+                            onClick = { menu = false; b.sendPeer(PeerKind.FRIEND, me, otherId) })
                         DropdownMenuItem({ Text("🎱 Предложить сыграть") }, enabled = !b.hasPendingPeer(PeerKind.PLAY, me, otherId),
                             onClick = { menu = false; b.sendPeer(PeerKind.PLAY, me, otherId) })
                         if (!b.phonesShared(me, otherId)) {
@@ -335,16 +344,19 @@ private fun PeerCard(app: AppState, message: Message, request: PeerRequest, othe
     val b = app.backend
     val mine = message.from == app.me
     val play = request.kind == PeerKind.PLAY
+    val friend = request.kind == PeerKind.FRIEND
     val uri = LocalUriHandler.current
     GlassCard(Modifier.widthIn(max = 310.dp)) {
-        Text(if (play) "🎱 Приглашение сыграть" else "📞 Обмен номерами", fontWeight = FontWeight.SemiBold, color = p.text)
+        Text(if (friend) "👤+ Запрос в друзья" else if (play) "🎱 Приглашение сыграть" else "📞 Обмен номерами", fontWeight = FontWeight.SemiBold, color = p.text)
         Text(message.text, color = p.text)
         when (request.status) {
             PeerStatus.SENT -> if (mine) Secondary("⏳ Ждём ответа") else Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                PrimaryButton(if (play) "Сыграем!" else "Да, обменяться", Modifier.weight(1f)) { b.answerPeer(message.id, app.me, true) }
+                PrimaryButton(if (friend) "Принять" else if (play) "Сыграем!" else "Да, обменяться", Modifier.weight(1f)) { b.answerPeer(message.id, app.me, true) }
                 SecondaryButton("Нет", color = p.cancelled) { b.answerPeer(message.id, app.me, false) }
             }
-            PeerStatus.ACCEPTED -> if (play) {
+            PeerStatus.ACCEPTED -> if (friend) {
+                Text("✓ Теперь вы друзья 🤝", color = p.completed, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            } else if (play) {
                 Text("✓ Договорились сыграть", color = p.completed, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                 if (!b.phonesShared(app.me, otherId) && !b.hasPendingPeer(PeerKind.PHONES, app.me, otherId)) {
                     SecondaryButton("Обменяться номерами") { b.sendPeer(PeerKind.PHONES, app.me, otherId) }
@@ -408,6 +420,7 @@ fun PersonProfileScreen(app: AppState, personId: String) {
             } else {
                 Secondary("Телефон откроется, если вы обменяетесь номерами в чате")
             }
+            if (!app.isCoach && personId != app.me) FriendButton(app, personId)
             b.publicBirthday(personId)?.let { Secondary("🎂 $it", size = 14) }
             ProfileGifts(app, personId)
             if (false) {

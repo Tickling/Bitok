@@ -54,10 +54,39 @@ import androidx.compose.ui.unit.sp
 
 // region Данные
 
-/** Друзья ученика: с кем обменялись номерами или договорились сыграть. */
-fun DemoBackend.friends(userId: String) = students.filter { o ->
-    o.id != userId && conversation(userId, o.id).any { it.peer?.status == PeerStatus.ACCEPTED }
-}.map { person(it.id) ?: it }
+// Друзья: запрос → согласие второй стороны → взаимная дружба.
+enum class FriendStatus { NONE, OUTGOING, INCOMING, FRIENDS }
+
+fun DemoBackend.areFriends(a: String, b: String) = state.friendships[a]?.contains(b) == true
+fun DemoBackend.friends(userId: String) = (state.friendships[userId] ?: emptySet()).mapNotNull { person(it) }.sortedBy { it.name }
+
+fun DemoBackend.addFriends(a: String, b: String) {
+    if (a == b || isCoach(a) || isCoach(b)) return
+    update { s -> s.copy(friendships = s.friendships + (a to (s.friendships[a].orEmpty() + b)) + (b to (s.friendships[b].orEmpty() + a))) }
+}
+
+/** Удалить из друзей — у обоих, без уведомления. */
+fun DemoBackend.removeFriend(a: String, b: String) = update { s ->
+    s.copy(friendships = s.friendships + (a to (s.friendships[a].orEmpty() - b)) + (b to (s.friendships[b].orEmpty() - a)))
+}
+
+fun DemoBackend.pendingFriendRequest(from: String, to: String) =
+    state.messages.lastOrNull { it.from == from && it.to == to && it.peer?.kind == PeerKind.FRIEND && it.peer.status == PeerStatus.SENT }
+
+fun DemoBackend.friendStatus(me: String, other: String) = when {
+    areFriends(me, other) -> FriendStatus.FRIENDS
+    pendingFriendRequest(me, other) != null -> FriendStatus.OUTGOING
+    pendingFriendRequest(other, me) != null -> FriendStatus.INCOMING
+    else -> FriendStatus.NONE
+}
+
+fun DemoBackend.incomingFriendRequests(userId: String) =
+    state.messages.filter { it.to == userId && it.peer?.kind == PeerKind.FRIEND && it.peer.status == PeerStatus.SENT }.sortedByDescending { it.at }
+
+fun DemoBackend.cancelFriendRequest(from: String, to: String) {
+    val m = pendingFriendRequest(from, to) ?: return
+    update { s -> s.copy(messages = s.messages - m) }
+}
 
 fun DemoBackend.chatGroups(userId: String) = state.chatGroups.filter { userId in it.members }
     .sortedByDescending { g -> groupMessages(g.id).lastOrNull()?.at ?: g.at }
@@ -241,3 +270,77 @@ fun PhotoViewerScreen(app: AppState, userId: String) {
         Text(app.backend.name(userId), color = Color.White, fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(24.dp))
     }
 }
+
+// region Друзья — экраны
+
+/** Кнопка дружбы в профиле ученика: меняется по состоянию. */
+@Composable
+fun FriendButton(app: AppState, otherId: String) {
+    val p = LocalPalette.current
+    val b = app.backend
+    var confirm by remember { mutableStateOf(false) }
+    when (b.friendStatus(app.me, otherId)) {
+        FriendStatus.NONE -> PrimaryButton("👤+ Добавить в друзья") { b.sendPeer(PeerKind.FRIEND, app.me, otherId) }
+        FriendStatus.OUTGOING -> SecondaryButton("Запрос отправлен · отменить", Modifier.fillMaxWidth()) { b.cancelFriendRequest(app.me, otherId) }
+        FriendStatus.INCOMING -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PrimaryButton("Принять в друзья", Modifier.weight(1f)) { b.pendingFriendRequest(otherId, app.me)?.let { b.answerPeer(it.id, app.me, true) } }
+            SecondaryButton("Отклонить", Modifier.weight(1f), p.cancelled) { b.pendingFriendRequest(otherId, app.me)?.let { b.answerPeer(it.id, app.me, false) } }
+        }
+        FriendStatus.FRIENDS -> SecondaryButton("В друзьях ✓", Modifier.fillMaxWidth()) { confirm = true }
+    }
+    if (confirm) AlertDialog(
+        onDismissRequest = { confirm = false },
+        title = { Text("Удалить ${b.name(otherId)} из друзей?") },
+        confirmButton = { TextButton({ confirm = false; b.removeFriend(app.me, otherId) }) { Text("Удалить", color = p.cancelled) } },
+        dismissButton = { TextButton({ confirm = false }) { Text("Отмена") } },
+    )
+}
+
+/** Блоки «Запросы в друзья» и «Друзья». */
+@Composable
+fun FriendsSections(app: AppState) {
+    val p = LocalPalette.current
+    val b = app.backend
+    val requests = b.incomingFriendRequests(app.me)
+    if (requests.isNotEmpty()) {
+        Text("👤+ Запросы в друзья · ${requests.size}", color = p.accent, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+        requests.forEach { r ->
+            GlassCard(onClick = { app.push(Route.PersonProfile(r.from)) }) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Avatar(b.person(r.from), 40.dp); Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) { Title(b.name(r.from)); Secondary("хочет добавить вас в друзья") }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PrimaryButton("Принять", Modifier.weight(1f)) { b.answerPeer(r.id, app.me, true) }
+                    SecondaryButton("Отклонить", Modifier.weight(1f), p.cancelled) { b.answerPeer(r.id, app.me, false) }
+                }
+            }
+        }
+    }
+    val friends = b.friends(app.me)
+    Title("Друзья · ${friends.size}")
+    if (friends.isEmpty()) Secondary("Пока нет друзей")
+    friends.forEach { f ->
+        GlassCard(onClick = { app.push(Route.PersonProfile(f.id)) }) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Avatar(f, 40.dp); Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Title(f.name)
+                    val coaches = b.coachesOf(f.id).map { it.firstName }
+                    Secondary(if (coaches.isEmpty()) "Пока без тренера" else "Тренер: " + coaches.joinToString())
+                }
+                TextButton({ app.openChat(f.id) }) { Text("💬") }
+            }
+        }
+    }
+}
+
+@Composable
+fun FriendsScreen(app: AppState) {
+    Screen("Друзья", app) {
+        FriendsSections(app)
+        Secondary("Добавить друга можно в «Чат» → «Ученики» или в профиле ученика. Друзей можно звать в групповые чаты.")
+    }
+}
+
+// endregion

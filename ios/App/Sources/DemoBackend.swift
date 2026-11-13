@@ -69,7 +69,7 @@ struct DemoMessage: Codable, Identifiable, Hashable, Sendable {
 
 /// Запрос одного ученика другому. Номера телефонов открываются только после согласия обоих (BR-030.2).
 struct DemoPeerRequest: Codable, Hashable, Sendable {
-    enum Kind: String, Codable, Sendable { case playInvite, phoneExchange }
+    enum Kind: String, Codable, Sendable { case playInvite, phoneExchange, friendRequest }
     enum Status: String, Codable, Sendable { case sent, accepted, declined }
     let kind: Kind
     var status: Status
@@ -117,6 +117,7 @@ private struct DemoSnapshot: Codable {
     var trainingVideos: [TrainingVideo]? = nil
     var chatGroups: [DemoChatGroup]? = nil
     var groupMessages: [DemoGroupMessage]? = nil
+    var friendships: [UserID: [UserID]]? = nil
     var slots: [BookingSlot]
     var bookings: [Booking]
     var records: [ProgressRecord]
@@ -186,6 +187,8 @@ final class DemoBackend {
     var trainingVideos: [TrainingVideo] = []
     var chatGroupsStore: [DemoChatGroup] = []
     var groupMessagesStore: [DemoGroupMessage] = []
+    /// Друзья: связь взаимная, хранится у обоих.
+    var friendships: [UserID: Set<UserID>] = [:]
 
     private static let storageKey = "demoBackend.v6"
 
@@ -575,10 +578,17 @@ final class DemoBackend {
         guard from != to, !isCoach(from), !isCoach(to) else { throw BookingError.forbidden }
         guard !hasPendingRequest(kind, between: from, and: to) else { return }
         if kind == .phoneExchange && phonesShared(from, to) { return }
-        let text = kind == .playInvite ? "Давай сыграем партию? 🎱" : "Хотите обменяться номерами телефонов?"
+        if kind == .friendRequest && areFriends(from, to) { return }
+        let text: String
+        let title: String
+        switch kind {
+        case .playInvite: text = "Давай сыграем партию? 🎱"; title = "\(name(from)) предлагает сыграть"
+        case .phoneExchange: text = "Хотите обменяться номерами телефонов?"; title = "\(name(from)) предлагает обменяться номерами"
+        case .friendRequest: text = "Хочу добавить вас в друзья 🤝"; title = "\(name(from)) хочет добавить вас в друзья"
+        }
         messages.append(DemoMessage(id: UUID(), from: from, to: to, text: text, date: Date(),
                                     peerRequest: DemoPeerRequest(kind: kind, status: .sent)))
-        notify(to, kind == .playInvite ? "\(name(from)) предлагает сыграть" : "\(name(from)) предлагает обменяться номерами", text)
+        notify(to, title, text)
         save()
     }
 
@@ -589,14 +599,19 @@ final class DemoBackend {
         request.status = accept ? .accepted : .declined
         messages[index].peerRequest = request
         let author = messages[index].from
+        // Любое согласие (сыграть, обменяться номерами, дружба) делает учеников друзьями.
+        if accept { addFriends(author, userId) }
         switch (request.kind, accept) {
+        case (.friendRequest, true):
+            notify(author, "\(name(userId)) теперь у вас в друзьях 🤝", "Можно создать общую группу или договориться сыграть")
         case (.playInvite, true):
             post(from: userId, to: author, text: "Давай! Когда тебе удобно?", bookingId: nil)
             notify(author, "\(name(userId)) согласна(ен) сыграть", "Договоритесь о времени в чате")
         case (.phoneExchange, true):
             notify(author, "Номера открыты 📞", "\(name(userId)): \(person(userId)?.phone ?? "")")
         case (_, false):
-            notify(author, "\(name(userId)) отказался(ась)", request.kind == .playInvite ? "Приглашение сыграть" : "Обмен номерами")
+            notify(author, "\(name(userId)) отказался(ась)",
+                   request.kind == .playInvite ? "Приглашение сыграть" : request.kind == .phoneExchange ? "Обмен номерами" : "Запрос в друзья")
         }
         save()
     }
@@ -695,6 +710,7 @@ final class DemoBackend {
         trainingVideos = []
         chatGroupsStore = []
         groupMessagesStore = []
+        friendships = [:]
         coaches = Self.baseCoaches
         seed()
     }
@@ -731,6 +747,7 @@ final class DemoBackend {
                                     exerciseResults: exerciseResults, readMarks: readMarks, noticesSeen: noticesSeen,
                                     groupBookings: groupBookings, subscriptions: subscriptions, exerciseStars: exerciseStars,
                                     trainingVideos: trainingVideos, chatGroups: chatGroupsStore, groupMessages: groupMessagesStore,
+                                    friendships: friendships.mapValues(Array.init),
                                     slots: slots, bookings: bookings, records: records, events: events,
                                     messages: messages, privacy: privacy)
         if let data = try? JSONEncoder().encode(snapshot) {
@@ -763,6 +780,7 @@ final class DemoBackend {
         trainingVideos = snapshot.trainingVideos ?? []
         chatGroupsStore = snapshot.chatGroups ?? []
         groupMessagesStore = snapshot.groupMessages ?? []
+        friendships = (snapshot.friendships ?? [:]).mapValues(Set.init)
         syncCoaches()
     }
 
@@ -826,6 +844,7 @@ final class DemoBackend {
         }
         seedExtras()
         seedExerciseResults()
+        seedFriends()
         // Дмитрий — с подпиской «Биток Про» на год и тренировкой у Алексея.
         subscriptions[DemoBackend.dmitryId] = Calendar.current.date(byAdding: .year, value: 1, to: Date())
         seedBooking(coach: alexey, student: DemoBackend.dmitryId, dayOffset: 3, finalStatus: .confirmed)

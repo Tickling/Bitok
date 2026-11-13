@@ -112,6 +112,7 @@ sealed interface Route {
     data object Progress : Route
     data class GroupChat(val id: String) : Route
     data object CreateGroup : Route
+    data object Friends : Route
     data object Settings : Route
     data object Help : Route
     data object Trophies : Route
@@ -266,6 +267,7 @@ private fun RouteScreen(app: AppState, route: Route) {
         Route.Progress -> ProgressScreen(app)
         is Route.GroupChat -> GroupChatScreen(app, route.id)
         Route.CreateGroup -> CreateGroupScreen(app)
+        Route.Friends -> FriendsScreen(app)
         Route.Settings -> SettingsScreen(app)
         Route.Help -> HelpScreen(app)
         Route.Trophies -> TrophiesScreen(app)
