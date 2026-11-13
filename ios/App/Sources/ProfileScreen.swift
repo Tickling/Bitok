@@ -74,12 +74,6 @@ struct ProfileRootView: View {
                         .font(.caption.weight(.semibold)).opacity(0.85)
                     HStack(spacing: 6) {
                         Text(person?.name ?? "Игрок").font(.title3.weight(.bold))
-                        if isPro {
-                            Text("PRO").font(.caption2.weight(.heavy)).padding(.horizontal, 6).padding(.vertical, 2)
-                                .background(LinearGradient(colors: [Color(red: 1, green: 0.84, blue: 0.35), Color(red: 0.85, green: 0.6, blue: 0.1)],
-                                                           startPoint: .leading, endPoint: .trailing), in: Capsule())
-                                .foregroundStyle(.black)
-                        }
                         if isPro, !statusEmoji.isEmpty { Text(statusEmoji) }
                     }
                     .padding(.top, Space.s)
@@ -312,7 +306,7 @@ struct ProfileRootView: View {
                         .navigationTitle("Трофеи")
                 }
                 Divider().padding(.leading, 52)
-                menuLink("Оформление профиля" + (backend.hasSubscription(me) ? " · PRO" : ""), "sparkles") {
+                menuLink("Оформление профиля", "sparkles") {
                     CustomizationView(container: container)
                 }
             }
@@ -442,7 +436,7 @@ struct EditProfileView: View {
                 Text("День рождения")
             } footer: {
                 Text(isCoach ? "Ученики не видят вашу дату рождения." :
-                        "По умолчанию другие ученики её не видят. Тренер видит дату всегда, чтобы поздравить. Ученикам младше 14 лет «Биток Про» за полцены.")
+                        "По умолчанию другие ученики её не видят. Тренер видит дату всегда, чтобы поздравить.")
             }
             Section("Телефон") {
                 Text(container.account?.phone ?? "")
@@ -676,7 +670,6 @@ struct CustomizationView: View {
                             }
                             .frame(width: 46, height: 46)
                             Text(choice.title).foregroundStyle(palette.textPrimary)
-                            if choice.isPro { Text("PRO").font(.caption2.weight(.heavy)).foregroundStyle(palette.accentSecondary) }
                             Spacer()
                             if locked { Image(systemName: "lock.fill").foregroundStyle(palette.textSecondary) }
                             else if frameCode == choice.rawValue { Image(systemName: "checkmark").foregroundStyle(palette.accent) }
@@ -701,7 +694,7 @@ struct CustomizationView: View {
                     }
                 }
             } header: {
-                Text("Статус рядом с именем · PRO")
+                Text("Статус рядом с именем")
             }
             Section {
                 Picker("Титул", selection: $titleCode) {

@@ -370,6 +370,9 @@ data class Exercise(
     val hitY: Double? = null,
     /** Биток цветной (жёлтый), а не белый. */
     val yellowCue: Boolean? = null,
+    /** Камера: допуск у лузы (см) — ширина «коридора», и цель серии (%). */
+    val toleranceCm: Int? = null,
+    val goalPercent: Int? = null,
 ) {
     val hasHit: Boolean get() = hitX != null && hitY != null
 

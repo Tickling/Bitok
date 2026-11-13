@@ -109,13 +109,13 @@ struct HelpView: View {
                      : "Коротко о том, где что находится и что можно делать.")
                     .foregroundStyle(palette.textSecondary)
             }
-            if isPro && role == .student {
-                Section("Биток Про: как это выглядит") {
+            if role == .student {
+                Section("Камера-помощник: как это выглядит") {
                     ProCarousel()
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
                 }
-                Section("Биток Про: камера-помощник") {
+                Section("Камера-помощник: по шагам") {
                     ProGuideContent()
                 }
             }

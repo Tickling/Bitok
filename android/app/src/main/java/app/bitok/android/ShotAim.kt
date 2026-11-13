@@ -319,6 +319,18 @@ fun ManualExerciseEditor(app: AppState, onSave: (Exercise) -> Unit) {
             Text("Биток жёлтый (цветной)", Modifier.weight(1f), color = LocalPalette.current.text)
             androidx.compose.material3.Switch(exercise.yellowCue == true, { exercise = exercise.copy(yellowCue = if (it) true else null) })
         }
+        Title("Камера-помощник")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Допуск у лузы: ${exercise.toleranceCm ?: 6} см", Modifier.weight(1f), color = LocalPalette.current.text)
+            TextButton({ exercise = exercise.copy(toleranceCm = ((exercise.toleranceCm ?: 6) - 1).coerceAtLeast(2)) }) { Text("−") }
+            TextButton({ exercise = exercise.copy(toleranceCm = ((exercise.toleranceCm ?: 6) + 1).coerceAtMost(15)) }) { Text("+") }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Цель серии: ${exercise.goalPercent ?: 70}%", Modifier.weight(1f), color = LocalPalette.current.text)
+            TextButton({ exercise = exercise.copy(goalPercent = ((exercise.goalPercent ?: 70) - 10).coerceAtLeast(30)) }) { Text("−") }
+            TextButton({ exercise = exercise.copy(goalPercent = ((exercise.goalPercent ?: 70) + 10).coerceAtMost(100)) }) { Text("+") }
+        }
+        Secondary("Допуск — ширина зелёного «коридора» в кадре: насколько шар может уйти от центра лузы. Цель — сколько процентов забить за серию.", size = 12)
         Title("Точка удара по битку")
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Указать точку удара", Modifier.weight(1f), color = LocalPalette.current.text)
@@ -386,7 +398,7 @@ fun LessonVideoPicker(app: AppState, exerciseId: String) {
         }
         if (file != null) SecondaryButton("Убрать", color = Color(0xFFD32F2F)) { b.setLesson(exerciseId, null, app.me) }
     }
-    Secondary("Расскажите, как выполнять упражнение и на что обратить внимание. Ученики с Pro увидят урок в упражнении.", size = 12)
+    Secondary("Расскажите, как выполнять упражнение и на что обратить внимание. Ученики увидят урок в упражнении.", size = 12)
 }
 
 // endregion

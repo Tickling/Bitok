@@ -37,7 +37,6 @@ shot coach-settings   --es uiAccount ALEXEY --es uiTab PROFILE --es uiPage setti
 adb logcat -d -s AndroidRuntime:E > "$OUT/crash-log.txt" || true
 # Биток Про (демо-экраны камеры без настоящей камеры)
 shot pro-exercise --es uiAccount DMITRY --es uiTab PROFILE --es uiPage proExercise
-shot pro-paywall  --es uiAccount IVAN --es uiTab CONTENT --es uiPage proPaywall
 shot pro-framing  --es uiAccount DMITRY --es uiPage proFraming
 shot pro-marks    --es uiAccount DMITRY --es uiPage proMarks
 shot pro-balls    --es uiAccount DMITRY --es uiPage proBalls

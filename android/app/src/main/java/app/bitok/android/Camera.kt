@@ -238,7 +238,41 @@ class FrameGrid(bitmap: Bitmap, columns: Int = 200) {
 }
 
 sealed interface Mark { data object Ok : Mark; data object Missing : Mark; data class Off(val text: String) : Mark; data object Unknown : Mark }
-data class Shot(val timeSec: Double, val made: Boolean, val advice: String)
+/** Удар: [deviation] — отклонение от линии прицела в градусах («+» вправо), [start]/[end] — откуда и куда ушёл шар. */
+data class Shot(val timeSec: Double, val made: Boolean, val advice: String, val deviation: Double? = null,
+                val start: TablePoint? = null, val end: TablePoint? = null, val short: Boolean = false)
+
+/** Сантиметров в одной единице схемы (стол 12 футов: 160 единиц ≈ 3,5 м). */
+const val CM_PER_UNIT = 2.2
+
+/** Разбор серии: средний увод, разброс, короткие удары и что исправить. */
+class ShotAnalysis(val shots: List<Shot>) {
+    val measured = shots.mapNotNull { it.deviation }
+    val bias = if (measured.isEmpty()) 0.0 else measured.average()
+    val spread = if (measured.size < 2) 0.0 else kotlin.math.sqrt(measured.sumOf { (it - bias) * (it - bias) } / (measured.size - 1))
+    val shortCount = shots.count { it.short }
+
+    val findings: List<Triple<String, String, String>> get() {
+        if (measured.size < 2 && shortCount == 0) return listOf(Triple("ℹ️", "Мало данных", "Сделайте хотя бы 5 ударов — тогда будет видно, куда и насколько уводит удар."))
+        val result = mutableListOf<Triple<String, String, String>>()
+        if (abs(bias) >= 1.2) result += Triple("↔️", "Систематический увод ${if (bias > 0) "вправо" else "влево"} на ${"%.1f".format(abs(bias))}°",
+            if (bias > 0) "Удар стабильно уходит вправо — это не случайность, а привычка. Проверьте: локоть ходит вертикально, кисть не «закручивает» кий, голова над линией удара. Попробуйте целиться на полшара левее и проследите, уйдёт ли увод."
+            else "Удар стабильно уходит влево. Часто это подъём головы или «выброс» плеча в момент удара. Задержите паузу перед ударом, не поднимайте голову до остановки шара, проводите кий прямо сквозь биток.")
+        if (spread >= 2) result += Triple("🎯", "Разброс ±${"%.1f".format(spread)}° — удар нестабилен",
+            "Шары уходят то вправо, то влево. Нужна одинаковая подготовка к каждому удару: одна и та же стойка, 2–3 пробных движения, пауза, удар без ускорения в конце.")
+        else if (measured.size >= 3 && abs(bias) < 1.2) result += Triple("✅", "Направление стабильное",
+            "Разброс всего ±${"%.1f".format(spread)}° — рука ставит удар одинаково. Можно усложнять: дальше точка или тоньше срез.")
+        if (shortCount > 0) result += Triple("💪", "Не хватило силы: $shortCount", "Шар не докатился до лузы. Делайте плавный разгон и доводите кий после удара на 10–15 см.")
+        return result
+    }
+
+    fun report(exercise: Exercise, made: Int, attempts: Int): String = buildList {
+        add("📊 Камера-помощник: №${exercise.number} «${exercise.title}» — забито $made из $attempts.")
+        if (measured.isNotEmpty()) add("Средний увод: ${"%.1f".format(abs(bias))}° ${if (bias >= 0) "вправо" else "влево"}, разброс ±${"%.1f".format(spread)}°.")
+        if (shortCount > 0) add("Не докатились: $shortCount.")
+        findings.forEach { add("• ${it.second}") }
+    }.joinToString("\n")
+}
 
 val MOTIVATION = listOf("Всё получится — каждый удар делает руку точнее", "Дыши ровно, смотри на прицел, а не на кий",
     "Чемпионы тоже мажут — главное повторять", "Ты уже лучше, чем на прошлой неделе 💪", "Спокойно: стойка, пауза, удар",
@@ -282,7 +316,7 @@ class TrainerState(val exercise: Exercise) {
         if (zoneMode) q = q.copy(zone = zone)
         hint = when {
             zoneMode -> "Стол не влез — работаю по зоне упражнения ✓ Края кадра — по границам зоны"
-            touches -> "Отойдите назад: стол не помещается в кадр целиком"
+            touches -> "Стол не помещается: нажмите 0.5× вверху или отойдите назад"
             fraction < 0.12 -> "Подойдите ближе: стол слишком маленький"
             else -> "Стол в кадре ✓ Держите телефон ровно"
         }
@@ -389,7 +423,16 @@ class TrainerState(val exercise: Exercise) {
     private fun finish(made: Boolean, end: TablePoint, start: TablePoint, target: TablePoint) {
         moving = false; stillSince = 0
         val t = maxOf(0.0, (System.currentTimeMillis() - recordingStart) / 1000.0 - 1.5)
-        shots += Shot(t, made, if (made) PRAISE.random() else shotAdvice(start, target, end))
+        // Отклонение от идеальной линии: угол между «старт → луза» и «старт → где оказался шар»
+        val ax = target.x - start.x; val ay = target.y - start.y; val sx = end.x - start.x; val sy = end.y - start.y
+        val deviation = Math.toDegrees(kotlin.math.atan2(ax * sy - ay * sx, ax * sx + ay * sy))
+        val short = !made && hypot(sx, sy) < hypot(ax, ay) * 0.6
+        var advice = if (made) PRAISE.random() else shotAdvice(start, target, end)
+        if (!short && abs(deviation) >= 0.5) {
+            val cm = (kotlin.math.tan(Math.toRadians(abs(deviation))) * hypot(ax, ay) * CM_PER_UNIT).toInt()
+            advice += " Отклонение ${"%.1f".format(abs(deviation))}° ${if (deviation > 0) "вправо" else "влево"} — у лузы это ≈ $cm см."
+        }
+        shots += Shot(t, made, advice, if (short) null else deviation, start, end, short)
     }
 }
 
@@ -414,6 +457,17 @@ fun CameraTrainerScreen(app: AppState, exerciseId: String, demo: String? = null)
     var phase by remember { mutableStateOf(SetupPhase.FRAMING) }
     var recording by remember { mutableStateOf<Recording?>(null) }
     var videoCapture by remember { mutableStateOf<VideoCapture<Recorder>?>(null) }
+    var camera by remember { mutableStateOf<androidx.camera.core.Camera?>(null) }
+    var ultraWide by remember { mutableStateOf(false) }
+    var wide by remember { mutableStateOf(false) }
+    var minZoom by remember { mutableStateOf(1f) }
+    // Стол стабильно в кадре 2 секунды — сами переходим к точкам
+    androidx.compose.runtime.LaunchedEffect(state.ready, phase, mode) {
+        if (demo == null && state.ready && phase == SetupPhase.FRAMING && mode == TrainerMode.SETUP) {
+            kotlinx.coroutines.delay(2000)
+            if (state.ready && phase == SetupPhase.FRAMING) phase = SetupPhase.MARKS
+        }
+    }
     var motivation by remember { mutableStateOf(MOTIVATION.first()) }
     val pulse by rememberInfiniteTransition(label = "p").animateFloat(1f, 1.25f, infiniteRepeatable(tween(800), RepeatMode.Reverse), label = "s")
 
@@ -468,12 +522,15 @@ fun CameraTrainerScreen(app: AppState, exerciseId: String, demo: String? = null)
             val recorder = Recorder.Builder().setQualitySelector(QualitySelector.from(Quality.HD)).build()
             val capture = VideoCapture.withOutput(recorder)
             provider.unbindAll()
-            try {
-                provider.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis, capture)
-                videoCapture = capture
+            val bound = try {
+                provider.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis, capture).also { videoCapture = capture }
             } catch (e: Exception) {
                 provider.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
             }
+            camera = bound
+            // Широкоугольный модуль: минимальный зум < 1 — сразу «отдаляем», чтобы весь стол поместился
+            val min = bound.cameraInfo.zoomState.value?.minZoomRatio ?: 1f
+            if (min < 0.95f) { minZoom = min; ultraWide = true; wide = true; bound.cameraControl.setZoomRatio(min) }
         }, ContextCompat.getMainExecutor(context))
         onDispose {
             recording?.stop()
@@ -506,9 +563,24 @@ fun CameraTrainerScreen(app: AppState, exerciseId: String, demo: String? = null)
             drawPath(outline, if (state.ready) Color.Green else Color.Yellow, style = Stroke(6f))
             if (mode == TrainerMode.SETUP && phase == SetupPhase.FRAMING) return@Canvas
             val r = maxOf(16f, (s(q.tr) - s(q.tl)).getDistance() / 160 * 3.4f) * pulse
-            val first = exercise.cueBalls.firstOrNull(); val target = exercise.targetPoint(0)
-            if (first != null && target != null) drawLine(Color.White.copy(alpha = 0.7f), s(q.project(first)), s(q.project(target)), 4f,
-                pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(14f, 10f)))
+            // Линия удара и «коридор попадания»: куда должен уйти шар, чтобы попасть в лузу
+            val aim = exercise.aim
+            val from = aim?.let { if (it.kind == ShotKind.OBJECT_BALL) it.objectBall else it.ghost } ?: exercise.cueBalls.firstOrNull()
+            val to = aim?.pocket ?: exercise.targetPoint(0)
+            if (from != null && to != null) {
+                val half = (exercise.toleranceCm ?: 6) / CM_PER_UNIT
+                val dx = to.x - from.x; val dy = to.y - from.y; val len = maxOf(0.001, hypot(dx, dy))
+                val nx = -dy / len * half; val ny = dx / len * half
+                val a = s(q.project(from)); val b1 = s(q.project(TablePoint(to.x + nx, to.y + ny))); val b2 = s(q.project(TablePoint(to.x - nx, to.y - ny)))
+                val corridor = Path().apply { moveTo(a.x, a.y); lineTo(b1.x, b1.y); lineTo(b2.x, b2.y); close() }
+                drawPath(corridor, Color.Green.copy(alpha = 0.18f)); drawPath(corridor, Color.Green.copy(alpha = 0.6f), style = Stroke(2f))
+                drawLine(Color.White.copy(alpha = 0.8f), a, s(q.project(to)), 4f, pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(14f, 10f)))
+                val cue = exercise.cueBalls.firstOrNull()
+                if (aim != null && cue != null) {
+                    drawLine(Color.Yellow.copy(alpha = 0.8f), s(q.project(cue)), s(q.project(aim.ghost)), 4f, pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 10f)))
+                    drawCircle(Color.Yellow, r, s(q.project(aim.ghost)), style = Stroke(4f, pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(8f, 8f))))
+                }
+            }
             exercise.markPoints.forEachIndexed { i, point ->
                 val color = if (phase == SetupPhase.MARKS && mode == TrainerMode.SETUP) Color.Cyan else if (state.marks.getOrNull(i) == Mark.Ok) Color.Green else Color.Red
                 drawCircle(color, r, s(q.project(point)), style = Stroke(6f)); drawCircle(color, 6f, s(q.project(point)))
@@ -517,7 +589,10 @@ fun CameraTrainerScreen(app: AppState, exerciseId: String, demo: String? = null)
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextButton({ recording?.stop(); app.pop() }) { Text("✕", color = Color.White, fontSize = 22.sp) }
-                Segmented(TrainerMode.entries, mode, { it.title }) { if (recording == null) mode = it }
+                Box(Modifier.weight(1f)) { Segmented(TrainerMode.entries, mode, { it.title }) { if (recording == null) mode = it } }
+                if (ultraWide) TextButton({ val on = !wide; camera?.cameraControl?.setZoomRatio(if (on) minZoom else 1f); wide = on }, enabled = recording == null) {
+                    Text(if (wide) "0.5×" else "1×", color = if (wide) Color.Yellow else Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                }
             }
             Spacer(Modifier.weight(1f))
             Column(Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(20.dp)).padding(14.dp),
@@ -525,9 +600,12 @@ fun CameraTrainerScreen(app: AppState, exerciseId: String, demo: String? = null)
                 Text("№${exercise.number} · ${exercise.title}", color = Color.White.copy(alpha = 0.85f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 if (mode == TrainerMode.SETUP) when (phase) {
                     SetupPhase.FRAMING -> {
+                        Text("Шаг 1 из 3 · Стол в кадре", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         Text(state.hint, color = if (state.ready) Color.Green else Color.Yellow, fontWeight = FontWeight.Bold)
-                        Text("Встаньте у короткого борта так, чтобы весь стол был в кадре.", color = Color.White, fontSize = 13.sp)
-                        if (exercise.cameraZone != null && (state.zoneMode || state.hint.startsWith("Отойдите"))) {
+                        Text(if (state.ready) "Зелёная рамка — стол найден. Держите телефон так же: через 2 секунды перейдём к точкам, или нажмите «Дальше»."
+                            else "Встаньте у короткого борта и наведите камеру на стол. Жёлтая рамка — стол виден не полностью" +
+                                (if (ultraWide && !wide) ": нажмите 0.5× вверху." else "."), color = Color.White, fontSize = 13.sp)
+                        if (exercise.cameraZone != null && (state.zoneMode || state.hint.startsWith("Стол не помещается"))) {
                             // Стол не влез: показываем, какую зону обязательно снять
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Box(Modifier.width(120.dp).clip(RoundedCornerShape(6.dp))) { TableScheme(exercise, labels = false, showZone = true) }
@@ -537,6 +615,7 @@ fun CameraTrainerScreen(app: AppState, exerciseId: String, demo: String? = null)
                         PrimaryButton("Дальше: точки для шаров", enabled = state.ready) { phase = SetupPhase.MARKS }
                     }
                     SetupPhase.MARKS -> {
+                        Text("Шаг 2 из 3 · Точки", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         Text("Наклейте точки там, где светятся голубые круги", color = Color.Cyan, fontWeight = FontWeight.Bold)
                         Text(exercise.markPoints.take(6).joinToString(" · ") { "${it.x.toInt()}:${it.y.toInt()}" }, color = Color.White, fontSize = 13.sp)
                         PrimaryButton("Наклеил(а) — ставлю шары") { phase = SetupPhase.BALLS }
@@ -595,11 +674,35 @@ fun CameraTrainerScreen(app: AppState, exerciseId: String, demo: String? = null)
 
 // region Итог
 
+/** Карта ударов: идеальная линия и куда на самом деле ушёл каждый шар. */
+@Composable
+fun ShotMap(exercise: Exercise, shots: List<Shot>) {
+    Box {
+        TableScheme(exercise, labels = false)
+        Canvas(Modifier.matchParentSize()) {
+            val tableW = size.width; val rail = tableW * 0.035f
+            val fx = rail; val fy = rail; val fw = tableW - rail * 2; val fh = size.height - rail * 2
+            fun map(p: TablePoint) = Offset(fx + (p.x / 160 * fw).toFloat(), fy + (p.y / 80 * fh).toFloat())
+            shots.forEach { shot ->
+                val start = shot.start ?: return@forEach; val end = shot.end ?: return@forEach
+                val color = if (shot.made) Color(0xFF2ECC40) else if (shot.short) Color(0xFFFF9800) else Color(0xFFE53935)
+                drawLine(color, map(start), map(end), 3f, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                drawCircle(color, 6f, map(end))
+            }
+        }
+    }
+}
+
 /** Демо-итог для скриншотов «Помощи». */
-fun demoTrainingResult() = TrainingResult("prep-1", "", listOf(
-    Shot(4.0, true, "Отличный удар! 🔥"), Shot(11.0, false, shotAdvice(TablePoint(70.0, 40.0), TablePoint(80.0, 0.0), TablePoint(66.0, 4.0))),
-    Shot(18.0, true, "Чисто!"), Shot(25.0, true, "Есть!"), Shot(31.0, false, shotAdvice(TablePoint(70.0, 40.0), TablePoint(80.0, 0.0), TablePoint(76.0, 22.0))),
-    Shot(38.0, true, "Есть!"), Shot(45.0, true, "Есть!")), 10)
+fun demoTrainingResult(): TrainingResult {
+    val s = TablePoint(70.0, 40.0)
+    return TrainingResult("prep-1", "", listOf(
+        Shot(4.0, true, "Отличный удар! 🔥", -0.8, s, TablePoint(79.4, 0.0)),
+        Shot(11.0, false, shotAdvice(s, TablePoint(80.0, 0.0), TablePoint(66.0, 4.0)) + " Отклонение 3.4° влево — у лузы это ≈ 5 см.", -3.4, s, TablePoint(76.6, 0.5)),
+        Shot(18.0, true, "Чисто!", -1.6, s, TablePoint(78.7, 0.0)), Shot(25.0, true, "Есть!", -1.1, s, TablePoint(79.0, 0.0)),
+        Shot(31.0, false, shotAdvice(s, TablePoint(80.0, 0.0), TablePoint(76.0, 22.0)), null, s, TablePoint(76.0, 22.0), true),
+        Shot(38.0, true, "Есть!", -1.9, s, TablePoint(78.5, 0.0)), Shot(45.0, false, shotAdvice(s, TablePoint(80.0, 0.0), TablePoint(66.0, 4.0)), -2.9, s, TablePoint(76.5, 1.5))), 10)
+}
 
 data class TrainingResult(val exerciseId: String, val file: String, val shots: List<Shot>, val attempts: Int) {
     val made get() = shots.count { it.made }
@@ -633,6 +736,28 @@ fun TrainingResultScreen(app: AppState) {
                 Text("★".repeat(result.stars) + "☆".repeat(3 - result.stars), fontSize = 40.sp, color = Color(0xFFF5C518))
                 Text("Забито ${result.made} из ${result.attempts} · ${result.percent}%", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = p.text)
                 Secondary(if (result.stars >= 2) "Отлично! Упражнение засчитано ⭐️" else "Всё получится — разберём ошибки и попробуем ещё раз 💪", size = 14)
+            }
+        }
+        exercise.goalPercent?.let { goal ->
+            Text(if (result.percent >= goal) "🏁 Цель тренера $goal% — выполнена ✓" else "🏁 Цель тренера $goal% — пока ${result.percent}%, ещё серия!",
+                color = if (result.percent >= goal) Color(0xFF2E7D32) else Color(0xFFE08A00), fontWeight = FontWeight.SemiBold)
+        }
+        // Разбор серии: куда уводит удар, насколько стабильно, что исправить
+        val analysis = ShotAnalysis(result.shots)
+        GlassCard {
+            Title("Разбор ударов")
+            Box(Modifier.clip(RoundedCornerShape(10.dp))) { ShotMap(exercise, result.shots) }
+            Secondary("🟢 забит  🔴 мимо  🟠 не докатился", size = 12)
+            if (analysis.measured.isNotEmpty()) Row {
+                Column(Modifier.weight(1f)) { Secondary("Средний увод", size = 12); Text("${"%.1f".format(abs(analysis.bias))}° ${if (analysis.bias >= 0) "вправо" else "влево"}", fontWeight = FontWeight.Bold, color = p.text) }
+                Column(horizontalAlignment = Alignment.End) { Secondary("Разброс", size = 12); Text("±${"%.1f".format(analysis.spread)}°", fontWeight = FontWeight.Bold, color = p.text) }
+            }
+            analysis.findings.forEach { (icon, title, text) ->
+                Text("$icon $title", fontWeight = FontWeight.SemiBold, color = p.text, fontSize = 15.sp)
+                Text(text, color = p.text, fontSize = 14.sp)
+            }
+            if (coach != null) SecondaryButton("✈ Отправить разбор тренеру", Modifier.fillMaxWidth()) {
+                b.send(app.me, coach.id, analysis.report(exercise, result.made, result.attempts)); app.info = "Отчёт отправлен тренеру"
             }
         }
         if (result.file.isNotEmpty()) VideoBox(context, result.file, Modifier.height(360.dp), seek)

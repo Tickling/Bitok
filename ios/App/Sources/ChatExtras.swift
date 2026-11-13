@@ -68,7 +68,8 @@ extension DemoBackend {
 
     // MARK: Подписка «Биток Про»
 
-    func hasSubscription(_ userId: UserID) -> Bool { (subscriptions[userId] ?? .distantPast) > Date() }
+    /// Подписки больше нет: камера-помощник, мнимый шар, видео-уроки, группы и оформление доступны всем.
+    func hasSubscription(_ userId: UserID) -> Bool { true }
 
     /// Демо-оформление: в проде — StoreKit / ЮKassa, здесь деньги не списываются.
     func subscribe(_ userId: UserID, months: Int) {

@@ -444,7 +444,7 @@ struct LessonVideoPicker: View {
                     .buttonStyle(.cueSecondary)
                 }
             }
-            Text("Расскажите, как выполнять упражнение и на что обратить внимание. Ученики с Pro увидят урок в упражнении.")
+            Text("Расскажите, как выполнять упражнение и на что обратить внимание. Ученики увидят урок в упражнении.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .onChange(of: item) { _, newItem in
@@ -490,6 +490,16 @@ struct ExerciseEditor: View {
                     Stepper("Ударов: \(exercise.attempts)", value: $exercise.attempts, in: 1...30)
                     Toggle("Отработка винта", isOn: $exercise.spin)
                     Toggle("Биток жёлтый (цветной)", isOn: Binding(get: { exercise.yellowCue == true }, set: { exercise.yellowCue = $0 ? true : nil }))
+                }
+                Section {
+                    Stepper("Допуск у лузы: \(exercise.toleranceCm ?? 6) см",
+                            value: Binding(get: { exercise.toleranceCm ?? 6 }, set: { exercise.toleranceCm = $0 }), in: 2...15)
+                    Stepper("Цель серии: \(exercise.goalPercent ?? 70)%",
+                            value: Binding(get: { exercise.goalPercent ?? 70 }, set: { exercise.goalPercent = $0 }), in: 30...100, step: 10)
+                } header: {
+                    Text("Камера-помощник")
+                } footer: {
+                    Text("Допуск — ширина зелёного «коридора» в кадре: насколько шар может уйти от центра лузы. Цель — сколько процентов ученик должен забить за серию.")
                 }
                 Section {
                     Toggle("Указать точку удара", isOn: Binding(get: { exercise.hitPoint != nil },

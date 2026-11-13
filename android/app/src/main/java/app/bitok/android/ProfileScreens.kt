@@ -85,7 +85,7 @@ fun ProfileScreen(app: AppState) {
                 HorizontalDivider()
                 MenuRow(Icons.Filled.EmojiEvents, "Трофеи и достижения") { app.push(Route.Trophies) }
                 HorizontalDivider()
-                MenuRow(Icons.Filled.EditNote, "Оформление профиля" + if (b.hasSubscription(app.me)) " · PRO" else "") { app.push(Route.Customization) }
+                MenuRow(Icons.Filled.EditNote, "Оформление профиля") { app.push(Route.Customization) }
             }
             HorizontalDivider()
             MenuRow(Icons.Filled.Settings, "Настройки") { app.push(Route.Settings) }
@@ -139,8 +139,6 @@ private fun PlayerCard(app: AppState) {
                 Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(b.name(app.me), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                    if (pro) Text(" PRO ", fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.Black,
-                        modifier = Modifier.padding(start = 6.dp).background(Brush.horizontalGradient(listOf(Color(0xFFFFD659), Color(0xFFD99A1A))), RoundedCornerShape(50)))
                     if (app.statusEmoji.isNotEmpty()) Text(" ${app.statusEmoji}", fontSize = 18.sp)
                 }
                 Text("👑 Чемпион клуба", fontSize = 13.sp, color = Color.White.copy(alpha = 0.9f))
@@ -309,7 +307,7 @@ fun EditProfileScreen(app: AppState) {
                 }
             }
         }
-        Secondary(if (app.isCoach) "Ученики не видят вашу дату рождения." else "По умолчанию другие ученики её не видят. Тренер видит дату всегда, чтобы поздравить. Ученикам младше 14 лет «Биток Про» за полцены.")
+        Secondary(if (app.isCoach) "Ученики не видят вашу дату рождения." else "По умолчанию другие ученики её не видят. Тренер видит дату всегда, чтобы поздравить.")
         Secondary("Телефон: ${app.account?.phone}")
     }
 }
@@ -415,10 +413,10 @@ fun HelpScreen(app: AppState) {
     Screen("Помощь", app) {
         Secondary(if (app.isCoach) "Коротко о том, где что находится в приложении тренера." else "Коротко о том, где что находится и что можно делать.", size = 15)
         if (!app.isCoach && app.backend.hasSubscription(app.me)) {
-            Title("Биток Про: как это выглядит")
+            Title("Камера-помощник: как это выглядит")
             ProCarousel()
             GlassCard {
-                Title("Биток Про: камера-помощник")
+                Title("Камера-помощник: по шагам")
                 ProGuide()
             }
         }

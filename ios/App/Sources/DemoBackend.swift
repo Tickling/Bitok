@@ -856,7 +856,7 @@ final class DemoBackend {
         // Дмитрий — с подпиской «Биток Про» на год и тренировкой у Алексея.
         subscriptions[DemoBackend.dmitryId] = Calendar.current.date(byAdding: .year, value: 1, to: Date())
         seedBooking(coach: alexey, student: DemoBackend.dmitryId, dayOffset: 3, finalStatus: .confirmed)
-        notify(DemoBackend.dmitryId, "Биток Про подключён ✨", "Откройте «Прогресс» → «Упражнения» → «Камера-помощник»")
+        // Подписки больше нет — всё доступно без неё
         for student in [ivan, natasha] {
             notify(student, "Добро пожаловать в «Биток»", "Выберите тренера и запишитесь во вкладке «Календарь»")
         }

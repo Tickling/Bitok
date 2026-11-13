@@ -56,7 +56,7 @@ struct ChatRootView: View {
                         } label: {
                             Image(systemName: backend.hasSubscription(me) ? "person.3.sequence" : "lock.circle")
                         }
-                        .accessibilityLabel("Новая группа (Биток Про)")
+                        .accessibilityLabel("Новая группа")
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {

@@ -99,12 +99,12 @@ fun CustomizationScreen(app: AppState) {
                     Box(Modifier.size(44.dp).background(Brush.sweepGradient(f.colors), RoundedCornerShape(22.dp)), contentAlignment = Alignment.Center) {
                         Avatar(app.backend.person(app.me), 36.dp)
                     }
-                    Text("  ${f.title}" + if (f.isPro) "  PRO" else "", Modifier.weight(1f), color = p.text)
+                    Text("  ${f.title}", Modifier.weight(1f), color = p.text)
                     Text(if (locked) "🔒" else if (app.frameChoice == f && version >= 0) "✓" else "", color = p.accent, fontSize = 18.sp)
                 }
             }
         }
-        Title("Статус рядом с именем · PRO")
+        Title("Статус рядом с именем")
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             STATUSES.forEach { e ->
                 Chip(if (e.isEmpty()) "—" else e, app.statusEmoji == e && version >= 0) { if (pro) save("status", e) else app.push(Route.Paywall(null)) }

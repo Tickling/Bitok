@@ -238,7 +238,17 @@ struct ShotEvent: Identifiable, Equatable {
     let time: Double          // секунда записи
     let made: Bool
     let advice: String
+    /// Отклонение от линии прицела в градусах: «+» — правее, «−» — левее (nil — не удалось измерить).
+    var deviation: Double? = nil
+    /// Где биток остановился или пропал (в координатах стола).
+    var start: TablePoint? = nil
+    var end: TablePoint? = nil
+    /// Не докатился (не хватило силы).
+    var short = false
 }
+
+/// Сантиметров в одной единице схемы (стол 12 футов: 160 единиц ≈ 3,5 м игрового поля).
+let cmPerUnit = 2.2
 
 final class TableCameraModel: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     enum Hint: Equatable {
@@ -250,7 +260,7 @@ final class TableCameraModel: NSObject, ObservableObject, AVCaptureVideoDataOutp
             case .pocketView: "Камера у лузы по линии удара ✓ Слежу за шаром"
             case .zone: "Стол не влез — работаю по зоне упражнения ✓ Края кадра — по границам зоны"
             case .noTable: "Наведите камеру на стол — нужно видеть сукно целиком"
-            case .stepBack: "Отойдите назад: стол не помещается в кадр целиком"
+            case .stepBack: "Стол не помещается: нажмите 0.5× вверху или отойдите назад"
             case .closer: "Подойдите ближе: стол слишком маленький"
             case .tilt: "Поднимите телефон выше и наклоните к столу"
             case .ready: "Стол в кадре ✓ Держите телефон ровно"
@@ -265,6 +275,10 @@ final class TableCameraModel: NSObject, ObservableObject, AVCaptureVideoDataOutp
     @Published var recording = false
     @Published var shots: [ShotEvent] = []
     @Published var cueSeen: CGPoint?
+    /// Есть сверхширокая камера (0.5×) и она включена.
+    @Published var ultraWideAvailable = false
+    @Published var wide = false
+    private var device: AVCaptureDevice?
     /// Режим «Выполнение»: камера может стоять у лузы, и весь стол в кадр не попадает.
     @Published var performMode = false
 
@@ -317,18 +331,26 @@ final class TableCameraModel: NSObject, ObservableObject, AVCaptureVideoDataOutp
         }
         if perform {
             recording = true
-            shots = [ShotEvent(time: 4, made: true, advice: Self.praise[0]),
-                     ShotEvent(time: 11, made: false, advice: Self.advice(start: TablePoint(x: 70, y: 40), target: TablePoint(x: 80, y: 0),
-                                                                         end: TablePoint(x: 66, y: 4))),
-                     ShotEvent(time: 18, made: true, advice: Self.praise[1])]
+            let start = TablePoint(x: 70, y: 40)
+            shots = [ShotEvent(time: 4, made: true, advice: Self.praise[0], deviation: -0.8, start: start, end: TablePoint(x: 79.4, y: 0)),
+                     ShotEvent(time: 11, made: false, advice: Self.advice(start: start, target: TablePoint(x: 80, y: 0), end: TablePoint(x: 66, y: 4))
+                                + " Отклонение 3.4° влево — у лузы это ≈ 5 см.",
+                               deviation: -3.4, start: start, end: TablePoint(x: 76.6, y: 0.5)),
+                     ShotEvent(time: 18, made: true, advice: Self.praise[1], deviation: -1.6, start: start, end: TablePoint(x: 78.7, y: 0)),
+                     ShotEvent(time: 25, made: false, advice: Self.advice(start: start, target: TablePoint(x: 80, y: 0), end: TablePoint(x: 66, y: 4)),
+                               deviation: -2.9, start: start, end: TablePoint(x: 76.5, y: 1.5))]
         }
     }
 
     private func configure() {
         queue.async {
+            // Виртуальная камера с широкоугольным модулем: зум 1.0 = 0.5× (весь стол), «переключение» = обычная 1×
+            let types: [AVCaptureDevice.DeviceType] = [.builtInTripleCamera, .builtInDualWideCamera, .builtInWideAngleCamera]
             guard self.session.inputs.isEmpty,
-                  let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
+                  let device = types.lazy.compactMap({ AVCaptureDevice.default($0, for: .video, position: .back) }).first,
                   let input = try? AVCaptureDeviceInput(device: device) else { return }
+            self.device = device
+            let hasUltraWide = !device.virtualDeviceSwitchOverVideoZoomFactors.isEmpty
             self.session.beginConfiguration()
             self.session.sessionPreset = .hd1280x720
             if self.session.canAddInput(input) { self.session.addInput(input) }
@@ -342,7 +364,22 @@ final class TableCameraModel: NSObject, ObservableObject, AVCaptureVideoDataOutp
             }
             self.session.commitConfiguration()
             self.session.startRunning()
+            DispatchQueue.main.async { self.ultraWideAvailable = hasUltraWide }
+            // Сразу широкий угол: так стол целиком помещается в кадр с короткого борта
+            if hasUltraWide { self.applyZoom(wide: true) }
         }
+    }
+
+    /// 0.5× (весь стол) или 1× (обычная камера).
+    func setWide(_ on: Bool) { queue.async { self.applyZoom(wide: on) } }
+
+    private func applyZoom(wide on: Bool) {
+        guard let device, (try? device.lockForConfiguration()) != nil else { return }
+        let normal = device.virtualDeviceSwitchOverVideoZoomFactors.first.map { CGFloat(truncating: $0) } ?? 1
+        device.videoZoomFactor = on ? device.minAvailableVideoZoomFactor : min(normal, device.maxAvailableVideoZoomFactor)
+        device.unlockForConfiguration()
+        smoothed = nil
+        DispatchQueue.main.async { self.wide = on }
     }
 
     // MARK: Запись видео выполнения
@@ -575,8 +612,17 @@ final class TableCameraModel: NSObject, ObservableObject, AVCaptureVideoDataOutp
     private func finishShot(made: Bool, endPoint: TablePoint, start: TablePoint, target: TablePoint) {
         shotState = .waiting
         stillSince = nil
-        let advice = made ? Self.praise.randomElement()! : Self.advice(start: start, target: target, end: endPoint)
-        let event = ShotEvent(time: max(0, recordSeconds - 1.5), made: made, advice: advice)
+        // Отклонение от идеальной линии: угол между «старт → луза» и «старт → где оказался шар»
+        let aim = (x: target.x - start.x, y: target.y - start.y), shot = (x: endPoint.x - start.x, y: endPoint.y - start.y)
+        let deviation = atan2(aim.x * shot.y - aim.y * shot.x, aim.x * shot.x + aim.y * shot.y) * 180 / .pi
+        let short = !made && hypot(shot.x, shot.y) < hypot(aim.x, aim.y) * 0.6
+        var advice = made ? Self.praise.randomElement()! : Self.advice(start: start, target: target, end: endPoint)
+        if !short && abs(deviation) >= 0.5 {
+            let cm = Int((tan(abs(deviation) * .pi / 180) * hypot(aim.x, aim.y) * cmPerUnit).rounded())
+            advice += " Отклонение \(String(format: "%.1f", abs(deviation)))° \(deviation > 0 ? "вправо" : "влево") — у лузы это ≈ \(cm) см."
+        }
+        let event = ShotEvent(time: max(0, recordSeconds - 1.5), made: made, advice: advice,
+                              deviation: short ? nil : deviation, start: start, end: endPoint, short: short)
         DispatchQueue.main.async { self.shots.append(event) }
     }
 
@@ -692,6 +738,14 @@ struct TableCameraTrainer: View {
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
             }
         }
+        .onChange(of: camera.hint) { _, hint in
+            // Стол стабильно в кадре 2 секунды — сами переходим к точкам
+            guard phase == .framing, mode == .setup, hint.isReady, demo == nil else { return }
+            Task {
+                try? await Task.sleep(for: .seconds(2))
+                if phase == .framing, mode == .setup, camera.hint.isReady { withAnimation { phase = .marks } }
+            }
+        }
         .onChange(of: camera.shots.count) { _, _ in
             motivation = TableCameraModel.motivation.randomElement()!
             UIImpactFeedbackGenerator(style: camera.shots.last?.made == true ? .medium : .light).impactOccurred()
@@ -754,12 +808,37 @@ struct TableCameraTrainer: View {
             let edge: CGFloat = hypot(screenTR.x - screenTL.x, screenTR.y - screenTL.y)
             let pulseScale: CGFloat = pulse ? 1.25 : 1
             let r: CGFloat = max(8, edge / 160 * 3.4) * pulseScale
-            // Линия удара
-            if let first = exercise.cueBalls.first, let target = exercise.targetPoint(for: 0) {
+            // Линия удара и «коридор попадания»: куда должен уйти шар, чтобы попасть в лузу
+            let path: (from: TablePoint, to: TablePoint)? = {
+                if let aim = exercise.aim { return (aim.kind == .objectBall ? aim.object : aim.ghost, aim.pocket) }
+                if let first = exercise.cueBalls.first, let target = exercise.targetPoint(for: 0) { return (first, target) }
+                return nil
+            }()
+            if let path {
+                let half = Double(exercise.toleranceCm ?? 6) / cmPerUnit
+                let dx = path.to.x - path.from.x, dy = path.to.y - path.from.y
+                let length = max(0.001, hypot(dx, dy))
+                let nx = -dy / length * half, ny = dx / length * half
+                var corridor = Path()
+                corridor.addLines([toScreen(quad.project(path.from), size: size),
+                                   toScreen(quad.project(TablePoint(x: path.to.x + nx, y: path.to.y + ny)), size: size),
+                                   toScreen(quad.project(TablePoint(x: path.to.x - nx, y: path.to.y - ny)), size: size)])
+                corridor.closeSubpath()
+                context.fill(corridor, with: .color(.green.opacity(0.18)))
+                context.stroke(corridor, with: .color(.green.opacity(0.6)), lineWidth: 1)
                 var line = Path()
-                line.move(to: toScreen(quad.project(first), size: size))
-                line.addLine(to: toScreen(quad.project(target), size: size))
-                context.stroke(line, with: .color(.white.opacity(0.7)), style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+                line.move(to: toScreen(quad.project(path.from), size: size))
+                line.addLine(to: toScreen(quad.project(path.to), size: size))
+                context.stroke(line, with: .color(.white.opacity(0.8)), style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+                if let aim = exercise.aim, let cue = exercise.cueBalls.first {
+                    var cueLine = Path()
+                    cueLine.move(to: toScreen(quad.project(cue), size: size))
+                    cueLine.addLine(to: toScreen(quad.project(aim.ghost), size: size))
+                    context.stroke(cueLine, with: .color(.yellow.opacity(0.8)), style: StrokeStyle(lineWidth: 2, dash: [4, 4]))
+                    let g = toScreen(quad.project(aim.ghost), size: size)
+                    context.stroke(Path(ellipseIn: CGRect(x: g.x - r, y: g.y - r, width: r * 2, height: r * 2)), with: .color(.yellow),
+                                   style: StrokeStyle(lineWidth: 2, dash: [3, 3]))
+                }
             }
             for (index, point) in exercise.markPoints.enumerated() {
                 let c = toScreen(quad.project(point), size: size)
@@ -781,6 +860,16 @@ struct TableCameraTrainer: View {
                 .onChange(of: mode, initial: true) { _, value in camera.performMode = value == .perform }
                 .pickerStyle(.segmented)
                 .disabled(camera.recording)
+            if camera.ultraWideAvailable {
+                // Широкий угол: отдалить, чтобы весь стол поместился
+                Button { camera.setWide(!camera.wide) } label: {
+                    Text(camera.wide ? "0.5×" : "1×").font(.callout.weight(.bold).monospacedDigit())
+                        .foregroundStyle(camera.wide ? .yellow : .white)
+                        .frame(width: 48, height: 40).background(.black.opacity(0.5), in: Capsule())
+                }
+                .accessibilityLabel(camera.wide ? "Широкий угол включён" : "Включить широкий угол")
+                .disabled(camera.recording)
+            }
         }
     }
 
@@ -802,9 +891,13 @@ struct TableCameraTrainer: View {
     private var setupPanel: some View {
         switch phase {
         case .framing:
+            Text("Шаг 1 из 3 · Стол в кадре").font(.caption.weight(.bold)).foregroundStyle(.white.opacity(0.7))
             Label(camera.hint.text, systemImage: camera.hint.isReady ? "checkmark.circle.fill" : "arrow.up.and.down.and.arrow.left.and.right")
                 .font(.headline).foregroundStyle(camera.hint.isReady ? .green : .yellow)
-            Text("Встаньте у короткого борта так, чтобы весь стол русского бильярда был в кадре.").font(.caption).foregroundStyle(.white)
+            Text(camera.hint.isReady
+                 ? "Зелёная рамка — стол найден. Держите телефон так же: через 2 секунды перейдём к точкам, или нажмите «Дальше»."
+                 : "Встаньте у короткого борта и наведите камеру на стол. Жёлтая рамка — стол виден не полностью\(camera.ultraWideAvailable && !camera.wide ? ": нажмите 0.5× вверху" : "").")
+                .font(.caption).foregroundStyle(.white)
             if exercise.cameraZone != nil && (camera.hint == .stepBack || camera.hint == .zone) {
                 // Стол не влез: показываем, какую зону обязательно снять
                 HStack(alignment: .top, spacing: 10) {
@@ -818,6 +911,7 @@ struct TableCameraTrainer: View {
                 .buttonStyle(.cueGlassProminent)
                 .disabled(!camera.hint.isReady)
         case .marks:
+            Text("Шаг 2 из 3 · Точки").font(.caption.weight(.bold)).foregroundStyle(.white.opacity(0.7))
             Text("Наклейте точки там, где светятся голубые круги").font(.headline).foregroundStyle(.cyan)
             Text(exercise.markPoints.prefix(6).map { "\(Int($0.x)):\(Int($0.y))" }.joined(separator: " · ")).font(.caption.monospaced())
                 .foregroundStyle(.white)
@@ -889,6 +983,88 @@ struct TrainingResult: Identifiable {
     var percent: Int { attempts == 0 ? 0 : made * 100 / attempts }
     /// Звёзды: 3 — от 80%, 2 — от 60%, 1 — от 40%.
     var stars: Int { percent >= 80 ? 3 : percent >= 60 ? 2 : percent >= 40 ? 1 : 0 }
+
+    /// Разбор серии: средний увод, разброс, короткие удары и что с этим делать.
+    var analysis: ShotAnalysis { ShotAnalysis(shots: shots) }
+}
+
+struct ShotAnalysis {
+    let shots: [ShotEvent]
+    var measured: [Double] { shots.compactMap(\.deviation) }
+    /// Средний увод (систематическая ошибка): «+» — вправо.
+    var bias: Double { measured.isEmpty ? 0 : measured.reduce(0, +) / Double(measured.count) }
+    /// Разброс (стабильность), градусы.
+    var spread: Double {
+        guard measured.count > 1 else { return 0 }
+        let mean = bias
+        return sqrt(measured.map { ($0 - mean) * ($0 - mean) }.reduce(0, +) / Double(measured.count - 1))
+    }
+    var shortCount: Int { shots.filter(\.short).count }
+
+    /// Главные выводы — что исправить в первую очередь.
+    var findings: [(icon: String, title: String, text: String)] {
+        var result: [(icon: String, title: String, text: String)] = []
+        guard measured.count >= 2 || shortCount > 0 else {
+            return [("info.circle", "Мало данных", "Сделайте хотя бы 5 ударов — тогда будет видно, куда и насколько уводит удар.")]
+        }
+        if abs(bias) >= 1.2 {
+            let side = bias > 0 ? "вправо" : "влево"
+            result.append(("arrow.left.and.right", "Систематический увод \(side) на \(String(format: "%.1f", abs(bias)))°",
+                           bias > 0
+                           ? "Удар стабильно уходит вправо — это не случайность, а привычка. Проверьте: локоть ходит вертикально, кисть не «закручивает» кий, голова над линией удара. Попробуйте целиться на полшара левее и проследите, уйдёт ли увод."
+                           : "Удар стабильно уходит влево. Часто это подъём головы или «выброс» плеча в момент удара. Задержите паузу перед ударом, не поднимайте голову до остановки шара, проводите кий прямо сквозь биток."))
+        }
+        if spread >= 2 {
+            result.append(("scope", "Разброс ±\(String(format: "%.1f", spread))° — удар нестабилен",
+                           "Шары уходят то вправо, то влево. Нужна одинаковая подготовка к каждому удару: одна и та же стойка, 2–3 пробных движения, пауза, удар без ускорения в конце."))
+        } else if measured.count >= 3 && abs(bias) < 1.2 {
+            result.append(("checkmark.seal", "Направление стабильное", "Разброс всего ±\(String(format: "%.1f", spread))° — рука ставит удар одинаково. Можно усложнять: дальше точка или тоньше срез."))
+        }
+        if shortCount > 0 {
+            result.append(("gauge.with.dots.needle.33percent", "Не хватило силы: \(shortCount)",
+                           "Шар не докатился до лузы. Делайте плавный разгон и доводите кий после удара на 10–15 см."))
+        }
+        return result
+    }
+
+    /// Текст для тренера в чат.
+    func report(exercise: Exercise, made: Int, attempts: Int) -> String {
+        var lines = ["📊 Камера-помощник: №\(exercise.number) «\(exercise.title)» — забито \(made) из \(attempts)."]
+        if !measured.isEmpty {
+            lines.append("Средний увод: \(String(format: "%.1f", abs(bias)))° \(bias >= 0 ? "вправо" : "влево"), разброс ±\(String(format: "%.1f", spread))°.")
+        }
+        if shortCount > 0 { lines.append("Не докатились: \(shortCount).") }
+        lines += findings.map { "• \($0.title)" }
+        return lines.joined(separator: "\n")
+    }
+}
+
+/// Карта ударов: идеальная линия и куда на самом деле ушёл каждый шар.
+struct ShotMapView: View {
+    let exercise: Exercise
+    let shots: [ShotEvent]
+
+    var body: some View {
+        TableSchemeView(exercise: exercise, labels: false)
+            .overlay {
+                Canvas { context, size in
+                    let field = TableSchemeView.field(in: size, labels: false)
+                    func map(_ p: TablePoint) -> CGPoint {
+                        CGPoint(x: field.minX + p.x / 160 * field.width, y: field.minY + p.y / 80 * field.height)
+                    }
+                    for shot in shots {
+                        guard let start = shot.start, let end = shot.end else { continue }
+                        var path = Path()
+                        path.move(to: map(start)); path.addLine(to: map(end))
+                        let color: Color = shot.made ? .green : shot.short ? .orange : .red
+                        context.stroke(path, with: .color(color.opacity(0.9)), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                        let c = map(end)
+                        context.fill(Path(ellipseIn: CGRect(x: c.x - 3, y: c.y - 3, width: 6, height: 6)), with: .color(color))
+                    }
+                }
+            }
+            .accessibilityLabel("Карта ударов")
+    }
 }
 
 struct TrainingResultView: View {
@@ -928,6 +1104,58 @@ struct TrainingResultView: View {
                     if let player {
                         VideoPlayer(player: player).frame(height: 360).clipShape(RoundedRectangle(cornerRadius: Radius.l))
                     }
+
+                    if let goal = exercise.goalPercent {
+                        Label(result.percent >= goal ? "Цель тренера \(goal)% — выполнена ✓" : "Цель тренера \(goal)% — пока \(result.percent)%, ещё серия!",
+                              systemImage: "flag.checkered")
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(result.percent >= goal ? .green : .orange)
+                    }
+
+                    // Разбор серии: куда уводит удар, насколько стабильно, что исправить
+                    let analysis = result.analysis
+                    VStack(alignment: .leading, spacing: Space.s) {
+                        Text("Разбор ударов").font(.headline)
+                        ShotMapView(exercise: exercise, shots: result.shots)
+                            .clipShape(RoundedRectangle(cornerRadius: Radius.s))
+                        HStack(spacing: Space.m) {
+                            Label("зелёный — забит", systemImage: "circle.fill").foregroundStyle(.green)
+                            Label("красный — мимо", systemImage: "circle.fill").foregroundStyle(.red)
+                            Label("не докатился", systemImage: "circle.fill").foregroundStyle(.orange)
+                        }
+                        .font(.caption2)
+                        if !analysis.measured.isEmpty {
+                            HStack {
+                                VStack(alignment: .leading) {
+                                    Text("Средний увод").font(.caption).foregroundStyle(palette.textSecondary)
+                                    Text("\(String(format: "%.1f", abs(analysis.bias)))° \(analysis.bias >= 0 ? "вправо" : "влево")").font(.headline)
+                                }
+                                Spacer()
+                                VStack(alignment: .trailing) {
+                                    Text("Разброс").font(.caption).foregroundStyle(palette.textSecondary)
+                                    Text("±\(String(format: "%.1f", analysis.spread))°").font(.headline)
+                                }
+                            }
+                        }
+                        ForEach(Array(analysis.findings.enumerated()), id: \.offset) { _, finding in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Label(finding.title, systemImage: finding.icon).font(.callout.weight(.semibold))
+                                Text(finding.text).font(.callout)
+                            }
+                            .padding(.top, 4)
+                        }
+                        if let coachId {
+                            Button {
+                                backend.send(from: me, to: coachId, text: analysis.report(exercise: exercise, made: result.made, attempts: result.attempts))
+                                info = "Отчёт отправлен тренеру"
+                            } label: {
+                                Label("Отправить разбор тренеру", systemImage: "paperplane.fill")
+                            }
+                            .buttonStyle(.cueSecondary)
+                        }
+                    }
+                    .padding(Space.m)
+                    .glassCard()
 
                     let misses = result.shots.filter { !$0.made }
                     if !misses.isEmpty {

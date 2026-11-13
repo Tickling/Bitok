@@ -46,7 +46,9 @@ fun DemoBackend.markGroup(id: String) = update { it.copy(groupBookings = it.grou
 
 fun DemoBackend.coachesOf(studentId: String) = coaches.filter { c -> state.bookings.any { it.studentId == studentId && it.coachId == c.id } }
 
-fun DemoBackend.hasSubscription(userId: String) = (state.subscriptions[userId] ?: 0L) > now()
+/** Подписки больше нет: камера-помощник, мнимый шар, видео-уроки, группы и оформление доступны всем. */
+@Suppress("UNUSED_PARAMETER")
+fun DemoBackend.hasSubscription(userId: String) = true
 
 /** Демо-оформление: деньги не списываются. В проде — Google Play Billing. */
 fun DemoBackend.subscribe(userId: String, months: Int) {

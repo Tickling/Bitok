@@ -59,6 +59,9 @@ struct Exercise: Codable, Identifiable, Hashable, Sendable {
     var hitY: Double? = nil
     /// Биток цветной (жёлтый), а не белый.
     var yellowCue: Bool? = nil
+    /// Настройки тренера для камеры: допуск у лузы (см) — ширина «коридора», и цель серии (%).
+    var toleranceCm: Int? = nil
+    var goalPercent: Int? = nil
 
     var hitPoint: CGPoint? {
         guard let hitX, let hitY else { return nil }
