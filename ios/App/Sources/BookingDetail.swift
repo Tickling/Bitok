@@ -46,6 +46,33 @@ enum Fmt {
         money.decimalValue.formatted(.currency(code: "RUB").precision(.fractionLength(0)).locale(locale))
     }
     static func rubles(_ value: Int64) -> String { price(.rubles(value)) }
+
+    /// «18600» → «18 600» (разряды через пробел), только цифры, до 9 знаков.
+    static func groupedDigits(_ text: String) -> String {
+        let digits = String(text.filter(\.isNumber).prefix(9).drop { $0 == "0" })
+        var result = ""
+        for (index, char) in digits.reversed().enumerated() {
+            if index > 0 && index % 3 == 0 { result.append(" ") }
+            result.append(char)
+        }
+        return String(result.reversed())
+    }
+
+    /// Маска телефона при вводе: «79000000001» → «+7 900 000-00-01».
+    static func phoneMask(_ text: String) -> String {
+        let all = text.filter(\.isNumber)
+        var digits = all
+        if digits.first == "8" || digits.first == "7" { digits.removeFirst() }
+        digits = String(digits.prefix(10))
+        guard !digits.isEmpty else { return all.isEmpty ? "" : "+7 " }
+        var result = "+7 "
+        for (index, char) in digits.enumerated() {
+            if index == 3 { result.append(" ") }
+            if index == 6 || index == 8 { result.append("-") }
+            result.append(char)
+        }
+        return result
+    }
 }
 
 extension String {

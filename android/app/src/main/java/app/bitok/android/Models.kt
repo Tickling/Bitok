@@ -222,8 +222,28 @@ data class Listing(
     val details: String,
     val price: Int? = null,
     val at: Long,
+    /** Главное фото. */
     val imageId: String? = null,
-)
+    /** Остальные фото (всего до 10). */
+    val extraImageIds: List<String> = emptyList(),
+    /** Характеристики: «Длина — 160 см». */
+    val specs: List<ListingSpec> = emptyList(),
+) {
+    val allImageIds: List<String> get() = listOfNotNull(imageId) + extraImageIds
+}
+
+@Serializable
+data class ListingSpec(val name: String, val value: String)
+
+/** Подсказки характеристик по категории — чтобы не писать их в описании. */
+val MarketCategory.suggestedSpecs: List<String>
+    get() = when (this) {
+        MarketCategory.CUES -> listOf("Длина", "Вес", "Материал", "Наклейка", "Мастер / бренд", "Состояние")
+        MarketCategory.CHALK -> listOf("Бренд", "Цвет", "Количество")
+        MarketCategory.GLOVES -> listOf("Размер", "Рука", "Материал", "Состояние")
+        MarketCategory.ACCESSORIES -> listOf("Тип", "Бренд", "Состояние")
+        MarketCategory.REPAIR, MarketCategory.SERVICE -> listOf("Срок", "Гарантия", "Где")
+    }
 
 @Serializable
 data class Profile(

@@ -71,6 +71,7 @@ struct DemoLoginView: View {
     @State private var code = ""
     @State private var account: DemoAccount?
     @State private var error: String?
+    @FocusState private var focused: Bool
 
     var body: some View {
         ScrollView {
@@ -95,6 +96,16 @@ struct DemoLoginView: View {
                         TextField("+7 900 000-00-02", text: $phone)
                             .keyboardType(.phonePad)
                             .textContentType(.telephoneNumber)
+                            .focused($focused)
+                            .onChange(of: phone) { old, value in
+                                // Стирание дефиса/пробела стирает и цифру перед ним
+                                var source = value
+                                if value.count < old.count, value.filter(\.isNumber) == old.filter(\.isNumber) {
+                                    source = String(source.filter(\.isNumber).dropLast())
+                                }
+                                let masked = Fmt.phoneMask(source)
+                                if masked != value { phone = masked }
+                            }
                             .padding(Space.m)
                             .glassCard(cornerRadius: Radius.m)
                         Button("Получить код") { requestCode() }
@@ -105,6 +116,12 @@ struct DemoLoginView: View {
                         TextField("Код", text: $code)
                             .keyboardType(.numberPad)
                             .textContentType(.oneTimeCode)
+                            .focused($focused)
+                            .onChange(of: code) { _, value in
+                                let digits = String(value.filter(\.isNumber).prefix(4))
+                                if digits != value { code = digits }
+                                if digits.count == 4 { verify() }
+                            }
                             .padding(Space.m)
                             .glassCard(cornerRadius: Radius.m)
                         Text("Демо-режим: код для тестовых учёток — \(DemoAccount.otpCode)")
@@ -132,7 +149,7 @@ struct DemoLoginView: View {
                 VStack(alignment: .leading, spacing: Space.s) {
                     Text("Тестовые учётки").font(.headline)
                     ForEach(DemoAccount.allCases) { demo in
-                        Button { container.signIn(demo) } label: {
+                        Button { focused = false; hideKeyboard(); container.signIn(demo) } label: {
                             HStack {
                                 VStack(alignment: .leading) {
                                     Text("\(demo.roleTitle): \(demo.displayName)").font(.callout.weight(.semibold))
@@ -152,7 +169,14 @@ struct DemoLoginView: View {
             }
             .padding(Space.l)
         }
+        .scrollDismissesKeyboard(.interactively)
         .background(ThemedBackground())
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Готово") { focused = false }
+            }
+        }
     }
 
     private func requestCode() {
@@ -163,6 +187,7 @@ struct DemoLoginView: View {
         account = found
         error = nil
         step = .code
+        focused = true
     }
 
     private func verify() {
@@ -170,6 +195,8 @@ struct DemoLoginView: View {
             error = "Неверный код"
             return
         }
+        focused = false
+        hideKeyboard()
         container.signIn(account)
     }
 }

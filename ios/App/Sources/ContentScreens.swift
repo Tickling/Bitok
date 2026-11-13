@@ -1,6 +1,7 @@
 // App/Sources/ContentScreens.swift — вкладка «Контент»: новости и турниры, магазин по категориям.
 // Тренер публикует новости, товары и услуги; ученик читает и пишет продавцу в чат.
 import SwiftUI
+import PhotosUI
 import CoreDomain
 import DesignSystem
 
@@ -208,12 +209,23 @@ struct ListingDetail: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: Space.l) {
-                    if let photo = MediaStore.shared.image(listing.imageId) {
-                        Image(uiImage: photo)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(maxWidth: .infinity, minHeight: 260, maxHeight: 260)
-                            .clipShape(RoundedRectangle(cornerRadius: Radius.l, style: .continuous))
+                    let photos = listing.allImageIds.compactMap { MediaStore.shared.image($0) }
+                    if !photos.isEmpty {
+                        TabView {
+                            ForEach(Array(photos.enumerated()), id: \.offset) { _, photo in
+                                Image(uiImage: photo)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(maxWidth: .infinity, minHeight: 260, maxHeight: 260)
+                                    .clipped()
+                            }
+                        }
+                        .tabViewStyle(.page(indexDisplayMode: photos.count > 1 ? .always : .never))
+                        .frame(height: 260)
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.l, style: .continuous))
+                        if photos.count > 1 {
+                            Text("\(photos.count) фото — листайте").font(.caption).foregroundStyle(palette.textSecondary)
+                        }
                     } else {
                         Image(systemName: listing.category.symbol)
                             .font(.system(size: 44))
@@ -228,6 +240,23 @@ struct ListingDetail: View {
                     Text(listing.priceRubles.map { (listing.category.isService ? "от " : "") + Fmt.rubles($0) } ?? "Цена договорная")
                         .font(.title3.bold())
                     Text(listing.details).font(.body)
+                    if let specs = listing.specs, !specs.isEmpty {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("Характеристики").font(.headline).padding(.bottom, Space.s)
+                            ForEach(specs) { spec in
+                                HStack(alignment: .top) {
+                                    Text(spec.name).foregroundStyle(palette.textSecondary)
+                                    Spacer(minLength: Space.m)
+                                    Text(spec.value).multilineTextAlignment(.trailing)
+                                }
+                                .font(.callout)
+                                .padding(.vertical, 6)
+                                if spec.id != specs.last?.id { Divider() }
+                            }
+                        }
+                        .padding(Space.m)
+                        .glassCard()
+                    }
                     HStack {
                         Avatar(initials: container.backend.person(listing.sellerId)?.initials ?? "?", size: 36, userId: listing.sellerId)
                         VStack(alignment: .leading) {
@@ -351,55 +380,219 @@ extension NewsComposer {
 
 struct ListingComposer: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.palette) private var palette
     let container: AppContainer
     @State var category: MarketCategory
     @State private var title = ""
     @State private var details = ""
-    @State private var price: Int64?
-    @State private var imageId: String?
+    @State private var priceText = ""
+    @State private var imageIds: [String] = []
+    @State private var specs: [ListingSpec] = []
+
+    private var price: Int64? { Int64(priceText.filter(\.isNumber)) }
+
+    /// Чего не хватает для публикации.
+    private var missing: [String] {
+        var result: [String] = []
+        if !category.isService && imageIds.isEmpty { result.append("фото") }
+        if title.trimmingCharacters(in: .whitespaces).isEmpty { result.append("название") }
+        if details.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { result.append("описание") }
+        return result
+    }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("Категория") {
-                    Picker("Категория", selection: $category) {
+                Section {
+                    Picker(selection: $category) {
                         ForEach(MarketCategory.allCases) { Label($0.title, systemImage: $0.symbol).tag($0) }
-                    }
+                    } label: { RequiredLabel("Категория") }
                 }
-                Section("Фото") {
-                    PhotoField(imageId: $imageId)
+                Section {
+                    MultiPhotoField(imageIds: $imageIds, limit: 10)
+                } header: {
+                    RequiredLabel("Фото", required: !category.isService)
+                } footer: {
+                    Text("До 10 фото. Первое — главное, его видно в списке.")
                 }
                 Section(category.isService ? "Услуга" : "Товар") {
-                    TextField(category.isService ? "Например: замена наклейки" : "Например: кий «Веста», 160 см", text: $title)
-                    TextField("Описание, состояние, сроки", text: $details, axis: .vertical).lineLimit(2...6)
+                    VStack(alignment: .leading, spacing: 2) {
+                        RequiredLabel("Название").font(.caption)
+                        TextField(category.isService ? "Например: замена наклейки" : "Например: кий «Веста», 160 см", text: $title)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        RequiredLabel("Описание").font(.caption)
+                        TextField("Состояние, история, что входит в комплект", text: $details, axis: .vertical).lineLimit(2...6)
+                    }
                     HStack {
                         Text(category.isService ? "Цена от" : "Цена")
                         Spacer()
-                        TextField("договорная", value: $price, format: .number)
+                        TextField("договорная", text: $priceText)
                             .keyboardType(.numberPad)
                             .multilineTextAlignment(.trailing)
-                            .frame(width: 110)
+                            .frame(width: 140)
+                            .onChange(of: priceText) { _, value in
+                                let formatted = Fmt.groupedDigits(value)
+                                if formatted != value { priceText = formatted }
+                            }
                         Text("₽")
                     }
                 }
+                Section {
+                    ForEach($specs) { $spec in
+                        HStack {
+                            TextField("Название", text: $spec.name).frame(maxWidth: 130)
+                            Divider()
+                            TextField("Значение", text: $spec.value)
+                        }
+                    }
+                    .onDelete { specs.remove(atOffsets: $0) }
+                    let unused = category.suggestedSpecs.filter { name in !specs.contains { $0.name == name } }
+                    if !unused.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack {
+                                ForEach(unused, id: \.self) { name in
+                                    Button("+ \(name)") { specs.append(ListingSpec(name: name, value: "")) }
+                                        .font(.caption.weight(.semibold))
+                                        .buttonStyle(.bordered)
+                                }
+                            }
+                        }
+                    }
+                    Button("Своя характеристика", systemImage: "plus") { specs.append(ListingSpec(name: "", value: "")) }
+                } header: {
+                    Text("Характеристики")
+                } footer: {
+                    Text("Например: длина, вес, материал — покупатель увидит их таблицей. Смахните влево, чтобы удалить.")
+                }
+                Section {
+                    if missing.isEmpty {
+                        Label("Всё заполнено — можно публиковать", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    } else {
+                        Label("Заполните: " + missing.joined(separator: ", "), systemImage: "exclamationmark.circle")
+                            .foregroundStyle(palette.statusCancelled)
+                    }
+                    Text("* — обязательные поля").font(.caption).foregroundStyle(palette.textSecondary)
+                }
             }
             .scrollContentBackground(.hidden)
+            .scrollDismissesKeyboard(.interactively)
             .background(ThemedBackground())
             .navigationTitle("Новое объявление")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Опубликовать") {
-                        container.backend.publish(DemoListing(sellerId: container.currentUserId, category: category, title: title,
-                                                              details: details, priceRubles: price, imageId: imageId))
-                        dismiss()
-                    }
-                    .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Button("Опубликовать") { publish() }
+                        .disabled(!missing.isEmpty)
+                }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Готово") { hideKeyboard() }
                 }
             }
         }
     }
+
+    private func publish() {
+        let filled = specs.filter { !$0.name.trimmingCharacters(in: .whitespaces).isEmpty && !$0.value.trimmingCharacters(in: .whitespaces).isEmpty }
+        container.backend.publish(DemoListing(sellerId: container.currentUserId, category: category,
+                                              title: title.trimmingCharacters(in: .whitespaces),
+                                              details: details.trimmingCharacters(in: .whitespacesAndNewlines), priceRubles: price,
+                                              imageId: imageIds.first, extraImageIds: Array(imageIds.dropFirst()),
+                                              specs: filled.isEmpty ? nil : filled))
+        dismiss()
+    }
+}
+
+/// Подпись поля; обязательное — со звёздочкой.
+struct RequiredLabel: View {
+    @Environment(\.palette) private var palette
+    let title: String
+    var required = true
+    init(_ title: String, required: Bool = true) { self.title = title; self.required = required }
+    var body: some View {
+        if required {
+            Text(title) + Text(" *").foregroundColor(palette.statusCancelled)
+        } else {
+            Text(title)
+        }
+    }
+}
+
+/// Несколько фото (до `limit`): лента миниатюр, добавить из галереи, убрать, сделать главным.
+struct MultiPhotoField: View {
+    @Environment(\.palette) private var palette
+    @Binding var imageIds: [String]
+    let limit: Int
+    @State private var items: [PhotosPickerItem] = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.s) {
+            if !imageIds.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: Space.s) {
+                        ForEach(Array(imageIds.enumerated()), id: \.element) { index, id in
+                            if let image = MediaStore.shared.image(id) {
+                                Image(uiImage: image)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 88, height: 88)
+                                    .clipShape(RoundedRectangle(cornerRadius: Radius.s, style: .continuous))
+                                    .overlay(alignment: .topTrailing) {
+                                        Button { imageIds.remove(at: index) } label: {
+                                            Image(systemName: "xmark.circle.fill").font(.title3)
+                                                .symbolRenderingMode(.palette).foregroundStyle(.white, .black.opacity(0.6))
+                                        }
+                                        .buttonStyle(.plain)
+                                        .padding(3)
+                                        .accessibilityLabel("Убрать фото \(index + 1)")
+                                    }
+                                    .overlay(alignment: .bottomLeading) {
+                                        if index == 0 {
+                                            Text("Главное").font(.caption2.weight(.bold)).foregroundStyle(.white)
+                                                .padding(.horizontal, 5).padding(.vertical, 2)
+                                                .background(.black.opacity(0.6), in: Capsule()).padding(4)
+                                        }
+                                    }
+                                    .onTapGesture {
+                                        // Нажатие делает фото главным
+                                        guard index > 0 else { return }
+                                        imageIds.insert(imageIds.remove(at: index), at: 0)
+                                    }
+                            }
+                        }
+                    }
+                }
+            }
+            HStack {
+                PhotosPicker(selection: $items, maxSelectionCount: max(1, limit - imageIds.count), matching: .images) {
+                    Label("Добавить фото", systemImage: "photo.badge.plus")
+                }
+                .disabled(imageIds.count >= limit)
+                Spacer()
+                Text("\(imageIds.count) / \(limit)").font(.caption.monospacedDigit()).foregroundStyle(palette.textSecondary)
+            }
+            if imageIds.count > 1 {
+                Text("Нажмите на фото, чтобы сделать его главным").font(.caption).foregroundStyle(palette.textSecondary)
+            }
+        }
+        .onChange(of: items) { _, newItems in
+            guard !newItems.isEmpty else { return }
+            Task {
+                for item in newItems where imageIds.count < limit {
+                    if let data = try? await item.loadTransferable(type: Data.self), let id = MediaStore.shared.save(data) {
+                        imageIds.append(id)
+                    }
+                }
+                items = []
+            }
+        }
+    }
+}
+
+func hideKeyboard() {
+    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
 }
 
 /// Реклама подписки в «Контенте» для учеников без «Биток Про».

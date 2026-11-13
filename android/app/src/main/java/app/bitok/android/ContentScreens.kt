@@ -43,6 +43,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -160,9 +163,20 @@ fun ListingDetailScreen(app: AppState, id: String) {
     val b = app.backend
     val listing = b.state.listings.firstOrNull { it.id == id } ?: return Screen("Объявление", app) { Secondary("Объявление снято") }
     Screen(listing.category.title, app) {
-        val photo = MediaStore.get(LocalContext.current, listing.imageId)
-        if (photo != null) {
-            Image(photo.asImageBitmap(), null, Modifier.fillMaxWidth().height(260.dp).clip(RoundedCornerShape(18.dp)), contentScale = ContentScale.Crop)
+        val context = LocalContext.current
+        val photos = listing.allImageIds.mapNotNull { MediaStore.get(context, it) }
+        if (photos.isNotEmpty()) {
+            val pager = androidx.compose.foundation.pager.rememberPagerState { photos.size }
+            androidx.compose.foundation.pager.HorizontalPager(pager, Modifier.fillMaxWidth().height(260.dp).clip(RoundedCornerShape(18.dp))) { page ->
+                Image(photos[page].asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            }
+            if (photos.size > 1) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                    repeat(photos.size) { i ->
+                        Box(Modifier.padding(3.dp).size(7.dp).background(if (i == pager.currentPage) p.accent else p.textSecondary.copy(alpha = 0.35f), RoundedCornerShape(50)))
+                    }
+                }
+            }
         } else {
             Box(
                 Modifier.fillMaxWidth().height(140.dp).background(Brush.linearGradient(listOf(p.accent, p.accent2)), RoundedCornerShape(18.dp)),
@@ -172,6 +186,15 @@ fun ListingDetailScreen(app: AppState, id: String) {
         Text(listing.title, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, color = p.text)
         Text(priceTitle(listing), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = p.accent)
         Text(listing.details, color = p.text)
+        if (listing.specs.isNotEmpty()) GlassCard {
+            Title("Характеристики")
+            listing.specs.forEach { spec ->
+                Row(Modifier.padding(vertical = 4.dp)) {
+                    Text(spec.name, Modifier.weight(1f), color = p.textSecondary, fontSize = 15.sp)
+                    Text(spec.value, color = p.text, fontSize = 15.sp)
+                }
+            }
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Avatar(b.person(listing.sellerId), 36.dp)
             Spacer(Modifier.width(10.dp))
@@ -240,32 +263,134 @@ fun NewsComposerScreen(app: AppState) {
 
 @Composable
 fun ListingComposerScreen(app: AppState) {
+    val p = LocalPalette.current
     var category by remember { mutableStateOf(MarketCategory.CUES) }
     var title by remember { mutableStateOf("") }
     var details by remember { mutableStateOf("") }
     var price by remember { mutableStateOf("") }
-    var imageId by remember { mutableStateOf<String?>(null) }
+    var images by remember { mutableStateOf(listOf<String>()) }
+    var specs by remember { mutableStateOf(listOf<ListingSpec>()) }
+    val missing = buildList {
+        if (!category.isService && images.isEmpty()) add("фото")
+        if (title.isBlank()) add("название")
+        if (details.isBlank()) add("описание")
+    }
     Screen("Новое объявление", app, bottom = {
-        PrimaryButton("Опубликовать", Modifier.padding(16.dp), enabled = title.isNotBlank()) {
-            app.backend.publish(Listing(newId(), app.me, category, title.trim(), details.trim(), price.toIntOrNull(), System.currentTimeMillis(), imageId))
+        PrimaryButton("Опубликовать", Modifier.padding(16.dp), enabled = missing.isEmpty()) {
+            app.backend.publish(Listing(newId(), app.me, category, title.trim(), details.trim(), price.toIntOrNull(), System.currentTimeMillis(),
+                images.firstOrNull(), images.drop(1), specs.filter { it.name.isNotBlank() && it.value.isNotBlank() }))
             app.pop()
         }
     }) {
-        Title("Категория")
+        RequiredTitle("Категория")
         MarketCategory.entries.chunked(2).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 row.forEach { c -> Chip("${c.emoji} ${c.title}", c == category, Modifier.weight(1f)) { category = c } }
             }
         }
+        RequiredTitle("Фото", required = !category.isService)
+        MultiPhotoField(images, 10) { images = it }
         OutlinedTextField(title, { title = it }, Modifier.fillMaxWidth(),
-            label = { Text(if (category.isService) "Услуга, например: замена наклейки" else "Товар, например: кий «Веста», 160 см") })
-        OutlinedTextField(details, { details = it }, Modifier.fillMaxWidth(), label = { Text("Описание, состояние, сроки") }, minLines = 3)
-        Title("Фото")
-        PhotoField(imageId) { imageId = it }
-        OutlinedTextField(price, { price = it.filter { c -> c.isDigit() } }, Modifier.fillMaxWidth(),
+            label = { Text((if (category.isService) "Услуга, например: замена наклейки" else "Товар, например: кий «Веста», 160 см") + " *") })
+        OutlinedTextField(details, { details = it }, Modifier.fillMaxWidth(), label = { Text("Описание: состояние, история, комплект *") }, minLines = 3)
+        OutlinedTextField(price, { price = it.filter { c -> c.isDigit() }.trimStart('0').take(9) }, Modifier.fillMaxWidth(),
             label = { Text(if (category.isService) "Цена от" else "Цена") }, suffix = { Text("₽") }, placeholder = { Text("договорная") },
+            visualTransformation = ThousandsMask,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
+        Title("Характеристики")
+        Secondary("Например: длина, вес, материал — покупатель увидит их таблицей.", size = 13)
+        specs.forEachIndexed { index, spec ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedTextField(spec.name, { v -> specs = specs.toMutableList().also { it[index] = spec.copy(name = v) } }, Modifier.weight(0.42f),
+                    label = { Text("Название") }, singleLine = true)
+                OutlinedTextField(spec.value, { v -> specs = specs.toMutableList().also { it[index] = spec.copy(value = v) } }, Modifier.weight(0.58f),
+                    label = { Text("Значение") }, singleLine = true)
+                TextButton({ specs = specs.toMutableList().also { it.removeAt(index) } }) { Text("✕", color = p.cancelled) }
+            }
+        }
+        val unused = category.suggestedSpecs.filter { name -> specs.none { it.name == name } }
+        if (unused.isNotEmpty()) {
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                unused.forEach { name -> Chip("+ $name", false) { specs = specs + ListingSpec(name, "") } }
+            }
+        }
+        TextButton({ specs = specs + ListingSpec("", "") }) { Text("+ Своя характеристика") }
+        if (missing.isEmpty()) Text("✓ Всё заполнено — можно публиковать", color = Color(0xFF2E7D32), fontSize = 14.sp)
+        else Text("Заполните: " + missing.joinToString(), color = p.cancelled, fontSize = 14.sp)
+        Secondary("* — обязательные поля", size = 12)
     }
+}
+
+/** Заголовок поля; обязательное — со звёздочкой. */
+@Composable
+fun RequiredTitle(text: String, required: Boolean = true) {
+    val p = LocalPalette.current
+    Row {
+        Title(text)
+        if (required) Text(" *", color = p.cancelled, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+/** Цена с разрядами: «18600» показывается как «18 600». */
+object ThousandsMask : androidx.compose.ui.text.input.VisualTransformation {
+    override fun filter(text: androidx.compose.ui.text.AnnotatedString): androidx.compose.ui.text.input.TransformedText {
+        val d = text.text
+        val out = StringBuilder()
+        d.forEachIndexed { i, c -> if (i > 0 && (d.length - i) % 3 == 0) out.append(' '); out.append(c) }
+        fun spacesBefore(offset: Int) = (1 until offset).count { (d.length - it) % 3 == 0 }
+        val mapping = object : androidx.compose.ui.text.input.OffsetMapping {
+            override fun originalToTransformed(offset: Int) = offset + spacesBefore(offset)
+            override fun transformedToOriginal(offset: Int): Int {
+                var k = 0
+                while (k < d.length && originalToTransformed(k + 1) <= offset) k++
+                return k
+            }
+        }
+        return androidx.compose.ui.text.input.TransformedText(androidx.compose.ui.text.AnnotatedString(out.toString()), mapping)
+    }
+}
+
+/** Несколько фото (до [limit]): миниатюры, убрать, нажатие делает фото главным. */
+@Composable
+fun MultiPhotoField(images: List<String>, limit: Int, onChange: (List<String>) -> Unit) {
+    val context = LocalContext.current
+    val p = LocalPalette.current
+    val left = (limit - images.size).coerceAtLeast(1)
+    val multi = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(maxOf(2, left))) { uris ->
+        val added = uris.take(limit - images.size).mapNotNull { MediaStore.save(context, it) }
+        onChange(images + added)
+    }
+    val single = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) MediaStore.save(context, uri)?.let { onChange(images + it) }
+    }
+    if (images.isNotEmpty()) {
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            images.forEachIndexed { index, id ->
+                MediaStore.get(context, id)?.let { bitmap ->
+                    Box(Modifier.size(88.dp).clip(RoundedCornerShape(10.dp)).clickable {
+                        if (index > 0) onChange(listOf(id) + images.filterIndexed { i, _ -> i != index })
+                    }) {
+                        Image(bitmap.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                        Text("✕", Modifier.align(Alignment.TopEnd).padding(4.dp).background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(50))
+                            .clickable { onChange(images.filterIndexed { i, _ -> i != index }) }.padding(horizontal = 7.dp, vertical = 2.dp),
+                            color = Color.White, fontSize = 13.sp)
+                        if (index == 0) Text("Главное", Modifier.align(Alignment.BottomStart).padding(4.dp)
+                            .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(50)).padding(horizontal = 6.dp, vertical = 1.dp),
+                            color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        TextButton({
+            val request = PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+            if (limit - images.size > 1) multi.launch(request) else single.launch(request)
+        }, enabled = images.size < limit) { Text("📷 Добавить фото") }
+        Spacer(Modifier.weight(1f))
+        Text("${images.size} / $limit", color = p.textSecondary, fontSize = 13.sp)
+    }
+    if (images.size > 1) Secondary("Нажмите на фото, чтобы сделать его главным. До $limit фото.", size = 12)
 }
 
 /** Ссылка на видео: добавляем https://, если забыли; пустая — без видео. */

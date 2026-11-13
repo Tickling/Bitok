@@ -117,7 +117,33 @@ struct DemoListing: Codable, Identifiable, Hashable, Sendable {
     var details: String
     var priceRubles: Int64?
     var date: Date = Date()
+    /// Первое (главное) фото.
     var imageId: String? = nil
+    /// Остальные фото (всего до 10).
+    var extraImageIds: [String]? = nil
+    /// Характеристики: «Длина — 160 см».
+    var specs: [ListingSpec]? = nil
+
+    var allImageIds: [String] { [imageId].compactMap { $0 } + (extraImageIds ?? []) }
+}
+
+struct ListingSpec: Codable, Hashable, Sendable, Identifiable {
+    var id = UUID()
+    var name: String
+    var value: String
+}
+
+extension MarketCategory {
+    /// Подсказки характеристик по категории — чтобы не писать их в описании.
+    var suggestedSpecs: [String] {
+        switch self {
+        case .cues: ["Длина", "Вес", "Материал", "Наклейка", "Мастер / бренд", "Состояние"]
+        case .chalk: ["Бренд", "Цвет", "Количество"]
+        case .gloves: ["Размер", "Рука", "Материал", "Состояние"]
+        case .accessories: ["Тип", "Бренд", "Состояние"]
+        case .repair, .service: ["Срок", "Гарантия", "Где"]
+        }
+    }
 }
 
 // MARK: - Места
