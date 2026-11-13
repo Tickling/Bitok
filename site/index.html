@@ -192,6 +192,58 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .tpic svg { width: 100%; height: 100%; }
 @media (max-width: 860px) { .tabsx .wrap { grid-template-columns: 1fr; } .tpic { aspect-ratio: 4 / 3; } }
 
+/* Франшиза */
+.fr-hero { padding-block: 120px 60px; text-align: center; background: radial-gradient(60% 60% at 50% 0%, #3a2a0a, #000 70%); }
+.fr-hero .eyebrow { color: var(--gold); font-weight: 700; letter-spacing: .14em; font-size: .8rem; text-transform: uppercase; }
+.fr-hero h2 { font-size: clamp(2.4rem, 6vw, 4.6rem); margin-top: 12px; }
+.fr-hero h2 em { font-style: normal; color: var(--gold); }
+.fr-hero p { color: var(--muted); font-size: 1.2rem; max-width: 44ch; margin: 18px auto 0; }
+.gets { padding-block: 40px 90px; }
+.gets .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.get { background: var(--card); border: 1px solid var(--line); border-radius: 26px; padding: 22px; display: grid; gap: 10px; align-content: start; transition: transform .35s cubic-bezier(.2,.7,.2,1), border-color .35s; }
+.get:hover { transform: translateY(-6px); border-color: #ffffff30; }
+.get.big { grid-column: span 2; background: linear-gradient(150deg, #3a2a0a, #17191A 60%); border-color: #f2c14e44; }
+.get svg { width: 34px; height: 34px; }
+.get p { color: var(--muted); font-size: .97rem; }
+@media (max-width: 900px) { .gets .grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 520px) { .gets .grid { grid-template-columns: 1fr; } .get.big { grid-column: auto; } }
+.funnel { padding-block: 90px; background: var(--bg-2); }
+.funnel svg { width: 100%; height: auto; display: block; margin-top: 30px; }
+.funnel .note { color: var(--muted); font-size: .9rem; margin-top: 12px; }
+.money { padding-block: 100px; }
+.money .wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 44px; align-items: start; }
+.money .wrap > * { min-width: 0; }
+.streams { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 26px; }
+.stream { padding: 16px; border-radius: 18px; background: var(--card); border: 1px solid var(--line); }
+.stream b { display: block; margin-bottom: 4px; }
+.stream span { color: var(--muted); font-size: .92rem; }
+.calc { background: linear-gradient(160deg, #1d2022, #111314); border: 1px solid var(--line); border-radius: 30px; padding: 26px; display: grid; gap: 16px; }
+.calc label { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; color: #d2d2d7; font-size: .95rem; align-items: center; }
+.calc label output { font-weight: 700; font-variant-numeric: tabular-nums; color: #fff; }
+.calc input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--gold); padding: 0; border: 0; background: transparent; }
+.calc .total { border-top: 1px solid var(--line); padding-top: 16px; display: grid; gap: 8px; }
+.calc .total .row { display: flex; justify-content: space-between; color: var(--muted); font-variant-numeric: tabular-nums; }
+.calc .total .row.net { color: #fff; font-size: 1.1rem; font-weight: 700; }
+.calc .total .row.net b { color: var(--gold); font-size: 2rem; letter-spacing: -0.02em; }
+.calc small { color: var(--muted); font-size: .8rem; }
+@media (max-width: 900px) { .money .wrap { grid-template-columns: 1fr; } }
+@media (max-width: 480px) { .streams { grid-template-columns: 1fr; } }
+.formats { padding-block: 90px; background: var(--bg-2); }
+.formats .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 34px; }
+.format { border-radius: 28px; padding: 26px; background: var(--card); border: 1px solid var(--line); display: grid; gap: 12px; align-content: start; }
+.format.hot { border-color: var(--gold); box-shadow: 0 30px 60px -30px #f2c14e55; }
+.format ul { margin: 0; padding-left: 18px; color: #d2d2d7; display: grid; gap: 6px; }
+.format .who { color: var(--gold); font-weight: 700; font-size: .85rem; text-transform: uppercase; letter-spacing: .1em; }
+@media (max-width: 900px) { .formats .grid { grid-template-columns: 1fr; } }
+.launch { padding-block: 90px; }
+.road { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-top: 36px; position: relative; }
+.road::before { content: ""; position: absolute; left: 4%; right: 4%; top: 22px; height: 2px; background: linear-gradient(90deg, var(--gold), #ffffff22); }
+.road div { position: relative; display: grid; gap: 8px; align-content: start; }
+.road i { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-weight: 800; background: radial-gradient(circle at 34% 28%, #fff, #e9e1cf 55%, #a99f88); color: #1c1c1e; position: relative; z-index: 1; }
+.road b { font-size: 1rem; }
+.road span { color: var(--muted); font-size: .9rem; }
+@media (max-width: 900px) { .road { grid-template-columns: 1fr 1fr; gap: 26px; } .road::before { display: none; } }
+
 /* 7. Заявка */
 .apply { padding-block: 100px 70px; }
 .apply .wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 50px; }
@@ -224,7 +276,7 @@ footer { border-top: 1px solid var(--line); padding-block: 26px 40px; color: var
       Биток
     </a>
     <nav aria-label="Разделы">
-      <a href="#play">Игра</a><a href="#moments">Моменты</a><a href="#app">Приложение</a><a href="#ages">Возраст</a><a href="#why">Почему</a><a href="#school">Школам</a>
+      <a href="#play">Игра</a><a href="#moments">Моменты</a><a href="#app">Приложение</a><a href="#ages">Возраст</a><a href="#why">Почему</a><a href="#school">Школам</a><a href="#franchise">Франшиза</a>
     </nav>
     <a class="btn btn-blue" href="#apply">Заявка</a>
   </div>
@@ -400,6 +452,107 @@ footer { border-top: 1px solid var(--line); padding-block: 26px 40px; color: var
         <div id="p4"><svg viewBox="0 0 400 400"><rect x="80" y="110" width="240" height="150" rx="22" fill="#1c1f21" stroke="#333"/><rect x="80" y="140" width="240" height="26" fill="#2a2e30"/><text x="104" y="222" font-family="Onest" font-weight="800" font-size="30" fill="#fff">2 500 ₽</text><text x="104" y="246" font-family="Onest" font-size="14" fill="#9a9ea3">→ на счёт школы</text><circle cx="290" cy="300" r="40" fill="#F2C14E"/><text x="290" y="309" text-anchor="middle" font-family="Onest" font-weight="800" font-size="26" fill="#1a1305">₽</text></svg></div>
         <div id="p5"><svg viewBox="0 0 400 400"><g stroke="#333"><line x1="60" y1="320" x2="350" y2="320"/><line x1="60" y1="80" x2="60" y2="320"/></g><polyline points="60,290 110,270 160,250 210,210 260,180 310,140 350,110" fill="none" stroke="#F2C14E" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="350" cy="110" r="9" fill="#F2C14E"/><text x="250" y="90" font-family="Onest" font-weight="800" font-size="22" fill="#fff">рост</text></svg></div>
       </div>
+    </div>
+  </section>
+
+  <!-- Франшиза -->
+  <section class="fr-hero" id="franchise">
+    <div class="wrap rv">
+      <span class="eyebrow">Франшиза «Биток»</span>
+      <h2>Клиенты — наша задача.<br><em>Мастерство — ваша.</em></h2>
+      <p>Приложение само по себе не приносит денег. Франшиза приводит учеников, а вы превращаете их в постоянных.</p>
+    </div>
+  </section>
+
+  <section class="gets">
+    <div class="wrap">
+      <h2 class="rv" style="margin-bottom:28px">Что вы получаете.</h2>
+      <div class="grid">
+        <div class="get big rv"><svg viewBox="0 0 32 32" fill="none" stroke="#F2C14E" stroke-width="2"><path d="M4 22l7-7 5 5 12-12"/><path d="M20 8h8v8"/></svg><h3>Поток учеников в вашем городе</h3><p>Сайт вашей школы и реклама во ВКонтакте и Яндексе — настраиваем и ведём. Заявки приходят вам в приложение.</p></div>
+        <div class="get rv"><svg viewBox="0 0 32 32" fill="none" stroke="#F2C14E" stroke-width="2"><rect x="9" y="3" width="14" height="26" rx="3"/><path d="M14 25h4"/></svg><h3>Приложение под вашим брендом</h3><p>Запись, оплата, упражнения, камера, чат и магазин.</p></div>
+        <div class="get rv"><svg viewBox="0 0 32 32" fill="none" stroke="#F2C14E" stroke-width="2"><path d="M6 5h14l6 6v16H6z"/><path d="M20 5v6h6M10 17h12M10 22h8"/></svg><h3>Методичка и программа</h3><p>Уровни от новичка до турниров, 20 упражнений со схемами, детская программа.</p></div>
+        <div class="get rv"><svg viewBox="0 0 32 32" fill="none" stroke="#F2C14E" stroke-width="2"><path d="M10 4h12v8a6 6 0 0 1-12 0z"/><path d="M16 18v6M11 28h10M10 7H5a4 4 0 0 0 5 5M22 7h5a4 4 0 0 1-5 5"/></svg><h3>Турниры и события</h3><p>Готовые сценарии турниров, детских кубков и открытых дней — то, что приводит людей.</p></div>
+        <div class="get rv"><svg viewBox="0 0 32 32" fill="none" stroke="#F2C14E" stroke-width="2"><path d="M5 10h22l-2 16H7z"/><path d="M11 10a5 5 0 0 1 10 0"/></svg><h3>Магазин и поставки</h3><p>Кии, мел, перчатки и ремонт — продаёте ученикам через приложение.</p></div>
+        <div class="get rv"><svg viewBox="0 0 32 32" fill="none" stroke="#F2C14E" stroke-width="2"><circle cx="16" cy="11" r="5"/><path d="M6 28c1-6 5-9 10-9s9 3 10 9"/></svg><h3>Обучение тренера</h3><p>Как вести первую тренировку, продавать абонементы и удерживать учеников.</p></div>
+        <div class="get rv"><svg viewBox="0 0 32 32" fill="none" stroke="#F2C14E" stroke-width="2"><circle cx="9" cy="12" r="4"/><circle cx="23" cy="12" r="4"/><circle cx="16" cy="22" r="4"/></svg><h3>Сообщество</h3><p>Тренеры других городов, обмен упражнениями, общие турниры и рейтинг.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="funnel">
+    <div class="wrap">
+      <h2 class="rv">Как приходят ученики.</h2>
+      <svg viewBox="0 0 1000 220" role="img" aria-label="Воронка: реклама, сайт школы, заявка, пробная тренировка, абонемент">
+        <defs><linearGradient id="fg" x1="0" x2="1"><stop offset="0" stop-color="#5AC8FA"/><stop offset="1" stop-color="#F2C14E"/></linearGradient></defs>
+        <path id="fpath" d="M70 110 C 210 20, 330 200, 500 110 S 790 20, 930 110" fill="none" stroke="url(#fg)" stroke-width="3" stroke-dasharray="2 10" stroke-linecap="round"/>
+        <g font-family="Onest, sans-serif" text-anchor="middle">
+          <g><circle cx="70" cy="110" r="26" fill="#17191A" stroke="#5AC8FA"/><text x="70" y="117" fill="#fff" font-size="18" font-weight="800">1</text><text x="70" y="170" fill="#fff" font-size="16" font-weight="700">Реклама</text><text x="70" y="192" fill="#9a9ea3" font-size="13">ВК и Яндекс</text></g>
+          <g><circle cx="285" cy="110" r="26" fill="#17191A" stroke="#7fc6e8"/><text x="285" y="117" fill="#fff" font-size="18" font-weight="800">2</text><text x="285" y="170" fill="#fff" font-size="16" font-weight="700">Сайт школы</text><text x="285" y="192" fill="#9a9ea3" font-size="13">мини-игра и запись</text></g>
+          <g><circle cx="500" cy="110" r="26" fill="#17191A" stroke="#a6c6b5"/><text x="500" y="117" fill="#fff" font-size="18" font-weight="800">3</text><text x="500" y="170" fill="#fff" font-size="16" font-weight="700">Заявка</text><text x="500" y="192" fill="#9a9ea3" font-size="13">сразу в приложении</text></g>
+          <g><circle cx="715" cy="110" r="26" fill="#17191A" stroke="#d9c38a"/><text x="715" y="117" fill="#fff" font-size="18" font-weight="800">4</text><text x="715" y="170" fill="#fff" font-size="16" font-weight="700">Пробная</text><text x="715" y="192" fill="#9a9ea3" font-size="13">ваше мастерство</text></g>
+          <g><circle cx="930" cy="110" r="26" fill="#F2C14E"/><text x="930" y="117" fill="#1a1305" font-size="18" font-weight="800">5</text><text x="930" y="170" fill="#fff" font-size="16" font-weight="700">Абонемент</text><text x="930" y="192" fill="#9a9ea3" font-size="13">ученик остаётся</text></g>
+        </g>
+        <g id="dots"></g>
+      </svg>
+      <p class="note">Шаги 1–3 делаем мы. Шаги 4–5 — вы: тренировка решает, вернётся ли человек.</p>
+    </div>
+  </section>
+
+  <section class="money" id="money">
+    <div class="wrap">
+      <div class="rv">
+        <h2>На чём вы зарабатываете.</h2>
+        <div class="streams">
+          <div class="stream"><b>Индивидуальные</b><span>Час с тренером, можно 2–3 часа подряд.</span></div>
+          <div class="stream"><b>Группы</b><span>Детские и взрослые, 4–6 человек за столом.</span></div>
+          <div class="stream"><b>Абонементы</b><span>8 занятий в месяц — предсказуемая выручка.</span></div>
+          <div class="stream"><b>Турниры</b><span>Взносы участников, призы от партнёров.</span></div>
+          <div class="stream"><b>Магазин</b><span>Кии, мел, перчатки, ремонт киёв.</span></div>
+          <div class="stream"><b>Разборы видео</b><span>Удалённо: ученик присылает серию с камеры.</span></div>
+        </div>
+      </div>
+      <form class="calc rv" id="calc" aria-label="Калькулятор дохода" onsubmit="return false">
+        <h3>Посчитайте свой месяц</h3>
+        <label for="c-price">Цена индивидуального часа <output id="o-price"></output><input type="range" id="c-price" min="1000" max="5000" step="100" value="2500"></label>
+        <label for="c-hours">Индивидуальных часов в неделю <output id="o-hours"></output><input type="range" id="c-hours" min="0" max="40" step="1" value="15"></label>
+        <label for="c-groups">Групповых занятий в неделю <output id="o-groups"></output><input type="range" id="c-groups" min="0" max="12" step="1" value="3"></label>
+        <label for="c-gsize">Человек в группе × цена <output id="o-gsize"></output><input type="range" id="c-gsize" min="2" max="8" step="1" value="5"></label>
+        <label for="c-table">Аренда стола в час <output id="o-table"></output><input type="range" id="c-table" min="0" max="1500" step="50" value="500"></label>
+        <label for="c-fee">Роялти франшизы <output id="o-fee"></output><input type="range" id="c-fee" min="0" max="20" step="1" value="10"></label>
+        <div class="total">
+          <div class="row"><span>Выручка за месяц</span><span id="r-rev"></span></div>
+          <div class="row"><span>Аренда столов</span><span id="r-rent"></span></div>
+          <div class="row"><span>Роялти</span><span id="r-fee"></span></div>
+          <div class="row net"><span>Остаётся вам</span><b id="r-net"></b></div>
+          <small>Пример расчёта: групповое занятие — 900 ₽ с человека, 4,3 недели в месяце. Условия франшизы обсуждаем индивидуально.</small>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section class="formats">
+    <div class="wrap">
+      <h2 class="rv">Три формата.</h2>
+      <div class="grid">
+        <div class="format rv"><span class="who">Частный тренер</span><h3>«Тренер»</h3><ul><li>Сайт и реклама в городе</li><li>Приложение с вашим именем</li><li>Методичка и упражнения</li><li>Занятия в клубе-партнёре</li></ul></div>
+        <div class="format hot rv"><span class="who">Чаще выбирают</span><h3>«Школа»</h3><ul><li>Всё из «Тренера»</li><li>2–5 тренеров, детские группы</li><li>Свой бренд, цвета и логотип</li><li>Турниры и магазин школы</li></ul></div>
+        <div class="format rv"><span class="who">Есть свой зал</span><h3>«Клуб»</h3><ul><li>Всё из «Школы»</li><li>Бронирование столов гостями</li><li>Корпоративы и события</li><li>Камеры-помощники на столах</li></ul></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="launch">
+    <div class="wrap">
+      <h2 class="rv">Запуск за 4 недели.</h2>
+      <div class="road">
+        <div class="rv"><i>1</i><b>Заявка</b><span>Расскажите о себе и городе.</span></div>
+        <div class="rv"><i>2</i><b>Знакомство</b><span>Созвон, разбор города и клубов.</span></div>
+        <div class="rv"><i>3</i><b>Обучение</b><span>Методичка, первая тренировка, продажи.</span></div>
+        <div class="rv"><i>4</i><b>Сайт и приложение</b><span>Ваш бренд, цены, расписание.</span></div>
+        <div class="rv"><i>5</i><b>Реклама</b><span>Запускаем — идут заявки.</span></div>
+        <div class="rv"><i>6</i><b>Первые ученики</b><span>Дальше — ваше мастерство.</span></div>
+      </div>
+      <a class="btn btn-blue rv" href="#apply" data-role="coach" style="margin-top:40px">Хочу открыть школу «Биток»</a>
     </div>
   </section>
 
@@ -861,6 +1014,26 @@ document.querySelectorAll(".tbtn").forEach(b => b.addEventListener("click", () =
   document.querySelectorAll(".tpic > div").forEach(d => d.classList.toggle("on", d.id === b.dataset.pic));
 }));
 
+// ===================== Франшиза: воронка и калькулятор =====================
+(() => {
+  const dots = document.getElementById("dots"), ns = "http://www.w3.org/2000/svg";
+  if (!reduce) for (let i = 0; i < 9; i++) {
+    const c = document.createElementNS(ns, "circle"); c.setAttribute("r", i % 3 ? "5" : "7"); c.setAttribute("fill", i % 3 ? "#5AC8FA" : "#F2C14E");
+    const m = document.createElementNS(ns, "animateMotion"); m.setAttribute("dur", "6s"); m.setAttribute("repeatCount", "indefinite"); m.setAttribute("begin", `${-i * .66}s`);
+    const mp = document.createElementNS(ns, "mpath"); mp.setAttribute("href", "#fpath"); m.appendChild(mp); c.appendChild(m); dots.appendChild(c);
+  }
+  const rub = v => `${Math.round(v).toLocaleString("ru-RU")} ₽`;
+  const ids = ["price", "hours", "groups", "gsize", "table", "fee"], el = id => document.getElementById(id);
+  function calc() {
+    const v = Object.fromEntries(ids.map(id => [id, +el("c-" + id).value]));
+    el("o-price").textContent = rub(v.price); el("o-hours").textContent = `${v.hours} ч`; el("o-groups").textContent = String(v.groups);
+    el("o-gsize").textContent = `${v.gsize} × 900 ₽`; el("o-table").textContent = rub(v.table); el("o-fee").textContent = `${v.fee}%`;
+    const weeks = 4.3, rev = (v.price * v.hours + v.groups * v.gsize * 900) * weeks, rent = (v.hours + v.groups) * v.table * weeks, fee = rev * v.fee / 100;
+    el("r-rev").textContent = rub(rev); el("r-rent").textContent = `− ${rub(rent)}`; el("r-fee").textContent = `− ${rub(fee)}`; el("r-net").textContent = rub(rev - rent - fee);
+  }
+  ids.forEach(id => el("c-" + id).addEventListener("input", calc)); calc();
+})();
+
 // ===================== 7. Заявка =====================
 const VK_URL = ""; // ссылка на группу ВКонтакте
 const vk = document.getElementById("vk-link"); if (VK_URL) { vk.href = VK_URL; vk.textContent = "Открыть группу ›"; }
@@ -868,6 +1041,7 @@ let role = "student";
 const tabs = { student: document.getElementById("tab-student"), coach: document.getElementById("tab-coach") };
 function setRole(n) { role = n; for (const [k, t] of Object.entries(tabs)) t.setAttribute("aria-selected", String(k === n)); document.querySelectorAll("[data-for]").forEach(el => el.hidden = el.dataset.for !== n); }
 tabs.student.addEventListener("click", () => setRole("student")); tabs.coach.addEventListener("click", () => setRole("coach"));
+document.querySelectorAll("[data-role]").forEach(a => a.addEventListener("click", () => setRole(a.dataset.role)));
 const form = document.getElementById("lead-form");
 form.addEventListener("submit", e => {
   e.preventDefault(); const d = Object.fromEntries(new FormData(form)), err = document.getElementById("form-error");
