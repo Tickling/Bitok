@@ -103,6 +103,46 @@ struct FrameGrid {
         var mask = [Bool](repeating: false, count: count)
         for index in 0..<count where candidate[index] && abs(hues[index] - peak) <= 22 { mask[index] = true }
         green = Self.largestComponent(mask, width: width, height: height)
+        // Шары лежат на сукне: всё светлое вне полосы сукна (лампы, лица, руки над столом) не считаем
+        var top = [Int](repeating: Int.max, count: width), bottom = [Int](repeating: -1, count: width)
+        for y in 0..<height { for x in 0..<width where green[y * width + x] { top[x] = min(top[x], y); bottom[x] = max(bottom[x], y) } }
+        let margin = height / 25
+        var lowest = 0
+        for x in 0..<width where bottom[x] >= 0 { lowest = max(lowest, bottom[x]) }
+        clothBottom = Double(lowest) / Double(max(1, height))
+        for y in 0..<height {
+            for x in 0..<width where bright[y * width + x] {
+                if bottom[x] < 0 || y < top[x] - margin || y > bottom[x] + margin { bright[y * width + x] = false }
+            }
+        }
+    }
+
+    /// Нижний край сукна (доля высоты кадра).
+    var clothBottom = 1.0
+
+    /// Шары на сукне: связные светлые пятна не меньше `minBlob`.
+    func clothBlobs() -> [(center: CGPoint, size: Int)] {
+        var seen = [Bool](repeating: false, count: bright.count)
+        var result: [(center: CGPoint, size: Int)] = []
+        var stack: [Int] = []
+        for start in 0..<bright.count where bright[start] && !seen[start] {
+            seen[start] = true
+            stack.append(start)
+            var sx = 0, sy = 0, n = 0
+            while let index = stack.popLast() {
+                let x = index % width, y = index / width
+                sx += x; sy += y; n += 1
+                for next in [x > 0 ? index - 1 : -1, x < width - 1 ? index + 1 : -1, y > 0 ? index - width : -1, y < height - 1 ? index + width : -1]
+                where next >= 0 && bright[next] && !seen[next] {
+                    seen[next] = true
+                    stack.append(next)
+                }
+            }
+            if n >= max(3, minBlob) {
+                result.append((CGPoint(x: Double(sx) / Double(n) / Double(width), y: Double(sy) / Double(n) / Double(height)), n))
+            }
+        }
+        return result
     }
 
     static func hsv(_ r: Int, _ g: Int, _ b: Int) -> (Float, Float, Float) {
@@ -191,9 +231,12 @@ struct ShotEvent: Identifiable, Equatable {
 
 final class TableCameraModel: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     enum Hint: Equatable {
-        case noTable, stepBack, closer, tilt, ready
+        case noTable, stepBack, closer, tilt, ready, pocketView
+        /// Можно начинать запись: весь стол в кадре или камера у лузы по линии удара.
+        var isReady: Bool { self == .ready || self == .pocketView }
         var text: String {
             switch self {
+            case .pocketView: "Камера у лузы по линии удара ✓ Слежу за шаром"
             case .noTable: "Наведите камеру на стол — нужно видеть сукно целиком"
             case .stepBack: "Отойдите назад: стол не помещается в кадр целиком"
             case .closer: "Подойдите ближе: стол слишком маленький"
@@ -210,6 +253,8 @@ final class TableCameraModel: NSObject, ObservableObject, AVCaptureVideoDataOutp
     @Published var recording = false
     @Published var shots: [ShotEvent] = []
     @Published var cueSeen: CGPoint?
+    /// Режим «Выполнение»: камера может стоять у лузы, и весь стол в кадр не попадает.
+    @Published var performMode = false
 
     let session = AVCaptureSession()
     private let queue = DispatchQueue(label: "bitok.camera")
@@ -372,6 +417,12 @@ final class TableCameraModel: NSObject, ObservableObject, AVCaptureVideoDataOutp
         for corner in corners where corner.x < edge || corner.x > 1 - edge || corner.y < edge || corner.y > 1 - edge {
             touches = true
         }
+        // Камера на штативе у лузы: сукно — широкая полоса во всю ширину кадра, стол целиком не виден
+        if performMode && touches {
+            analyzePocketView(grid)
+            return
+        }
+        pocketTrack = nil
         let hint: Hint
         if touches { hint = .stepBack } else if fraction < 0.12 { hint = .closer } else if quad.area < 0.12 { hint = .tilt } else { hint = .ready }
 
@@ -406,6 +457,71 @@ final class TableCameraModel: NSObject, ObservableObject, AVCaptureVideoDataOutp
             self.marks = statuses
             self.cueSeen = cue
         }
+    }
+
+    // MARK: Камера у лузы
+
+    /// Шар, который идёт в лузу (ближайший к камере), и как он двигался.
+    private struct PocketTrack { var position: CGPoint; var size: Int; var moving: Bool; var since: Date; var still: Date? }
+    private var pocketTrack: PocketTrack?
+
+    /// Камера у лузы, смотрит вдоль линии удара: луза — внизу по центру кадра.
+    /// Шар, который ближе всего к камере, должен прийти к центру и уйти вниз, за край сукна — это «забит».
+    /// Остановился или ушёл в сторону — промах, и по стороне понятно, что поправить.
+    private func analyzePocketView(_ grid: FrameGrid) {
+        let blobs = grid.clothBlobs()
+        // Ближайший к камере шар — самый нижний (а при равенстве — самый крупный)
+        let nearest = blobs.max { a, b in a.center.y + Double(a.size) * 0.0005 < b.center.y + Double(b.size) * 0.0005 }
+        let clothBottom = grid.clothBottom
+        let now = Date()
+        if writer != nil {
+            if var track = pocketTrack {
+                if let ball = nearest, hypot(ball.center.x - track.position.x, ball.center.y - track.position.y) < 0.2 {
+                    let speed = hypot(ball.center.x - track.position.x, ball.center.y - track.position.y)
+                    if speed > 0.01 { track.moving = true; track.since = now; track.still = nil }
+                    else if track.moving {
+                        track.still = track.still ?? now
+                        if now.timeIntervalSince(track.still!) > 1.0 {
+                            finishPocketShot(made: false, last: ball.center)
+                            track = PocketTrack(position: ball.center, size: ball.size, moving: false, since: now, still: nil)
+                        }
+                    }
+                    track.position = ball.center
+                    track.size = ball.size
+                    pocketTrack = track
+                } else if track.moving, now.timeIntervalSince(track.since) < 1.5 {
+                    // Пропал: если уходил к нижнему краю сукна у центра — забит
+                    let atPocket = track.position.y > clothBottom - 0.12 && abs(track.position.x - 0.5) < 0.18
+                    finishPocketShot(made: atPocket, last: track.position)
+                    pocketTrack = nil
+                } else if let ball = nearest {
+                    pocketTrack = PocketTrack(position: ball.center, size: ball.size, moving: false, since: now, still: nil)
+                }
+            } else if let ball = nearest {
+                pocketTrack = PocketTrack(position: ball.center, size: ball.size, moving: false, since: now, still: nil)
+            }
+        }
+        DispatchQueue.main.async {
+            self.quad = nil
+            self.hint = .pocketView
+            self.cueSeen = nearest?.center
+        }
+    }
+
+    private func finishPocketShot(made: Bool, last: CGPoint) {
+        let advice: String
+        if made {
+            advice = Self.praise.randomElement()!
+        } else if abs(last.x - 0.5) < 0.12 {
+            advice = "Не хватило силы: шар остановился, не дойдя до лузы. Доведите кий после удара и сделайте плавный разгон."
+        } else if last.x < 0.5 {
+            // Камера смотрит на игрока: левая сторона кадра — справа от игрока
+            advice = "Шар ушёл правее лузы. Проверьте прицел по мнимому шару и что кий не уводится в сторону."
+        } else {
+            advice = "Шар ушёл левее лузы. Задержите паузу перед ударом, держите голову неподвижно до конца удара."
+        }
+        let event = ShotEvent(time: max(0, recordSeconds - 1.5), made: made, advice: advice)
+        DispatchQueue.main.async { self.shots.append(event) }
     }
 
     /// Удар: биток ушёл с точки → движется → исчез у лузы (забит) или остановился в стороне (промах).
@@ -614,7 +730,7 @@ struct TableCameraTrainer: View {
             var outline = Path()
             let outlinePoints: [CGPoint] = [quad.tl, quad.tr, quad.br, quad.bl, quad.tl].map { toScreen($0, size: size) }
             outline.addLines(outlinePoints)
-            context.stroke(outline, with: .color(camera.hint == .ready ? .green : .yellow), lineWidth: 3)
+            context.stroke(outline, with: .color(camera.hint.isReady ? .green : .yellow), lineWidth: 3)
             guard phase != .framing || mode == .perform else { return }
             let screenTL: CGPoint = toScreen(quad.tl, size: size)
             let screenTR: CGPoint = toScreen(quad.tr, size: size)
@@ -645,6 +761,7 @@ struct TableCameraTrainer: View {
                     .frame(width: 40, height: 40).background(.black.opacity(0.4), in: Circle())
             }
             Picker("Режим", selection: $mode) { ForEach(Mode.allCases) { Text($0.rawValue).tag($0) } }
+                .onChange(of: mode, initial: true) { _, value in camera.performMode = value == .perform }
                 .pickerStyle(.segmented)
                 .disabled(camera.recording)
         }
@@ -668,12 +785,12 @@ struct TableCameraTrainer: View {
     private var setupPanel: some View {
         switch phase {
         case .framing:
-            Label(camera.hint.text, systemImage: camera.hint == .ready ? "checkmark.circle.fill" : "arrow.up.and.down.and.arrow.left.and.right")
-                .font(.headline).foregroundStyle(camera.hint == .ready ? .green : .yellow)
+            Label(camera.hint.text, systemImage: camera.hint.isReady ? "checkmark.circle.fill" : "arrow.up.and.down.and.arrow.left.and.right")
+                .font(.headline).foregroundStyle(camera.hint.isReady ? .green : .yellow)
             Text("Встаньте у короткого борта так, чтобы весь стол русского бильярда был в кадре.").font(.caption).foregroundStyle(.white)
             Button("Дальше: точки для шаров") { phase = .marks }
                 .buttonStyle(.cueGlassProminent)
-                .disabled(camera.hint != .ready)
+                .disabled(!camera.hint.isReady)
         case .marks:
             Text("Наклейте точки там, где светятся голубые круги").font(.headline).foregroundStyle(.cyan)
             Text(exercise.markPoints.prefix(6).map { "\(Int($0.x)):\(Int($0.y))" }.joined(separator: " · ")).font(.caption.monospaced())
@@ -719,10 +836,10 @@ struct TableCameraTrainer: View {
                 TableSchemeView(exercise: exercise, labels: false, showTripod: true).frame(width: 110)
                 Text(exercise.tripod.hint).font(.caption).foregroundStyle(.white.opacity(0.9))
             }
-            Label(camera.hint.text, systemImage: "camera.viewfinder").font(.caption).foregroundStyle(camera.hint == .ready ? .green : .yellow)
+            Label(camera.hint.text, systemImage: "camera.viewfinder").font(.caption).foregroundStyle(camera.hint.isReady ? .green : .yellow)
             Button { camera.startRecording() } label: { Label("Начать запись", systemImage: "record.circle") }
                 .buttonStyle(.cueGlassProminent)
-                .disabled(camera.hint != .ready)
+                .disabled(!camera.hint.isReady)
         }
     }
 

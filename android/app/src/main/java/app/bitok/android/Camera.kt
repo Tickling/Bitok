@@ -117,6 +117,8 @@ class FrameGrid(bitmap: Bitmap, columns: Int = 200) {
     val green: BooleanArray; val bright: BooleanArray
     /** Минимум клеток у шара (наклейка-точка намного меньше шара). */
     var minBlob = 2
+    /** Нижний край сукна (доля высоты кадра). */
+    var clothBottom = 1f
     init {
         val step = maxOf(1, bitmap.width / columns)
         width = bitmap.width / step; height = bitmap.height / step
@@ -144,6 +146,35 @@ class FrameGrid(bitmap: Bitmap, columns: Int = 200) {
         val peak = peakBin * 10 + 5f
         val mask = BooleanArray(count) { candidate[it] && abs(hues[it] - peak) <= 22f }
         green = largestComponent(mask, width, height)
+        // Шары лежат на сукне: всё светлое вне полосы сукна (лампы, лица, руки над столом) не считаем
+        val top = IntArray(width) { Int.MAX_VALUE }; val bottom = IntArray(width) { -1 }
+        for (y in 0 until height) for (x in 0 until width) if (green[y * width + x]) { top[x] = minOf(top[x], y); bottom[x] = maxOf(bottom[x], y) }
+        val margin = height / 25
+        clothBottom = (bottom.maxOrNull() ?: 0).toFloat() / maxOf(1, height)
+        for (y in 0 until height) for (x in 0 until width) {
+            val i = y * width + x
+            if (bright[i] && (bottom[x] < 0 || y < top[x] - margin || y > bottom[x] + margin)) bright[i] = false
+        }
+    }
+
+    /** Шары на сукне: центр и размер связных светлых пятен не меньше [minBlob]. */
+    fun clothBlobs(): List<Pair<Offset, Int>> {
+        val seen = BooleanArray(bright.size); val stack = IntArray(bright.size)
+        val result = mutableListOf<Pair<Offset, Int>>()
+        for (start in bright.indices) {
+            if (!bright[start] || seen[start]) continue
+            seen[start] = true
+            var top = 0; stack[top++] = start; var sx = 0L; var sy = 0L; var n = 0
+            while (top > 0) {
+                val i = stack[--top]; val x = i % width; val y = i / width
+                sx += x; sy += y; n++
+                for (j in intArrayOf(if (x > 0) i - 1 else -1, if (x < width - 1) i + 1 else -1, if (y > 0) i - width else -1, if (y < height - 1) i + width else -1)) {
+                    if (j >= 0 && bright[j] && !seen[j]) { seen[j] = true; stack[top++] = j }
+                }
+            }
+            if (n >= maxOf(3, minBlob)) result += Offset(sx.toFloat() / n / width, sy.toFloat() / n / height) to n
+        }
+        return result
     }
 
     private fun largestComponent(mask: BooleanArray, w: Int, h: Int): BooleanArray {
@@ -233,6 +264,9 @@ class TrainerState(val exercise: Exercise) {
         smoothed = q
         val edge = 0.02f
         val touches = listOf(q.tl, q.tr, q.br, q.bl).any { it.x < edge || it.x > 1 - edge || it.y < edge || it.y > 1 - edge }
+        // Камера на штативе у лузы: сукно — полоса во всю ширину кадра, стол целиком не виден
+        if (performMode && touches) { analyzePocketView(grid); return }
+        pocket = null
         hint = when {
             touches -> "Отойдите назад: стол не помещается в кадр целиком"
             fraction < 0.12 -> "Подойдите ближе: стол слишком маленький"
@@ -260,6 +294,56 @@ class TrainerState(val exercise: Exercise) {
             }
         }
         if (tracking) track(grid, q, radius)
+    }
+
+    /** Режим «Выполнение»: камера может стоять у лузы, и весь стол в кадр не попадает. */
+    @Volatile var performMode = false
+
+    private class PocketTrack(var position: Offset, var moving: Boolean, var since: Long, var still: Long)
+    private var pocket: PocketTrack? = null
+
+    /**
+     * Камера у лузы смотрит вдоль линии удара: луза — внизу по центру кадра. Ближайший к камере шар должен уйти
+     * вниз за край сукна у центра — «забит»; остановился или ушёл в сторону — промах с советом.
+     */
+    private fun analyzePocketView(grid: FrameGrid) {
+        val nearest = grid.clothBlobs().maxByOrNull { it.first.y + it.second * 0.0005f }
+        val now = System.currentTimeMillis()
+        if (tracking) {
+            val track = pocket
+            if (track == null) {
+                nearest?.let { pocket = PocketTrack(it.first, false, now, 0) }
+            } else if (nearest != null && (nearest.first - track.position).getDistance() < 0.2f) {
+                val speed = (nearest.first - track.position).getDistance()
+                if (speed > 0.01f) { track.moving = true; track.since = now; track.still = 0 }
+                else if (track.moving) {
+                    if (track.still == 0L) track.still = now
+                    if (now - track.still > 1000) { finishPocket(false, nearest.first); track.moving = false; track.still = 0 }
+                }
+                track.position = nearest.first
+            } else if (track.moving && now - track.since < 1500) {
+                val atPocket = track.position.y > grid.clothBottom - 0.12f && abs(track.position.x - 0.5f) < 0.18f
+                finishPocket(atPocket, track.position)
+                pocket = null
+            } else {
+                pocket = nearest?.let { PocketTrack(it.first, false, now, 0) }
+            }
+        }
+        quad = null
+        ready = true
+        hint = "Камера у лузы по линии удара ✓ Слежу за шаром"
+    }
+
+    private fun finishPocket(made: Boolean, last: Offset) {
+        val advice = when {
+            made -> PRAISE.random()
+            abs(last.x - 0.5f) < 0.12f -> "Не хватило силы: шар остановился, не дойдя до лузы. Доведите кий после удара и сделайте плавный разгон."
+            // Камера смотрит на игрока: левая сторона кадра — справа от игрока
+            last.x < 0.5f -> "Шар ушёл правее лузы. Проверьте прицел по мнимому шару и что кий не уводится в сторону."
+            else -> "Шар ушёл левее лузы. Задержите паузу перед ударом, держите голову неподвижно до конца удара."
+        }
+        val t = maxOf(0.0, (System.currentTimeMillis() - recordingStart) / 1000.0 - 1.5)
+        shots += Shot(t, made, advice)
     }
 
     private fun track(grid: FrameGrid, q: TableQuad, radius: Float) {
@@ -308,6 +392,7 @@ fun CameraTrainerScreen(app: AppState, exerciseId: String, demo: String? = null)
     var demoRecording by remember { mutableStateOf(false) }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
     var mode by remember { mutableStateOf(TrainerMode.SETUP) }
+    androidx.compose.runtime.LaunchedEffect(mode) { state.performMode = mode == TrainerMode.PERFORM }
     var phase by remember { mutableStateOf(SetupPhase.FRAMING) }
     var recording by remember { mutableStateOf<Recording?>(null) }
     var videoCapture by remember { mutableStateOf<VideoCapture<Recorder>?>(null) }

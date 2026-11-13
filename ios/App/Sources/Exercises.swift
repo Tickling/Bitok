@@ -86,7 +86,7 @@ struct Exercise: Codable, Identifiable, Hashable, Sendable {
         else if target.y <= 0.1 { side = "у верхнего длинного борта, напротив отметки \(Int(target.x))" }
         else { side = "у нижнего длинного борта, напротив отметки \(Int(target.x))" }
         let corner = (target.x <= 0.1 || target.x >= 159.9) && (target.y <= 0.1 || target.y >= 79.9)
-        return (point, "Штатив: \(corner ? "за угловой лузой, " : "")\(side), в 50 см от стола, высота 1,6–1,8 м. Камера смотрит на вас вдоль линии удара.")
+        return (point, "Штатив: \(corner ? "за угловой лузой, " : "")\(side), в 30–50 см от стола, камера чуть выше борта и смотрит на вас вдоль линии удара — так видно, как шар идёт в лузу.")
     }
 
     static func rackPoints(apex: TablePoint) -> [TablePoint] {
