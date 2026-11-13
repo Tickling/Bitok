@@ -84,6 +84,8 @@ fun ProfileScreen(app: AppState) {
                 MenuRow(Icons.Filled.Groups, "Друзья · ${b.friends(app.me).size}" + if (b.incomingFriendRequests(app.me).isNotEmpty()) " · новые запросы" else "") { app.push(Route.Friends) }
                 HorizontalDivider()
                 MenuRow(Icons.Filled.EmojiEvents, "Трофеи и достижения") { app.push(Route.Trophies) }
+                HorizontalDivider()
+                MenuRow(Icons.Filled.EditNote, "Оформление профиля" + if (b.hasSubscription(app.me)) " · PRO" else "") { app.push(Route.Customization) }
             }
             HorizontalDivider()
             MenuRow(Icons.Filled.Settings, "Настройки") { app.push(Route.Settings) }
@@ -122,16 +124,28 @@ private fun PlayerCard(app: AppState) {
     val b = app.backend
     val progress = b.progress(app.me)
     val rating = b.rating(app.me)
-    GradientCard {
+    val theme = app.cardTheme
+    val pro = b.hasSubscription(app.me)
+    Column(
+        Modifier.fillMaxWidth().background(if (theme == CardTheme.CLASSIC) Brush.linearGradient(listOf(LocalPalette.current.accent, LocalPalette.current.accent.copy(alpha = 0.8f), LocalPalette.current.accent2)) else Brush.linearGradient(theme.colors), RoundedCornerShape(24.dp))
+            .then(if (theme == CardTheme.NEON) Modifier.border(2.dp, Color(0xFF38E8FF), RoundedCornerShape(24.dp)) else Modifier)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         Row {
             Column(Modifier.weight(1f)) {
                 Text("${rating ?: 0}", fontSize = 48.sp, fontWeight = FontWeight.Black, color = Color.White)
                 Text(b.level(rating).uppercase(), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.85f))
                 Spacer(Modifier.height(8.dp))
-                Text(b.name(app.me), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(b.name(app.me), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    if (pro) Text(" PRO ", fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.Black,
+                        modifier = Modifier.padding(start = 6.dp).background(Brush.horizontalGradient(listOf(Color(0xFFFFD659), Color(0xFFD99A1A))), RoundedCornerShape(50)))
+                    if (app.statusEmoji.isNotEmpty()) Text(" ${app.statusEmoji}", fontSize = 18.sp)
+                }
                 Text("👑 Чемпион клуба", fontSize = 13.sp, color = Color.White.copy(alpha = 0.9f))
             }
-            Box(Modifier.size(92.dp).background(Brush.sweepGradient(listOf(Color(0xFFFFF6C8), Color(0xFFF2C94C), Color(0xFFB8860B), Color(0xFFFFF6C8))), RoundedCornerShape(46.dp)),
+            Box(Modifier.size(92.dp).background(Brush.sweepGradient(app.frameChoice.colors), RoundedCornerShape(46.dp)),
                 contentAlignment = Alignment.Center) {
                 Box(Modifier.clickable { if (AvatarStore.get(app.context, app.me) != null) app.push(Route.PhotoViewer(app.me)) }) { Avatar(b.person(app.me), 84.dp) }
             }
@@ -401,6 +415,8 @@ fun HelpScreen(app: AppState) {
     Screen("Помощь", app) {
         Secondary(if (app.isCoach) "Коротко о том, где что находится в приложении тренера." else "Коротко о том, где что находится и что можно делать.", size = 15)
         if (!app.isCoach && app.backend.hasSubscription(app.me)) {
+            Title("Биток Про: как это выглядит")
+            ProCarousel()
             GlassCard {
                 Title("Биток Про: камера-помощник")
                 ProGuide()

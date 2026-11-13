@@ -236,7 +236,7 @@ fun GroupChatScreen(app: AppState, groupId: String) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     group.members.forEach { id -> Text((if (id == app.me) "Вы" else b.name(id)) + if (b.isCoach(id)) " · тренер" else "", color = p.text) }
                     val candidates = (b.friends(app.me).map { it.id } + b.coaches.map { it.id }).filter { it !in group.members }
-                    if (isMember && candidates.isNotEmpty()) {
+                    if (isMember && candidates.isNotEmpty() && b.hasSubscription(app.me)) {
                         Secondary("Добавить:")
                         candidates.forEach { id -> TextButton({ b.addToGroup(groupId, id, app.me) }) { Text("+ ${b.name(id)}") } }
                     }

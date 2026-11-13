@@ -102,7 +102,8 @@ sealed interface Route {
     data class ExerciseDetail(val id: String, val studentId: String) : Route
     data class Exercises(val studentId: String) : Route
     data class StudentStats(val studentId: String) : Route
-    data class CameraTrainer(val exerciseId: String) : Route
+    data class CameraTrainer(val exerciseId: String, val demo: String? = null) : Route
+    data object Customization : Route
     data class Paywall(val exerciseId: String?) : Route
     data object ProWelcome : Route
     data object CoachExercises : Route
@@ -150,6 +151,14 @@ class AppState(val context: Context) {
         val chats = mapOf("alexey" to Ids.ALEXEY, "ivan" to Ids.IVAN, "natasha" to Ids.NATASHA, "veronika" to Ids.VERONIKA)
         intent.getStringExtra("uiChat")?.let { chats[it] }?.let { stack.add(Route.Chat(it)) }
         when (uiPage) {
+            // Демо-экраны «Биток Про» для карусели в «Помощи»
+            "proExercise" -> stack.add(Route.ExerciseDetail("prep-1", account.userId))
+            "proPaywall" -> stack.add(Route.Paywall(null))
+            "proFraming", "proMarks", "proBalls", "proPerform" -> stack.add(Route.CameraTrainer("prep-3", uiPage!!.removePrefix("pro").lowercase()))
+            "proResult" -> {
+                trainingResult = demoTrainingResult()
+                stack.add(Route.TrainingResult)
+            }
             "venues" -> stack.add(Route.Venues)
             "settings" -> stack.add(Route.Settings)
             "help" -> stack.add(Route.Help)
@@ -257,7 +266,8 @@ private fun RouteScreen(app: AppState, route: Route) {
         is Route.ExerciseDetail -> ExerciseDetailScreen(app, route.id, route.studentId)
         is Route.Exercises -> ExercisesScreen(app, route.studentId)
         is Route.StudentStats -> StudentStatsScreen(app, route.studentId)
-        is Route.CameraTrainer -> CameraTrainerScreen(app, route.exerciseId)
+        is Route.CameraTrainer -> CameraTrainerScreen(app, route.exerciseId, route.demo)
+        Route.Customization -> CustomizationScreen(app)
         is Route.Paywall -> PaywallScreen(app, route.exerciseId)
         Route.ProWelcome -> ProWelcomeScreen(app)
         Route.CoachExercises -> CoachExercisesScreen(app)

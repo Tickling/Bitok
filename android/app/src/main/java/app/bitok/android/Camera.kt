@@ -253,12 +253,13 @@ private enum class TrainerMode(val title: String) { SETUP("Расстановк�
 private enum class SetupPhase { FRAMING, MARKS, BALLS }
 
 @Composable
-fun CameraTrainerScreen(app: AppState, exerciseId: String) {
+fun CameraTrainerScreen(app: AppState, exerciseId: String, demo: String? = null) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
     val exercise = app.backend.exercise(exerciseId) ?: return Screen("Камера", app) { Secondary("Упражнение не найдено") }
     val state = remember { TrainerState(exercise) }
-    var granted by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) }
+    var granted by remember { mutableStateOf(demo != null || ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) }
+    var demoRecording by remember { mutableStateOf(false) }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
     var mode by remember { mutableStateOf(TrainerMode.SETUP) }
     var phase by remember { mutableStateOf(SetupPhase.FRAMING) }
@@ -275,7 +276,24 @@ fun CameraTrainerScreen(app: AppState, exerciseId: String) {
         return
     }
     val previewView = remember { PreviewView(context).apply { scaleType = PreviewView.ScaleType.FILL_CENTER } }
-    DisposableEffect(Unit) {
+    // Демо без камеры (эмулятор, скриншоты «Помощи»): стол в перспективе, часть шаров на местах.
+    androidx.compose.runtime.LaunchedEffect(demo) {
+        if (demo == null) return@LaunchedEffect
+        state.quad = TableQuad(Offset(0.16f, 0.30f), Offset(0.84f, 0.30f), Offset(0.97f, 0.62f), Offset(0.03f, 0.62f))
+        state.ready = true
+        state.hint = "Стол в кадре ✓ Держите телефон ровно"
+        exercise.markPoints.indices.forEach { i -> state.marks[i] = when (i) { 1 -> Mark.Off("Сдвиньте шар на 3 см к правому борту"); 3 -> Mark.Missing; else -> Mark.Ok } }
+        when (demo) {
+            "marks" -> phase = SetupPhase.MARKS
+            "balls" -> phase = SetupPhase.BALLS
+            "perform" -> {
+                mode = TrainerMode.PERFORM; demoRecording = true
+                state.shots.addAll(listOf(Shot(4.0, true, "Отличный удар! 🔥"),
+                    Shot(11.0, false, shotAdvice(TablePoint(70.0, 40.0), TablePoint(80.0, 0.0), TablePoint(66.0, 4.0))), Shot(18.0, true, "Чисто! Так держать")))
+            }
+        }
+    }
+    if (demo == null) DisposableEffect(Unit) {
         val executor = Executors.newSingleThreadExecutor()
         val providerFuture = ProcessCameraProvider.getInstance(context)
         providerFuture.addListener({
@@ -316,7 +334,22 @@ fun CameraTrainerScreen(app: AppState, exerciseId: String) {
     }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        AndroidView({ previewView }, Modifier.fillMaxSize())
+        if (demo == null) AndroidView({ previewView }, Modifier.fillMaxSize()) else Canvas(Modifier.fillMaxSize()) {
+            drawRect(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFF2E2E2E), Color(0xFF141414))))
+            val q = state.quad ?: return@Canvas
+            fun s(o: Offset) = Offset(o.x * size.width, o.y * size.height)
+            val rails = Path().apply {
+                moveTo(s(q.tl).x - 14, s(q.tl).y - 12); lineTo(s(q.tr).x + 14, s(q.tr).y - 12); lineTo(s(q.br).x + 20, s(q.br).y + 16); lineTo(s(q.bl).x - 20, s(q.bl).y + 16); close()
+            }
+            drawPath(rails, Color(0xFF6B4014))
+            val felt = Path().apply { moveTo(s(q.tl).x, s(q.tl).y); lineTo(s(q.tr).x, s(q.tr).y); lineTo(s(q.br).x, s(q.br).y); lineTo(s(q.bl).x, s(q.bl).y); close() }
+            drawPath(felt, Color(0xFF298538))
+            exercise.markPoints.forEachIndexed { i, pt ->
+                if (i == 3) return@forEachIndexed
+                val p = if (i == 1) q.project(TablePoint(pt.x - 3, pt.y + 1)) else q.project(pt)
+                drawCircle(Color(0xFFF7F7F7), 20f, s(p))
+            }
+        }
         Canvas(Modifier.fillMaxSize()) {
             val q = state.quad ?: return@Canvas
             fun s(o: Offset) = Offset(o.x * size.width, o.y * size.height)
@@ -370,7 +403,7 @@ fun CameraTrainerScreen(app: AppState, exerciseId: String) {
                     }
                 } else {
                     val made = state.shots.count { it.made }
-                    if (recording != null) {
+                    if (recording != null || demoRecording) {
                         Text("● Запись · удары ${state.shots.size}/${exercise.attempts} · забито $made", color = Color.White, fontWeight = FontWeight.Bold)
                         state.shots.lastOrNull()?.let { Text(if (it.made) it.advice else "Промах. ${it.advice}", color = if (it.made) Color.Green else Color(0xFFFFA726), fontSize = 13.sp) }
                         if (state.shots.isNotEmpty()) motivation = MOTIVATION[state.shots.size % MOTIVATION.size]
@@ -406,6 +439,12 @@ fun CameraTrainerScreen(app: AppState, exerciseId: String) {
 
 // region Итог
 
+/** Демо-итог для скриншотов «Помощи». */
+fun demoTrainingResult() = TrainingResult("prep-1", "", listOf(
+    Shot(4.0, true, "Отличный удар! 🔥"), Shot(11.0, false, shotAdvice(TablePoint(70.0, 40.0), TablePoint(80.0, 0.0), TablePoint(66.0, 4.0))),
+    Shot(18.0, true, "Чисто!"), Shot(25.0, true, "Есть!"), Shot(31.0, false, shotAdvice(TablePoint(70.0, 40.0), TablePoint(80.0, 0.0), TablePoint(76.0, 22.0))),
+    Shot(38.0, true, "Есть!"), Shot(45.0, true, "Есть!")), 10)
+
 data class TrainingResult(val exerciseId: String, val file: String, val shots: List<Shot>, val attempts: Int) {
     val made get() = shots.count { it.made }
     val percent get() = if (attempts == 0) 0 else made * 100 / attempts
@@ -440,7 +479,7 @@ fun TrainingResultScreen(app: AppState) {
                 Secondary(if (result.stars >= 2) "Отлично! Упражнение засчитано ⭐️" else "Всё получится — разберём ошибки и попробуем ещё раз 💪", size = 14)
             }
         }
-        VideoBox(context, result.file, Modifier.height(360.dp), seek)
+        if (result.file.isNotEmpty()) VideoBox(context, result.file, Modifier.height(360.dp), seek)
         val misses = result.shots.filter { !it.made }
         if (misses.isNotEmpty()) Title("Ошибки на видео")
         misses.forEach { shot ->
@@ -512,7 +551,8 @@ fun PaywallScreen(app: AppState, exerciseId: String?) {
     }) {
         Text("📷", fontSize = 56.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
         GlassCard {
-            listOf("Камера находит стол и подсказывает, как встать", "Показывает, куда клеить точки и ставить шары",
+            listOf("Групповые чаты с друзьями и тренером", "Оформление профиля: фоны карточки, редкие рамки, значок PRO и статус",
+                "Камера находит стол и подсказывает, как встать", "Показывает, куда клеить точки и ставить шары",
                 "Проверяет расстановку в реальном времени и объясняет ошибки", "Режим на штативе: считает удары, звёзды за упражнение",
                 "Показывает момент ошибки на видео и как исправить", "Видео и кусочек с ошибкой — тренеру в чат", "Подсказывает, где поставить штатив")
                 .forEach { Text("✓ $it", color = p.text, fontSize = 15.sp) }

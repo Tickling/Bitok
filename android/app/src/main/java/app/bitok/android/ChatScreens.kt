@@ -75,7 +75,10 @@ fun ChatListScreen(app: AppState) {
         if (!app.isCoach) Segmented(ChatSegment.entries, segment, { it.title }) { segment = it }
         when (segment) {
             ChatSegment.CHATS -> {
-                if (!app.isCoach) SecondaryButton("👥 Новая группа", Modifier.fillMaxWidth()) { app.push(Route.CreateGroup) }
+                // Группы — в «Биток Про»: без подписки ведём на оформление.
+                if (!app.isCoach) SecondaryButton(if (b.hasSubscription(app.me)) "👥 Новая группа" else "🔒 Новая группа · Биток Про", Modifier.fillMaxWidth()) {
+                    app.push(if (b.hasSubscription(app.me)) Route.CreateGroup else Route.Paywall(null))
+                }
                 b.chatGroups(app.me).forEach { GroupRow(app, it) }
                 b.chatPartners(app.me).forEach { person ->
                 val last = b.lastMessage(app.me, person.id)
