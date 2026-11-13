@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.bitok.app/booking/cancelled/v1.json",
+  "title": "BookingCancelled",
+  "description": "data для CloudEvent type = booking.cancelled",
+  "type": "object",
+  "required": [
+    "bookingId",
+    "cancelledBy",
+    "lateCancellation"
+  ],
+  "properties": {
+    "bookingId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "cancelledBy": {
+      "enum": [
+        "STUDENT",
+        "COACH"
+      ]
+    },
+    "lateCancellation": {
+      "type": "boolean"
+    },
+    "paymentId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "refundPercent": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    }
+  },
+  "additionalProperties": true
+}

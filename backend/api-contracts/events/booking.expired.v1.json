@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.bitok.app/booking/expired/v1.json",
+  "title": "BookingExpired",
+  "description": "data для CloudEvent type = booking.expired",
+  "type": "object",
+  "required": [
+    "bookingId",
+    "previousStatus"
+  ],
+  "properties": {
+    "bookingId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "previousStatus": {
+      "enum": [
+        "DRAFT",
+        "AWAITING_COACH_APPROVAL",
+        "AWAITING_PAYMENT",
+        "CONFIRMED",
+        "COMPLETED",
+        "REJECTED_BY_COACH",
+        "CANCELLED_BY_STUDENT",
+        "CANCELLED_BY_COACH",
+        "EXPIRED",
+        "RESCHEDULED",
+        "NO_SHOW"
+      ]
+    }
+  },
+  "additionalProperties": true
+}

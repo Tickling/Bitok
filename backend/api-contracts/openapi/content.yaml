@@ -1,0 +1,309 @@
+openapi: 3.0.3
+info:
+  title: Bitok Content Service API
+  version: 1.0.0
+  description: Новости и библиотека уроков (FR-018, FR-019).
+servers:
+  - url: https://api.bitok.app/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: News
+  - name: Lessons
+paths:
+  /news:
+    get:
+      tags: [News]
+      summary: Лента новостей
+      operationId: listNews
+      parameters:
+        - name: feed
+          in: query
+          description: MY — подписки пользователя, ALL — все публичные
+          schema: { type: string, enum: [MY, ALL], default: MY }
+        - name: authorId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: clubId
+          in: query
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Страница новостей
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NewsPage' }
+              example:
+                items:
+                  - id: 6a5b4c3d-2e1f-4a0b-9c8d-7e6f5a4b3c2d
+                    author: { id: e3b0c442-98fc-1c14-9afb-f4c8996fb924, displayName: Алексей Воронов, avatarUrl: null }
+                    clubId: 0f8fad5b-d9cb-469f-a165-70867728950e
+                    title: Осенний кубок — регистрация открыта!
+                    body: 'Ждём всех **22 ноября** в 13:00. Взнос 1000 ₽, призы — кии от партнёров.'
+                    imageUrls: [https://cdn.bitok.app/news/6a5b4c3d/1.jpg]
+                    tags: [турнир]
+                    status: PUBLISHED
+                    publishedAt: '2026-11-01T09:00:00Z'
+                nextCursor: eyJwIjoiMjAyNi0xMC0zMSJ9
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [News]
+      summary: Опубликовать новость (тренер / администратор клуба)
+      description: При `publishAt` в будущем — статус `SCHEDULED`. Публикация инициирует рассылку подписчикам (`content.published`).
+      operationId: createNews
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateNewsRequest' }
+            example:
+              title: Осенний кубок — регистрация открыта!
+              body: 'Ждём всех **22 ноября** в 13:00. Взнос 1000 ₽, призы — кии от партнёров.'
+              clubId: 0f8fad5b-d9cb-469f-a165-70867728950e
+              imageUploadIds: [4c3b2a1f-0e9d-4c8b-a7f6-e5d4c3b2a1f0]
+              tags: [турнир]
+              publishAt: '2026-11-01T09:00:00Z'
+              notifySubscribers: true
+      responses:
+        '201':
+          description: Новость создана
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NewsPost' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422':
+          description: Ошибка валидации (длина заголовка, число изображений > 10)
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+
+  /lessons:
+    get:
+      tags: [Lessons]
+      summary: Библиотека уроков
+      operationId: listLessons
+      parameters:
+        - name: discipline
+          in: query
+          schema: { type: string, enum: [RUSSIAN_PYRAMID, POOL, SNOOKER, CAROM] }
+        - name: metric
+          in: query
+          description: Уроки, развивающие метрику
+          schema: { type: string, enum: [stanceAndStroke, aiming, positionPlay, cueBallControl, tacticalThinking] }
+        - name: difficulty
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 5 }
+        - name: recommended
+          in: query
+          description: Персональные рекомендации по слабым метрикам ученика
+          schema: { type: boolean, default: false }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Страница уроков
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LessonPage' }
+              example:
+                items:
+                  - id: a8098c1a-f86e-11da-bd1a-00112444be1e
+                    author: { id: e3b0c442-98fc-1c14-9afb-f4c8996fb924, displayName: Алексей Воронов, avatarUrl: null }
+                    title: Выход на дальний борт
+                    summary: Контроль битка после резки с оттяжкой
+                    kind: VIDEO
+                    discipline: RUSSIAN_PYRAMID
+                    difficulty: 3
+                    relatedMetrics: [positionPlay, cueBallControl]
+                    videoUrl: https://cdn.bitok.app/lessons/a8098c1a/master.m3u8
+                    durationSeconds: 420
+                    visibility: PUBLIC
+                    publishedAt: '2026-10-10T08:00:00Z'
+                nextCursor: null
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Lessons]
+      summary: Создать урок (тренер)
+      description: Видео загружается заранее через `POST /media/upload-url`; урок публикуется после `content.media.ready`.
+      operationId: createLesson
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateLessonRequest' }
+            example:
+              title: Выход на дальний борт
+              summary: Контроль битка после резки с оттяжкой
+              kind: VIDEO
+              discipline: RUSSIAN_PYRAMID
+              difficulty: 3
+              relatedMetrics: [positionPlay, cueBallControl]
+              videoUploadId: 2b1a0f9e-8d7c-4b6a-a5f4-e3d2c1b0a9f8
+              visibility: PUBLIC
+      responses:
+        '201':
+          description: Урок создан (status = PROCESSING, если видео ещё транскодируется)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Lesson' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422':
+          description: Ошибка валидации
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+  responses:
+    BadRequest:
+      description: Некорректный запрос
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Не авторизован
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: Публиковать могут только тренеры и администраторы клубов
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }
+        traceId: { type: string }
+    AuthorRef:
+      type: object
+      required: [id, displayName]
+      properties:
+        id: { type: string, format: uuid }
+        displayName: { type: string }
+        avatarUrl: { type: string, format: uri, nullable: true }
+    NewsPost:
+      type: object
+      required: [id, author, title, body, status]
+      properties:
+        id: { type: string, format: uuid }
+        author: { $ref: '#/components/schemas/AuthorRef' }
+        clubId: { type: string, format: uuid, nullable: true }
+        title: { type: string, maxLength: 120 }
+        body: { type: string, maxLength: 10000, description: Markdown-подмножество }
+        imageUrls:
+          type: array
+          maxItems: 10
+          items: { type: string, format: uri }
+        tags:
+          type: array
+          items: { type: string }
+        status: { type: string, enum: [DRAFT, SCHEDULED, PUBLISHED, HIDDEN] }
+        publishAt: { type: string, format: date-time }
+        publishedAt: { type: string, format: date-time, nullable: true }
+    CreateNewsRequest:
+      type: object
+      required: [title, body]
+      additionalProperties: false
+      properties:
+        title: { type: string, minLength: 3, maxLength: 120 }
+        body: { type: string, minLength: 1, maxLength: 10000 }
+        clubId: { type: string, format: uuid }
+        imageUploadIds:
+          type: array
+          maxItems: 10
+          items: { type: string, format: uuid }
+        tags:
+          type: array
+          maxItems: 5
+          items: { type: string, maxLength: 30 }
+        publishAt: { type: string, format: date-time }
+        notifySubscribers: { type: boolean, default: true }
+    NewsPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/NewsPost' }
+        nextCursor: { type: string, nullable: true }
+    Lesson:
+      type: object
+      required: [id, author, title, kind, discipline, difficulty, visibility]
+      properties:
+        id: { type: string, format: uuid }
+        author: { $ref: '#/components/schemas/AuthorRef' }
+        title: { type: string }
+        summary: { type: string }
+        kind: { type: string, enum: [VIDEO, ARTICLE, DRILL] }
+        discipline: { type: string, enum: [RUSSIAN_PYRAMID, POOL, SNOOKER, CAROM] }
+        difficulty: { type: integer, minimum: 1, maximum: 5 }
+        relatedMetrics:
+          type: array
+          items: { type: string }
+        videoUrl: { type: string, format: uri, nullable: true }
+        durationSeconds: { type: integer, nullable: true }
+        body: { type: string, nullable: true }
+        drillDiagram:
+          type: object
+          nullable: true
+          description: Координаты шаров на столе (0..1) для отрисовки схемы упражнения
+          properties:
+            balls:
+              type: array
+              items:
+                type: object
+                properties:
+                  number: { type: integer }
+                  x: { type: number }
+                  y: { type: number }
+        visibility: { type: string, enum: [PUBLIC, MY_STUDENTS] }
+        status: { type: string, enum: [DRAFT, PROCESSING, PUBLISHED, HIDDEN] }
+        publishedAt: { type: string, format: date-time, nullable: true }
+    CreateLessonRequest:
+      type: object
+      required: [title, kind, discipline, difficulty, visibility]
+      additionalProperties: false
+      properties:
+        title: { type: string, minLength: 3, maxLength: 120 }
+        summary: { type: string, maxLength: 500 }
+        kind: { type: string, enum: [VIDEO, ARTICLE, DRILL] }
+        discipline: { type: string, enum: [RUSSIAN_PYRAMID, POOL, SNOOKER, CAROM] }
+        difficulty: { type: integer, minimum: 1, maximum: 5 }
+        relatedMetrics:
+          type: array
+          items: { type: string, enum: [stanceAndStroke, aiming, positionPlay, cueBallControl, tacticalThinking] }
+        videoUploadId: { type: string, format: uuid }
+        body: { type: string, maxLength: 20000 }
+        visibility: { type: string, enum: [PUBLIC, MY_STUDENTS] }
+    LessonPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Lesson' }
+        nextCursor: { type: string, nullable: true }

@@ -1,0 +1,415 @@
+openapi: 3.0.3
+info:
+  title: Bitok Identity Service API
+  version: 1.0.0
+  description: |
+    Регистрация и вход по телефону с OTP, JWT-токены, профили (FR-001, FR-002).
+    Двухшаговый поток: `/auth/register` или `/auth/login` отправляет OTP и возвращает `otpSessionId`;
+    `/auth/verify` проверяет код и выдаёт токены.
+servers:
+  - url: https://api.bitok.app/v1
+tags:
+  - name: Auth
+  - name: Users
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Начать регистрацию — отправить OTP
+      operationId: register
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+            example:
+              channel: SMS
+              phone: '+79991234567'
+              role: STUDENT
+              firstName: Иван
+              acceptedTermsVersion: '2026-09'
+              appAttestToken: eyJhdHRlc3RhdGlvbiI6Li4ufQ
+      responses:
+        '202':
+          description: OTP отправлен
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OtpChallenge' }
+              example:
+                otpSessionId: 0e2c1f5a-3b4d-4e6f-8a9b-1c2d3e4f5a6b
+                expiresIn: 300
+                resendAvailableIn: 60
+                codeLength: 6
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409':
+          description: Номер уже зарегистрирован (PHONE_ALREADY_REGISTERED) — клиент переключается на /auth/login
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Вход — отправить OTP (SMS или email)
+      description: Во избежание перечисления номеров ответ одинаков для существующих и несуществующих номеров (SMS отправляется только существующим).
+      operationId: login
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channel]
+              properties:
+                channel: { type: string, enum: [SMS, EMAIL] }
+                phone: { type: string, pattern: '^\+7\d{10}$' }
+                email: { type: string, format: email }
+                appAttestToken: { type: string }
+            examples:
+              sms:
+                value: { channel: SMS, phone: '+79991234567' }
+              email:
+                value: { channel: EMAIL, email: ivan@example.com }
+      responses:
+        '202':
+          description: OTP отправлен
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OtpChallenge' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/verify:
+    post:
+      tags: [Auth]
+      summary: Проверить OTP и получить токены
+      operationId: verifyOtp
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [otpSessionId, code]
+              properties:
+                otpSessionId: { type: string, format: uuid }
+                code: { type: string, pattern: '^\d{6}$' }
+            example: { otpSessionId: 0e2c1f5a-3b4d-4e6f-8a9b-1c2d3e4f5a6b, code: '482913' }
+      responses:
+        '200':
+          description: Успешная аутентификация
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPair' }
+              example:
+                accessToken: eyJhbGciOiJFUzI1NiIsImtpZCI6IjIwMjYtMTAifQ.eyJzdWIiOiJjNTZhNDE4MCIsInJvbGUiOiJTVFVERU5UIn0.sig
+                accessTokenExpiresIn: 900
+                refreshToken: rt_3k9Xq2Lm8Pz7Wv1Nc4Bd6Fh0Jt5Ry
+                refreshTokenExpiresIn: 2592000
+                user:
+                  id: c56a4180-65aa-42ec-a945-5fd21dec0538
+                  role: STUDENT
+                  firstName: Иван
+                  isNew: true
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: Неверный код (OTP_INVALID) или истёк (OTP_EXPIRED)
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '429':
+          description: Превышено число попыток (OTP_ATTEMPTS_EXCEEDED)
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Обновить пару токенов (ротация refresh token)
+      description: |
+        Каждый refresh token одноразовый. Повторное использование уже обменянного токена
+        отзывает всё семейство токенов устройства (reuse detection) и возвращает `401 TOKEN_REUSED`.
+      operationId: refreshToken
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+            example: { refreshToken: rt_3k9Xq2Lm8Pz7Wv1Nc4Bd6Fh0Jt5Ry }
+      responses:
+        '200':
+          description: Новая пара токенов
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPair' }
+        '401':
+          description: Токен недействителен, истёк или переиспользован (TOKEN_REUSED)
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+
+  /users/{id}:
+    get:
+      tags: [Users]
+      summary: Публичный профиль пользователя (или полный — для владельца)
+      description: |
+        Поле `phone` возвращается владельцу профиля и тренерам, у которых ученик занимается
+        (ContactAccessGrant, BR-002.2). Остальным поле отсутствует.
+      operationId: getUser
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Профиль
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserProfile' }
+              examples:
+                trainerPublic:
+                  value:
+                    id: e3b0c442-98fc-1c14-9afb-f4c8996fb924
+                    role: TRAINER
+                    firstName: Алексей
+                    lastName: Воронов
+                    avatarUrl: https://cdn.bitok.app/avatars/e3b0c442.jpg
+                    city: Москва
+                    trainer:
+                      verificationStatus: VERIFIED
+                      disciplines: [RUSSIAN_PYRAMID, POOL]
+                      rank: Мастер спорта
+                      experienceYears: 12
+                      bio: Тренирую с 2014 года, специализация — техника и выход
+                      pricePerHour: { amountMinor: 250000, currency: RUB }
+                self:
+                  value:
+                    id: c56a4180-65aa-42ec-a945-5fd21dec0538
+                    role: STUDENT
+                    firstName: Иван
+                    phone: '+79991234567'
+                    city: Москва
+                    student: { level: AMATEUR, preferredDiscipline: RUSSIAN_PYRAMID }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Users]
+      summary: Обновить свой профиль (FR-002)
+      operationId: updateUser
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - name: If-Match
+          in: header
+          required: false
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateUserRequest' }
+            example:
+              firstName: Иван
+              lastName: Петров
+              city: Москва
+              avatarUploadId: 7d6c5b4a-3f2e-4d1c-8b0a-9f8e7d6c5b4a
+              student: { level: AMATEUR, preferredDiscipline: POOL }
+      responses:
+        '200':
+          description: Обновлённый профиль
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserProfile' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '412':
+          description: Профиль изменён параллельно
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '422':
+          description: Ошибка валидации
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    DeviceId:
+      name: X-Device-Id
+      in: header
+      required: true
+      description: Стабильный идентификатор установки (identifierForVendor), привязывает семейство refresh-токенов
+      schema: { type: string, format: uuid }
+    UserId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  responses:
+    BadRequest:
+      description: Некорректный запрос
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Не авторизован
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: Нет прав
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Не найдено
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    TooManyRequests:
+      description: Лимит OTP-запросов превышен
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }
+        traceId: { type: string }
+    Money:
+      type: object
+      required: [amountMinor, currency]
+      properties:
+        amountMinor: { type: integer, format: int64 }
+        currency: { type: string, enum: [RUB] }
+    Role:
+      type: string
+      enum: [STUDENT, TRAINER, CLUB_ADMIN, SYSTEM_ADMIN]
+    RegisterRequest:
+      type: object
+      required: [channel, role, firstName, acceptedTermsVersion]
+      additionalProperties: false
+      description: Нужен `phone` при channel = SMS или `email` при channel = EMAIL
+      properties:
+        channel: { type: string, enum: [SMS, EMAIL] }
+        phone: { type: string, pattern: '^\+7\d{10}$', description: E.164 }
+        email: { type: string, format: email, maxLength: 254 }
+        role:
+          type: string
+          enum: [STUDENT, TRAINER]
+        firstName: { type: string, minLength: 1, maxLength: 50 }
+        acceptedTermsVersion: { type: string, description: Версия принятой оферты и политики ПДн (152-ФЗ) }
+        appAttestToken: { type: string, description: Apple App Attest / DeviceCheck для защиты от SMS-pumping }
+    OtpChallenge:
+      type: object
+      required: [otpSessionId, expiresIn, resendAvailableIn, codeLength]
+      properties:
+        otpSessionId: { type: string, format: uuid }
+        expiresIn: { type: integer, description: секунды }
+        resendAvailableIn: { type: integer, description: секунды }
+        codeLength: { type: integer }
+    TokenPair:
+      type: object
+      required: [accessToken, accessTokenExpiresIn, refreshToken, refreshTokenExpiresIn]
+      properties:
+        accessToken: { type: string }
+        accessTokenExpiresIn: { type: integer }
+        refreshToken: { type: string }
+        refreshTokenExpiresIn: { type: integer }
+        user:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            role: { $ref: '#/components/schemas/Role' }
+            firstName: { type: string }
+            isNew: { type: boolean }
+    UserProfile:
+      type: object
+      required: [id, role, firstName]
+      properties:
+        id: { type: string, format: uuid }
+        role: { $ref: '#/components/schemas/Role' }
+        firstName: { type: string }
+        lastName: { type: string, nullable: true }
+        phone: { type: string, description: Владельцу и тренеру ученика (BR-002.2), nullable: true }
+        email: { type: string, description: Только владельцу, nullable: true }
+        avatarUrl: { type: string, format: uri, nullable: true }
+        city: { type: string, nullable: true }
+        student:
+          type: object
+          nullable: true
+          properties:
+            level: { type: string, enum: [BEGINNER, AMATEUR, ADVANCED, PRO] }
+            preferredDiscipline: { type: string, enum: [RUSSIAN_PYRAMID, POOL, SNOOKER, CAROM] }
+        trainer:
+          type: object
+          nullable: true
+          properties:
+            verificationStatus: { type: string, enum: [PENDING_VERIFICATION, VERIFIED, REJECTED] }
+            disciplines:
+              type: array
+              items: { type: string, enum: [RUSSIAN_PYRAMID, POOL, SNOOKER, CAROM] }
+            clubIds:
+              type: array
+              items: { type: string, format: uuid }
+            rank: { type: string }
+            experienceYears: { type: integer }
+            bio: { type: string, maxLength: 2000 }
+            pricePerHour: { $ref: '#/components/schemas/Money' }
+    UpdateUserRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        firstName: { type: string, minLength: 1, maxLength: 50 }
+        lastName: { type: string, maxLength: 50 }
+        city: { type: string, maxLength: 100 }
+        avatarUploadId: { type: string, format: uuid, description: ID загрузки из POST /media/upload-url }
+        student:
+          type: object
+          properties:
+            level: { type: string, enum: [BEGINNER, AMATEUR, ADVANCED, PRO] }
+            preferredDiscipline: { type: string, enum: [RUSSIAN_PYRAMID, POOL, SNOOKER, CAROM] }
+        trainer:
+          type: object
+          properties:
+            disciplines:
+              type: array
+              items: { type: string, enum: [RUSSIAN_PYRAMID, POOL, SNOOKER, CAROM] }
+            clubIds:
+              type: array
+              items: { type: string, format: uuid }
+            bio: { type: string, maxLength: 2000 }
+            pricePerHour: { $ref: '#/components/schemas/Money' }

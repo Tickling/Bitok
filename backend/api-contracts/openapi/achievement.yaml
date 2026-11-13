@@ -1,0 +1,503 @@
+openapi: 3.0.3
+info:
+  title: Bitok Achievement Service API
+  version: 1.0.0
+  description: Достижения, турниры и уникализация профиля (FR-014 — FR-016).
+servers:
+  - url: https://api.bitok.app/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: Achievements
+  - name: Tournaments
+  - name: Customization
+paths:
+  /students/{id}/achievements:
+    get:
+      tags: [Achievements]
+      summary: Достижения ученика и прогресс к незаработанным (FR-014)
+      description: Владелец и его тренер — всегда; остальные — при `showAchievementsToStudents = true`.
+      operationId: getStudentAchievements
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - name: includeLocked
+          in: query
+          description: Включить незаработанные с прогрессом (только для владельца)
+          schema: { type: boolean, default: true }
+      responses:
+        '200':
+          description: Достижения
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AchievementsResponse' }
+              example:
+                earned:
+                  - id: 2c1e4b7a-9f3d-4e2a-8b6c-1d0e9f8a7b6c
+                    code: PODIUM_GOLD
+                    title: Чемпион
+                    description: Займите 1 место в турнире
+                    rarity: LEGENDARY
+                    category: TOURNAMENT
+                    grantedAt: '2026-10-20T19:00:00Z'
+                    reward: { itemId: 8b7a6c5d-4e3f-4a2b-9c1d-0e9f8a7b6c5d, type: FRAME, code: frame.gold }
+                inProgress:
+                  - code: REGULAR_10
+                    title: Завсегдатай
+                    rarity: RARE
+                    current: 7
+                    target: 10
+                stats: { totalEarned: 6, totalAvailable: 10, rarestRarity: LEGENDARY }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Скрыто настройками приватности
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /tournaments:
+    post:
+      tags: [Tournaments]
+      summary: Создать турнир (FR-015)
+      description: Доступно верифицированным тренерам и администраторам клуба.
+      operationId: createTournament
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateTournamentRequest' }
+            example:
+              title: Осенний кубок «Престижа»
+              clubId: 0f8fad5b-d9cb-469f-a165-70867728950e
+              discipline: RUSSIAN_PYRAMID
+              format: SINGLE_ELIMINATION
+              startsAt: '2026-11-22T10:00:00Z'
+              registrationDeadline: '2026-11-20T21:00:00Z'
+              maxParticipants: 16
+              entryFee: { amountMinor: 100000, currency: RUB }
+              description: Турнир для любителей, игра до 3 побед
+              openRegistration: true
+      responses:
+        '201':
+          description: Турнир создан
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tournament' }
+              example:
+                id: 4d3c2b1a-0f9e-4d8c-b7a6-5f4e3d2c1b0a
+                organizerId: e3b0c442-98fc-1c14-9afb-f4c8996fb924
+                title: Осенний кубок «Престижа»
+                clubId: 0f8fad5b-d9cb-469f-a165-70867728950e
+                discipline: RUSSIAN_PYRAMID
+                format: SINGLE_ELIMINATION
+                startsAt: '2026-11-22T10:00:00Z'
+                registrationDeadline: '2026-11-20T21:00:00Z'
+                maxParticipants: 16
+                participantsCount: 0
+                entryFee: { amountMinor: 100000, currency: RUB }
+                status: REGISTRATION_OPEN
+                version: 1
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422':
+          description: Дата в прошлом, maxParticipants вне 2..128 и т.п.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+
+  /tournaments/{id}/results:
+    post:
+      tags: [Tournaments]
+      summary: Внести итоги турнира и начислить награды (FR-015)
+      description: |
+        Только организатор. Переводит турнир в `FINISHED`, начисляет медали, достижения
+        `PODIUM_*` и разблокирует рамки. Идемпотентно по `Idempotency-Key`.
+        Повторный вызов с новым ключом в течение 48 ч — корректировка (с компенсацией наград).
+      operationId: submitTournamentResults
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubmitResultsRequest' }
+            example:
+              results:
+                - { studentId: c56a4180-65aa-42ec-a945-5fd21dec0538, place: 1 }
+                - { studentId: 16fd2706-8baf-433b-82eb-8c7fada847da, place: 2 }
+                - { studentId: 886313e1-3b8a-5372-9b90-0c9aee199e5d, place: 3 }
+                - { studentId: 9b2e3f4a-5c6d-4e7f-8a9b-0c1d2e3f4a5b, place: 3 }
+              matches:
+                - { round: 3, playerAId: c56a4180-65aa-42ec-a945-5fd21dec0538, playerBId: 16fd2706-8baf-433b-82eb-8c7fada847da, framesA: 3, framesB: 1, ballsPottedA: 31, ballsPottedB: 18 }
+      responses:
+        '200':
+          description: Итоги сохранены, награды начислены
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TournamentResults' }
+              example:
+                tournamentId: 4d3c2b1a-0f9e-4d8c-b7a6-5f4e3d2c1b0a
+                status: FINISHED
+                results:
+                  - { studentId: c56a4180-65aa-42ec-a945-5fd21dec0538, place: 1, medal: GOLD, points: 100 }
+                  - { studentId: 16fd2706-8baf-433b-82eb-8c7fada847da, place: 2, medal: SILVER, points: 70 }
+                  - { studentId: 886313e1-3b8a-5372-9b90-0c9aee199e5d, place: 3, medal: BRONZE, points: 50 }
+                  - { studentId: 9b2e3f4a-5c6d-4e7f-8a9b-0c1d2e3f4a5b, place: 3, medal: BRONZE, points: 50 }
+                grantedAchievements:
+                  - { studentId: c56a4180-65aa-42ec-a945-5fd21dec0538, code: PODIUM_GOLD }
+                  - { studentId: 16fd2706-8baf-433b-82eb-8c7fada847da, code: PODIUM_SILVER }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Турнир не в статусе IN_PROGRESS/FINISHED или окно корректировки (48 ч) закрыто
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '422':
+          description: Дублирующиеся места (DUPLICATE_PLACE) или участник не зарегистрирован (NOT_PARTICIPANT)
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+
+  /students/{id}/tournament-stats:
+    get:
+      tags: [Tournaments]
+      summary: Статистика турниров ученика (FR-015)
+      description: Подчиняется `showAchievementsToStudents` (тренер ученика видит всегда).
+      operationId: getTournamentStats
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+      responses:
+        '200':
+          description: Агрегированная статистика и карточки медалей
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TournamentStats' }
+              example:
+                tournamentsPlayed: 5
+                medals: { gold: 1, silver: 0, bronze: 2, participant: 2 }
+                bestPlace: 1
+                matchesPlayed: 17
+                matchesWon: 11
+                winRate: 0.65
+                ballsPotted: 214
+                averageBallsPerMatch: 12.6
+                opponents:
+                  - { opponentId: 16fd2706-8baf-433b-82eb-8c7fada847da, displayName: Сергей К., wins: 2, losses: 1 }
+                medalCards:
+                  - tournamentId: 4d3c2b1a-0f9e-4d8c-b7a6-5f4e3d2c1b0a
+                    tournamentTitle: Осенний кубок «Престижа»
+                    date: '2026-11-22'
+                    club: Престиж
+                    place: 3
+                    medal: BRONZE
+                    isFirstMedal: true
+                    matchesWon: 3
+                    matchesPlayed: 4
+                    ballsPotted: 48
+                    defeatedOpponents: [Сергей К., Дмитрий Л., Олег М.]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Скрыто настройками приватности
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /students/{id}/profile-customization:
+    get:
+      tags: [Customization]
+      summary: Кастомизация профиля и доступные элементы (FR-016)
+      operationId: getProfileCustomization
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+      responses:
+        '200':
+          description: Текущая витрина; `unlockedItems` возвращается только владельцу
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProfileCustomization' }
+              example:
+                studentId: c56a4180-65aa-42ec-a945-5fd21dec0538
+                frame: { id: 8b7a6c5d-4e3f-4a2b-9c1d-0e9f8a7b6c5d, type: FRAME, code: frame.gold, title: Золотая рамка, rarity: LEGENDARY, animated: true }
+                badges:
+                  - { id: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d, type: BADGE, code: badge.streak, title: Железная серия, rarity: RARE, animated: false }
+                title: { id: 6f5e4d3c-2b1a-4f0e-9d8c-7b6a5f4e3d2c, type: TITLE, code: title.champion, title: Чемпион клуба, rarity: LEGENDARY, animated: false }
+                theme: { id: 0a9b8c7d-6e5f-4a3b-2c1d-0e9f8a7b6c5d, type: THEME, code: theme.graphite, title: Графит, rarity: RARE, animated: false }
+                effect: null
+                unlockedItems: []
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Скрыто настройками приватности
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    StudentId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  responses:
+    BadRequest:
+      description: Некорректный запрос
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Не авторизован
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: Нет прав
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Не найдено
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }
+        traceId: { type: string }
+    Money:
+      type: object
+      required: [amountMinor, currency]
+      properties:
+        amountMinor: { type: integer, format: int64 }
+        currency: { type: string, enum: [RUB] }
+    Rarity:
+      type: string
+      enum: [COMMON, RARE, EPIC, LEGENDARY]
+    CustomizationItem:
+      type: object
+      required: [id, type, code, title, rarity]
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string, enum: [FRAME, BADGE, TITLE, THEME, EFFECT] }
+        code: { type: string }
+        title: { type: string }
+        rarity: { $ref: '#/components/schemas/Rarity' }
+        animated: { type: boolean }
+    EarnedAchievement:
+      type: object
+      required: [id, code, title, rarity, grantedAt]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        title: { type: string }
+        description: { type: string }
+        rarity: { $ref: '#/components/schemas/Rarity' }
+        category: { type: string, enum: [ACTIVITY, SKILL, TOURNAMENT, SOCIAL] }
+        grantedAt: { type: string, format: date-time }
+        reward:
+          type: object
+          nullable: true
+          properties:
+            itemId: { type: string, format: uuid }
+            type: { type: string }
+            code: { type: string }
+    AchievementProgress:
+      type: object
+      required: [code, title, current, target]
+      properties:
+        code: { type: string }
+        title: { type: string }
+        rarity: { $ref: '#/components/schemas/Rarity' }
+        current: { type: integer }
+        target: { type: integer }
+    AchievementsResponse:
+      type: object
+      required: [earned]
+      properties:
+        earned:
+          type: array
+          items: { $ref: '#/components/schemas/EarnedAchievement' }
+        inProgress:
+          type: array
+          items: { $ref: '#/components/schemas/AchievementProgress' }
+        stats:
+          type: object
+          properties:
+            totalEarned: { type: integer }
+            totalAvailable: { type: integer }
+            rarestRarity: { $ref: '#/components/schemas/Rarity' }
+    CreateTournamentRequest:
+      type: object
+      required: [title, clubId, discipline, format, startsAt, maxParticipants]
+      additionalProperties: false
+      properties:
+        title: { type: string, minLength: 3, maxLength: 120 }
+        description: { type: string, maxLength: 2000 }
+        clubId: { type: string, format: uuid }
+        discipline: { type: string, enum: [RUSSIAN_PYRAMID, POOL, SNOOKER, CAROM] }
+        format: { type: string, enum: [SINGLE_ELIMINATION, DOUBLE_ELIMINATION, ROUND_ROBIN] }
+        startsAt: { type: string, format: date-time }
+        registrationDeadline: { type: string, format: date-time }
+        maxParticipants: { type: integer, minimum: 2, maximum: 128 }
+        entryFee: { $ref: '#/components/schemas/Money' }
+        openRegistration: { type: boolean, default: false }
+    Tournament:
+      type: object
+      required: [id, organizerId, title, clubId, discipline, format, startsAt, maxParticipants, participantsCount, status, version]
+      properties:
+        id: { type: string, format: uuid }
+        organizerId: { type: string, format: uuid }
+        title: { type: string }
+        description: { type: string }
+        clubId: { type: string, format: uuid }
+        discipline: { type: string }
+        format: { type: string }
+        startsAt: { type: string, format: date-time }
+        registrationDeadline: { type: string, format: date-time }
+        maxParticipants: { type: integer }
+        participantsCount: { type: integer }
+        entryFee: { $ref: '#/components/schemas/Money' }
+        status:
+          type: string
+          enum: [DRAFT, REGISTRATION_OPEN, REGISTRATION_CLOSED, IN_PROGRESS, FINISHED, CANCELLED]
+        version: { type: integer }
+    TournamentStats:
+      type: object
+      required: [tournamentsPlayed, medals, matchesPlayed, matchesWon, ballsPotted]
+      properties:
+        tournamentsPlayed: { type: integer }
+        medals:
+          type: object
+          properties:
+            gold: { type: integer }
+            silver: { type: integer }
+            bronze: { type: integer }
+            participant: { type: integer, description: Медали участника (места ниже 3-го) }
+        bestPlace: { type: integer, nullable: true }
+        matchesPlayed: { type: integer }
+        matchesWon: { type: integer }
+        winRate: { type: number, format: float }
+        ballsPotted: { type: integer }
+        averageBallsPerMatch: { type: number, format: float }
+        opponents:
+          type: array
+          items:
+            type: object
+            properties:
+              opponentId: { type: string, format: uuid }
+              displayName: { type: string }
+              wins: { type: integer }
+              losses: { type: integer }
+        medalCards:
+          type: array
+          items:
+            type: object
+            properties:
+              tournamentId: { type: string, format: uuid }
+              tournamentTitle: { type: string }
+              date: { type: string, format: date }
+              club: { type: string }
+              place: { type: integer }
+              medal: { type: string, enum: [GOLD, SILVER, BRONZE, PARTICIPANT] }
+              isFirstMedal: { type: boolean }
+              matchesWon: { type: integer }
+              matchesPlayed: { type: integer }
+              ballsPotted: { type: integer }
+              defeatedOpponents:
+                type: array
+                items: { type: string }
+    SubmitResultsRequest:
+      type: object
+      required: [results]
+      properties:
+        matches:
+          type: array
+          description: Опционально — результаты матчей для статистики (забитые шары, соперники)
+          items:
+            type: object
+            required: [round, playerAId, playerBId, framesA, framesB]
+            properties:
+              round: { type: integer, minimum: 1 }
+              playerAId: { type: string, format: uuid }
+              playerBId: { type: string, format: uuid }
+              framesA: { type: integer, minimum: 0 }
+              framesB: { type: integer, minimum: 0 }
+              ballsPottedA: { type: integer, minimum: 0 }
+              ballsPottedB: { type: integer, minimum: 0 }
+        results:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [studentId, place]
+            properties:
+              studentId: { type: string, format: uuid }
+              place: { type: integer, minimum: 1 }
+    TournamentResults:
+      type: object
+      required: [tournamentId, status, results]
+      properties:
+        tournamentId: { type: string, format: uuid }
+        status: { type: string }
+        results:
+          type: array
+          items:
+            type: object
+            required: [studentId, place, points]
+            properties:
+              studentId: { type: string, format: uuid }
+              place: { type: integer }
+              medal: { type: string, enum: [GOLD, SILVER, BRONZE, PARTICIPANT] }
+              points: { type: integer }
+        grantedAchievements:
+          type: array
+          items:
+            type: object
+            properties:
+              studentId: { type: string, format: uuid }
+              code: { type: string }
+    ProfileCustomization:
+      type: object
+      required: [studentId, badges]
+      properties:
+        studentId: { type: string, format: uuid }
+        frame:
+          allOf: [{ $ref: '#/components/schemas/CustomizationItem' }]
+          nullable: true
+        badges:
+          type: array
+          maxItems: 3
+          items: { $ref: '#/components/schemas/CustomizationItem' }
+        title:
+          allOf: [{ $ref: '#/components/schemas/CustomizationItem' }]
+          nullable: true
+        theme:
+          allOf: [{ $ref: '#/components/schemas/CustomizationItem' }]
+          nullable: true
+        effect:
+          allOf: [{ $ref: '#/components/schemas/CustomizationItem' }]
+          nullable: true
+        unlockedItems:
+          type: array
+          items: { $ref: '#/components/schemas/CustomizationItem' }

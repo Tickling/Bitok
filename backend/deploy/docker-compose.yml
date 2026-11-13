@@ -1,0 +1,75 @@
+# Локальное окружение разработчика (ANALYTICS.md, раздел 4.5.1).
+# Запуск из каталога backend/: docker compose -f deploy/docker-compose.yml up --build
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: dev
+    command: ["postgres", "-c", "wal_level=logical"]   # для Debezium CDC (Outbox)
+    volumes:
+      - ./init-dbs.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    ports: ["5432:5432"]
+
+  redis:
+    image: redis:7
+    ports: ["6379:6379"]
+
+  kafka:
+    image: bitnami/kafka:3.7
+    environment:
+      KAFKA_CFG_NODE_ID: "1"
+      KAFKA_CFG_PROCESS_ROLES: controller,broker
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+    ports: ["9092:9092"]
+
+  schema-registry:
+    image: apicurio/apicurio-registry-mem:2.6.2.Final
+    ports: ["8085:8080"]
+
+  debezium:
+    image: debezium/connect:2.7
+    depends_on: [kafka, postgres]
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9092
+      GROUP_ID: outbox-relay
+      CONFIG_STORAGE_TOPIC: connect_configs
+      OFFSET_STORAGE_TOPIC: connect_offsets
+      STATUS_STORAGE_TOPIC: connect_statuses
+    ports: ["8083:8083"]
+
+  unleash:
+    image: unleashorg/unleash-server:6
+    depends_on: [postgres]
+    environment:
+      DATABASE_URL: postgres://postgres:dev@postgres:5432/unleash
+      DATABASE_SSL: "false"
+    ports: ["4242:4242"]
+
+  minio:
+    image: minio/minio:latest
+    command: server /data
+    ports: ["9000:9000"]
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.60
+    ports: ["16686:16686"]
+
+  booking:
+    build:
+      context: ..
+      dockerfile: services/booking/Dockerfile
+    environment:
+      PORT: "3001"
+      PAYMENTS_ENABLED: "false"      # true → шаг AWAITING_PAYMENT (FeatureFlagPaymentPolicy)
+      SEED_DEMO: "true"
+    ports: ["3001:3001"]
+
+  messaging:
+    build:
+      context: ../services/messaging
+    environment:
+      PORT: "3005"
+    ports: ["3005:3005"]

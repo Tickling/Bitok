@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.bitok.app/cloudevent/v1.json",
+  "title": "CloudEvents 1.0 envelope (Bitok)",
+  "type": "object",
+  "required": [
+    "specversion",
+    "id",
+    "type",
+    "source",
+    "time",
+    "data"
+  ],
+  "properties": {
+    "specversion": {
+      "const": "1.0"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "achievement.tournament.finished",
+        "achievement.unlocked",
+        "booking.cancelled",
+        "booking.completed",
+        "booking.confirmed",
+        "booking.confirmed_by_coach",
+        "booking.expired",
+        "booking.payment_rejected",
+        "booking.requested",
+        "content.published",
+        "payment.expired",
+        "payment.failed",
+        "payment.succeeded",
+        "progress.evaluated"
+      ]
+    },
+    "source": {
+      "type": "string"
+    },
+    "subject": {
+      "type": "string"
+    },
+    "time": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "datacontenttype": {
+      "const": "application/json"
+    },
+    "dataschema": {
+      "type": "string",
+      "format": "uri"
+    },
+    "traceparent": {
+      "type": "string"
+    },
+    "data": {
+      "type": "object"
+    }
+  }
+}

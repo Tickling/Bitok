@@ -1,0 +1,227 @@
+// App/Sources/HelpView.swift — «Помощь»: где что находится и как этим пользоваться.
+import SwiftUI
+import CoreDomain
+import DesignSystem
+
+struct HelpView: View {
+    @Environment(\.palette) private var palette
+    let role: UserRole
+    /// Есть подписка «Биток Про» — показываем инструкцию к камере-помощнику первой.
+    var isPro = false
+
+    private struct Topic: Identifiable {
+        let id = UUID()
+        let icon: String
+        let title: String
+        let steps: [String]
+    }
+
+    private var topics: [Topic] {
+        role == .trainer ? coachTopics : studentTopics
+    }
+
+    private let studentTopics: [Topic] = [
+        Topic(icon: "calendar", title: "Как записаться на тренировку", steps: [
+            "Откройте вкладку «Календарь» и выберите тренера вверху.",
+            "Дни со свободным временем выделены. Нажмите на день, затем на время.",
+            "Нажмите «Продолжить», проверьте запись и нажмите «Записаться».",
+            "Откроется чат с тренером: там видно, подтвердил ли он заявку.",
+        ]),
+        Topic(icon: "person.3", title: "Групповые (игровые) тренировки", steps: [
+            "В «Календаре» под расписанием есть блок «Групповые тренировки».",
+            "Нажмите на тренировку — увидите место, цену и сколько осталось мест.",
+            "«Записаться» — и вы в списке участников. Передумали — «Не смогу прийти».",
+        ]),
+        Topic(icon: "xmark.circle", title: "Отменить или перенести", steps: [
+            "Нажмите на запись в «Моих записях» или на карточку в чате.",
+            "«Отменить запись» — выберите причину. Меньше чем за 12 часов отмена считается поздней.",
+            "«Перенести на другое время» — запись отменится, и откроется календарь этого тренера.",
+        ]),
+        Topic(icon: "calendar.badge.clock", title: "Тренер предложил время", steps: [
+            "В чате появится карточка «Предложение тренировки».",
+            "«Принять» — запись сразу подтверждена. «Другое время» — откроется календарь. «Нет» — отказ.",
+        ]),
+        Topic(icon: "chart.xyaxis.line", title: "Прогресс и достижения", steps: [
+            "После тренировки тренер оценивает 5 навыков от 0 до 100.",
+            "Во вкладке «Прогресс» — радар навыков, графики и рекомендации.",
+            "Медали за турниры — в «Профиле» → «Трофеи и достижения».",
+        ]),
+        Topic(icon: "bubble.left.and.bubble.right", title: "Игроки клуба и обмен номерами", steps: [
+            "«Чат» → «Игроки» — другие ученики клуба. Нажмите на игрока, затем «Написать».",
+            "Кнопка «＋» в чате: «Предложить сыграть» или «Обменяться номерами».",
+            "Номера видны только после согласия обоих. Тренер видит ваш номер всегда.",
+        ]),
+        Topic(icon: "newspaper", title: "Контент: новости и магазин", steps: [
+            "«Новости» — турниры и события клуба от тренеров.",
+            "«Магазин» — кии, мелки, перчатки и услуги ремонта по категориям. «Написать продавцу» открывает чат.",
+        ]),
+        Topic(icon: "gearshape", title: "Профиль и настройки", steps: [
+            "«Редактировать профиль» — имя, город, дисциплина и фото.",
+            "«Рамка и титул» — как вы выглядите в карточке игрока.",
+            "«Настройки» — тема, размер текста, приватность прогресса, напоминания, выход.",
+        ]),
+    ]
+
+    private let coachTopics: [Topic] = [
+        Topic(icon: "mappin.and.ellipse", title: "Где и когда я тренирую", steps: [
+            "«Профиль» → «Места и расписание». Добавьте место (например, «Флагман» или «Тиджон»).",
+            "Отметьте дни и часы начала тренировок — из них получатся свободные слоты на 3 недели вперёд.",
+            "«Кто может записаться»: все ученики или только выбранные. Остальные это место не увидят.",
+        ]),
+        Topic(icon: "calendar", title: "Календарь и заявки", steps: [
+            "Вкладка «Календарь»: «День», «Неделя» (цветная сетка или список) и «Месяц».",
+            "Новые заявки — сверху: «Подтвердить», «Отклонить» или «Другое время».",
+            "Нажмите на любую карточку, чтобы открыть подробности.",
+        ]),
+        Topic(icon: "calendar.badge.clock", title: "Предложить ученику время", steps: [
+            "В чате с учеником нажмите 📅 и выберите день и время.",
+            "Ученик примет предложение одной кнопкой — запись сразу будет подтверждена.",
+            "На заявку можно ответить «Другое время»: заявка закроется, ученику уйдёт ваш вариант.",
+        ]),
+        Topic(icon: "arrow.left.arrow.right", title: "Поменять учеников местами", steps: [
+            "Откройте подтверждённую тренировку (в календаре или в чате) → «Поменять местами».",
+            "Выберите другого ученика — они поменяются временем, оба получат сообщение.",
+        ]),
+        Topic(icon: "person.3", title: "Групповые тренировки", steps: [
+            "«Профиль» → «Групповые тренировки» → «Создать групповую».",
+            "Укажите место, время, число мест и цену. Ученики запишутся сами.",
+        ]),
+        Topic(icon: "rublesign.circle", title: "Цены", steps: [
+            "Базовая цена — в «Редактировать профиль».",
+            "Своя цена для ученика — «Ученики» → ученик → «Цена для ученика».",
+            "Ученик видит только свою цену в записи.",
+        ]),
+        Topic(icon: "slider.horizontal.3", title: "Оценка после тренировки", steps: [
+            "После тренировки откройте запись → «Оценить ученика».",
+            "5 навыков от 0 до 100 и комментарий — ученик сразу увидит прогресс.",
+        ]),
+        Topic(icon: "newspaper", title: "Публикации", steps: [
+            "«Контент» → «Новости» → «＋»: новость или анонс турнира.",
+            "«Контент» → «Магазин» → «＋»: товар (кии, мелки, перчатки) или услуга ремонта и обслуживания.",
+        ]),
+    ]
+
+    var body: some View {
+        List {
+            Section {
+                Text(role == .trainer
+                     ? "Коротко о том, где что находится в приложении тренера."
+                     : "Коротко о том, где что находится и что можно делать.")
+                    .foregroundStyle(palette.textSecondary)
+            }
+            if isPro && role == .student {
+                Section("Биток Про: как это выглядит") {
+                    ProCarousel()
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+                }
+                Section("Биток Про: камера-помощник") {
+                    ProGuideContent()
+                }
+            }
+            Section("Экраны с подсказками") {
+                ForEach(role == .trainer ? HelpShot.coach : HelpShot.student) { shot in
+                    HelpShotCard(shot: shot)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
+                }
+            }
+            Section("Пошагово") {
+            ForEach(topics) { topic in
+                DisclosureGroup {
+                    VStack(alignment: .leading, spacing: Space.s) {
+                        ForEach(Array(topic.steps.enumerated()), id: \.offset) { index, step in
+                            HStack(alignment: .top, spacing: Space.s) {
+                                Text("\(index + 1)").font(.caption.bold()).foregroundStyle(palette.onAccent)
+                                    .frame(width: 20, height: 20)
+                                    .background(palette.accent, in: Circle())
+                                Text(step).font(.callout)
+                            }
+                        }
+                    }
+                    .padding(.vertical, Space.xs)
+                } label: {
+                    Label(topic.title, systemImage: topic.icon).font(.headline)
+                }
+            }
+            }
+            Section("Вкладки") {
+                LabeledContent("Календарь", value: role == .trainer ? "расписание и заявки" : "запись к тренеру")
+                LabeledContent(role == .trainer ? "Ученики" : "Прогресс",
+                               value: role == .trainer ? "список, оценки, цены" : "навыки и достижения")
+                LabeledContent("Чат", value: "переписка, игроки, уведомления")
+                LabeledContent("Контент", value: "новости, турниры, магазин")
+                LabeledContent("Профиль", value: "карточка, настройки, помощь")
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(ThemedBackground())
+        .navigationTitle("Помощь")
+    }
+}
+
+/// Инструкция к «Биток Про» (в «Помощи» и сразу после оформления подписки).
+struct ProGuideContent: View {
+    @Environment(\.palette) private var palette
+
+    private let steps: [(String, String)] = [
+        ("list.number", "Откройте «Прогресс» → «Упражнения» и выберите упражнение. На схеме видно, где стоят шары и где поставить штатив 📷."),
+        ("camera.viewfinder", "Нажмите «Камера-помощник» → «Расстановка». Встаньте у короткого борта: камера подскажет, отойти назад или подойти, пока весь стол не окажется в кадре."),
+        ("smallcircle.filled.circle", "Наклейте точки там, где светятся голубые круги, и поставьте на них шары. Зелёный — шар на месте, красный — подсказка, куда сдвинуть."),
+        ("camera.on.rectangle", "Режим «Выполнение»: поставьте телефон на штатив у противоположного борта, напротив себя (место показано на схеме). Нажмите «Начать запись»."),
+        ("target", "Бейте — приложение считает удары, хвалит за попадания и подбадривает после промахов."),
+        ("star.fill", "«Завершить» → звёзды: ⭐️ от 40%, ⭐️⭐️ от 60%, ⭐️⭐️⭐️ от 80%. Ошибки отмечены на видео с советом, как исправить."),
+        ("paperplane.fill", "Видео можно сохранить в галерею, в приложение или отправить тренеру. Если ошибка повторяется — отправьте тренеру кусочек видео с ней."),
+        ("scope", "Упражнения «Чужой шар» и «Свояк»: на схеме виден мнимый шар — куда прицелиться, срез и толщина, и советы, как бить."),
+        ("play.rectangle", "Видео-уроки тренера: в упражнении тренер рассказывает, как его выполнять и на что обратить внимание."),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.m) {
+            ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
+                HStack(alignment: .top, spacing: Space.m) {
+                    ZStack {
+                        Circle().fill(palette.accent).frame(width: 30, height: 30)
+                        Image(systemName: step.0).font(.caption.bold()).foregroundStyle(palette.onAccent)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Шаг \(index + 1)").font(.caption.weight(.semibold)).foregroundStyle(palette.textSecondary)
+                        Text(step.1).font(.callout)
+                    }
+                }
+            }
+            Text("Совет: сукно может быть зелёным, бирюзовым или синим — камера сама определит цвет. Хорошее освещение помогает; телефон держите неподвижно.")
+                .font(.caption).foregroundStyle(palette.textSecondary)
+        }
+        .padding(.vertical, Space.xs)
+    }
+}
+
+/// Экран после оформления подписки.
+struct ProWelcomeView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.palette) private var palette
+    var onStart: () -> Void = {}
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: Space.l) {
+                    Label("Биток Про подключён ✨", systemImage: "checkmark.seal.fill").font(.title2.weight(.bold))
+                        .foregroundStyle(palette.accent)
+                    Text("Как пользоваться камерой-помощником").font(.headline)
+                    ProGuideContent()
+                    Text("Инструкция всегда доступна в «Профиль» → «Помощь».").font(.caption).foregroundStyle(palette.textSecondary)
+                }
+                .padding(Space.l)
+            }
+            .safeAreaInset(edge: .bottom) {
+                Button("Начать") { dismiss(); onStart() }
+                    .buttonStyle(.cueGlassProminent)
+                    .padding(.horizontal, Space.l)
+                    .padding(.bottom, Space.s)
+            }
+            .background(ThemedBackground())
+        }
+    }
+}

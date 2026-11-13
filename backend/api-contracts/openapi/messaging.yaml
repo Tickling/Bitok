@@ -1,0 +1,275 @@
+openapi: 3.0.3
+info:
+  title: Bitok Messaging Service API
+  version: 1.0.0
+  description: |
+    Чаты тренер ↔ ученик (FR-017). Real-time доставка — WebSocket `wss://api.bitok.app/v1/ws`
+    (события `message.created`, `message.read`); REST — для истории и отправки с гарантией.
+servers:
+  - url: https://api.bitok.app/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: Chats
+paths:
+  /chats:
+    get:
+      tags: [Chats]
+      summary: Список чатов пользователя
+      operationId: listChats
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Чаты, отсортированные по последнему сообщению
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatPage' }
+              example:
+                items:
+                  - id: 5e4d3c2b-1a0f-4e9d-8c7b-6a5f4e3d2c1b
+                    counterpart:
+                      id: e3b0c442-98fc-1c14-9afb-f4c8996fb924
+                      displayName: Алексей Воронов
+                      avatarUrl: https://cdn.bitok.app/avatars/e3b0c442.jpg
+                      role: TRAINER
+                    lastMessage:
+                      id: 0d1c2b3a-4f5e-4d6c-9b8a-7f6e5d4c3b2a
+                      chatId: 5e4d3c2b-1a0f-4e9d-8c7b-6a5f4e3d2c1b
+                      senderId: e3b0c442-98fc-1c14-9afb-f4c8996fb924
+                      clientMessageId: a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d
+                      sequence: 42
+                      kind: TEXT
+                      text: Жду вас в четверг, возьмите свой кий
+                      createdAt: '2026-11-02T10:15:00Z'
+                    unreadCount: 1
+                nextCursor: null
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /chats/{id}/messages:
+    get:
+      tags: [Chats]
+      summary: История сообщений чата
+      description: Пагинация по `sequence` (монотонный номер в чате). `beforeSequence` — для подгрузки старых, `afterSequence` — для догрузки пропущенных после реконнекта.
+      operationId: listMessages
+      parameters:
+        - $ref: '#/components/parameters/ChatId'
+        - name: beforeSequence
+          in: query
+          schema: { type: integer, format: int64 }
+        - name: afterSequence
+          in: query
+          schema: { type: integer, format: int64 }
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Сообщения по возрастанию sequence
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, hasMore]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Message' }
+                  hasMore: { type: boolean }
+              example:
+                items:
+                  - id: 0d1c2b3a-4f5e-4d6c-9b8a-7f6e5d4c3b2a
+                    chatId: 5e4d3c2b-1a0f-4e9d-8c7b-6a5f4e3d2c1b
+                    senderId: e3b0c442-98fc-1c14-9afb-f4c8996fb924
+                    clientMessageId: a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d
+                    sequence: 42
+                    kind: TEXT
+                    text: Жду вас в четверг, возьмите свой кий
+                    createdAt: '2026-11-02T10:15:00Z'
+                    readAt: null
+                hasMore: true
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Chats]
+      summary: Отправить сообщение
+      description: Идемпотентно по `clientMessageId` — повтор возвращает уже созданное сообщение со статусом 200.
+      operationId: sendMessage
+      parameters:
+        - $ref: '#/components/parameters/ChatId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SendMessageRequest' }
+            examples:
+              text:
+                value:
+                  clientMessageId: b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e
+                  kind: TEXT
+                  text: Можно перенести на 19:00?
+              playInvitation:
+                value:
+                  clientMessageId: d4e5f6a7-b8c9-4d0e-9f1a-2b3c4d5e6f7a
+                  kind: PLAY_INVITATION
+                  text: Давай сыграем товарищескую в субботу?
+                  invitation: { type: FRIENDLY_GAME, clubId: 0f8fad5b-d9cb-469f-a165-70867728950e, proposedAt: '2026-11-07T12:00:00Z' }
+              image:
+                value:
+                  clientMessageId: c3d4e5f6-a7b8-4c9d-8e1f-2a3b4c5d6e7f
+                  kind: IMAGE
+                  attachmentUploadId: 9e8d7c6b-5a4f-4e3d-2c1b-0a9f8e7d6c5b
+      responses:
+        '201':
+          description: Сообщение создано
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Message' }
+              example:
+                id: 1e2d3c4b-5a6f-4e7d-8c9b-0a1f2e3d4c5b
+                chatId: 5e4d3c2b-1a0f-4e9d-8c7b-6a5f4e3d2c1b
+                senderId: c56a4180-65aa-42ec-a945-5fd21dec0538
+                clientMessageId: b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e
+                sequence: 43
+                kind: TEXT
+                text: Можно перенести на 19:00?
+                createdAt: '2026-11-02T10:16:30Z'
+                readAt: null
+        '200':
+          description: Повтор — сообщение с таким clientMessageId уже существует
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Message' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413':
+          description: Вложение больше 10 МБ
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    ChatId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 30 }
+  responses:
+    BadRequest:
+      description: Некорректный запрос
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Не авторизован
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: Пользователь не участник чата
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Чат не найден
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }
+        traceId: { type: string }
+    Message:
+      type: object
+      required: [id, chatId, senderId, clientMessageId, sequence, kind, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        chatId: { type: string, format: uuid }
+        senderId: { type: string, format: uuid }
+        clientMessageId: { type: string, format: uuid }
+        sequence: { type: integer, format: int64 }
+        kind: { type: string, enum: [TEXT, IMAGE, SYSTEM, PLAY_INVITATION] }
+        invitation: { $ref: '#/components/schemas/PlayInvitation' }
+        text: { type: string, maxLength: 4000, nullable: true }
+        attachmentUrl: { type: string, format: uri, nullable: true }
+        system:
+          type: object
+          nullable: true
+          description: Для SYSTEM-сообщений (например, «Тренировка подтверждена»)
+          properties:
+            type: { type: string }
+            bookingId: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        readAt: { type: string, format: date-time, nullable: true }
+    SendMessageRequest:
+      type: object
+      required: [clientMessageId, kind]
+      additionalProperties: false
+      properties:
+        clientMessageId: { type: string, format: uuid }
+        kind: { type: string, enum: [TEXT, IMAGE, PLAY_INVITATION] }
+        text: { type: string, minLength: 1, maxLength: 4000 }
+        invitation:
+          type: object
+          description: Для kind = PLAY_INVITATION («предложить поиграть»)
+          required: [type, clubId, proposedAt]
+          properties:
+            type: { type: string, enum: [TRAINING, FRIENDLY_GAME] }
+            clubId: { type: string, format: uuid }
+            proposedAt: { type: string, format: date-time }
+            slotId: { type: string, format: uuid, description: Слот тренера — принятие создаёт бронь (FR-028) }
+            comment: { type: string, maxLength: 300 }
+        attachmentUploadId: { type: string, format: uuid }
+    PlayInvitation:
+      type: object
+      nullable: true
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string, enum: [TRAINING, FRIENDLY_GAME] }
+        clubId: { type: string, format: uuid }
+        proposedAt: { type: string, format: date-time }
+        slotId: { type: string, format: uuid, nullable: true }
+        status: { type: string, enum: [SENT, ACCEPTED, DECLINED, COUNTER_PROPOSED, EXPIRED] }
+        comment: { type: string, nullable: true }
+    ChatSummary:
+      type: object
+      required: [id, counterpart, unreadCount]
+      properties:
+        id: { type: string, format: uuid }
+        counterpart:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            displayName: { type: string }
+            avatarUrl: { type: string, format: uri, nullable: true }
+            role: { type: string, enum: [STUDENT, TRAINER] }
+        lastMessage: { $ref: '#/components/schemas/Message' }
+        unreadCount: { type: integer }
+    ChatPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ChatSummary' }
+        nextCursor: { type: string, nullable: true }

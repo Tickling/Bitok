@@ -1,0 +1,343 @@
+openapi: 3.0.3
+info:
+  title: Bitok Payment Service API
+  version: 0.9.0
+  description: |
+    ЗАДЕЛ (v1.0). Оплата тренировок через СБП, возвраты, webhooks банка (FR-020, FR-021).
+    Банк-специфичные детали скрыты за Anti-Corruption Layer.
+servers:
+  - url: https://api.bitok.app/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: Payments
+  - name: Webhooks
+paths:
+  /payments/create:
+    post:
+      tags: [Payments]
+      summary: Создать платёж СБП
+      description: |
+        Вызывается Booking Service (service-to-service JWT со scope `payments:create`) при переходе
+        бронирования в `AWAITING_PAYMENT`. Идемпотентно: `Idempotency-Key` = `bookingId`.
+        Сумма передаётся из снимка цены бронирования.
+      operationId: createPayment
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreatePaymentRequest' }
+            example:
+              bookingId: 1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed
+              payerId: c56a4180-65aa-42ec-a945-5fd21dec0538
+              amount: { amountMinor: 250000, currency: RUB }
+              description: Тренировка 05.11.2026 18:00, тренер А. Воронов
+              expiresAt: '2026-11-02T13:15:00Z'
+              receipt:
+                customerContact: '+79991234567'
+                items:
+                  - { name: Индивидуальная тренировка по бильярду (60 мин), quantity: 1, price: { amountMinor: 250000, currency: RUB }, vat: NONE }
+      responses:
+        '201':
+          description: Платёж создан, QR/ссылка СБП выданы
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Payment' }
+              example:
+                id: 5d1f0c3e-7a2b-4e8f-9c61-0b2a4d6e8f10
+                bookingId: 1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed
+                amount: { amountMinor: 250000, currency: RUB }
+                status: PENDING
+                method: SBP
+                paymentUrl: https://qr.nspk.ru/AS1000670LSS7DN18SJQDNP4B05KLJL2
+                qrPayload: https://qr.nspk.ru/AS1000670LSS7DN18SJQDNP4B05KLJL2?type=02&bank=100000000111&sum=250000&cur=RUB
+                expiresAt: '2026-11-02T13:15:00Z'
+                refundedAmount: { amountMinor: 0, currency: RUB }
+                createdAt: '2026-11-02T13:00:00Z'
+        '200':
+          description: Повтор — платёж уже создан
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Payment' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '502':
+          description: Банк недоступен (BANK_UNAVAILABLE) — Booking повторит по событию
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '503': { $ref: '#/components/responses/FeatureDisabled' }
+
+  /payments/{id}/status:
+    get:
+      tags: [Payments]
+      summary: Статус платежа
+      description: |
+        Используется iOS-клиентом при возврате из банковского приложения. Поддерживает long-polling
+        (`wait` до 20 с — ответ приходит сразу при смене статуса). Если webhook не пришёл, сервис
+        сверяет статус с банком (pull) не чаще 1 раза в 5 с.
+      operationId: getPaymentStatus
+      parameters:
+        - $ref: '#/components/parameters/PaymentId'
+        - name: wait
+          in: query
+          schema: { type: integer, minimum: 0, maximum: 20, default: 0 }
+      responses:
+        '200':
+          description: Текущий статус
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentStatusResponse' }
+              example:
+                paymentId: 5d1f0c3e-7a2b-4e8f-9c61-0b2a4d6e8f10
+                status: SUCCEEDED
+                bookingStatus: CONFIRMED
+                paidAt: '2026-11-02T13:04:12Z'
+                receiptUrl: https://ofd.example.ru/receipt/AbC123
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/FeatureDisabled' }
+
+  /payments/{id}/refund:
+    post:
+      tags: [Payments]
+      summary: Возврат (полный или частичный)
+      description: Идемпотентно по `Idempotency-Key`. Суммарный возврат не может превышать сумму платежа.
+      operationId: refundPayment
+      parameters:
+        - $ref: '#/components/parameters/PaymentId'
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefundRequest' }
+            example:
+              amount: { amountMinor: 250000, currency: RUB }
+              reason: TRAINER_CANCELLED
+              comment: Тренер отменил тренировку
+      responses:
+        '202':
+          description: Возврат инициирован (итог — событие payment.refunded / webhook)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Refund' }
+              example:
+                id: 8e7d6c5b-4a3f-4e2d-9c1b-0a9f8e7d6c5b
+                paymentId: 5d1f0c3e-7a2b-4e8f-9c61-0b2a4d6e8f10
+                amount: { amountMinor: 250000, currency: RUB }
+                reason: TRAINER_CANCELLED
+                status: PENDING
+                createdAt: '2026-11-03T09:00:00Z'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Платёж не в оплаченном статусе
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '422':
+          description: Сумма возврата превышает остаток (REFUND_EXCEEDS_AMOUNT)
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '503': { $ref: '#/components/responses/FeatureDisabled' }
+
+  /webhooks/payment:
+    post:
+      tags: [Webhooks]
+      summary: Уведомление банка о статусе операции
+      description: |
+        Вызывается банком. Аутентификация — подпись `X-Signature` (HMAC-SHA256 от тела с общим секретом
+        или подпись сертификатом банка) + IP allowlist. Обработка:
+        1. Проверка подписи и `X-Timestamp` (± 5 мин) → иначе 401.
+        2. INSERT в `webhook_inbox` по `operationId` (ON CONFLICT DO NOTHING) — дедупликация.
+        3. Ответ 200 **сразу** после записи в inbox; бизнес-обработка — асинхронно.
+        Банк повторяет доставку при любом ответе ≠ 2xx.
+      operationId: paymentWebhook
+      security: []
+      parameters:
+        - name: X-Signature
+          in: header
+          required: true
+          schema: { type: string }
+        - name: X-Timestamp
+          in: header
+          required: true
+          schema: { type: string, format: date-time }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BankWebhook' }
+            example:
+              operationId: B6123456789012345678901234567890
+              eventType: PAYMENT_SUCCEEDED
+              paymentId: 5d1f0c3e-7a2b-4e8f-9c61-0b2a4d6e8f10
+              bankPaymentId: AS1000670LSS7DN18SJQDNP4B05KLJL2
+              amount: 250000
+              currency: RUB
+              occurredAt: '2026-11-02T13:04:12Z'
+      responses:
+        '200':
+          description: Принято (в том числе повтор)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  received: { type: boolean }
+              example: { received: true }
+        '400':
+          description: Некорректное тело
+        '401':
+          description: Неверная подпись или устаревший timestamp
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    PaymentId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  responses:
+    BadRequest:
+      description: Некорректный запрос
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Не авторизован
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: Нет прав
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Не найдено
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    FeatureDisabled:
+      description: Оплата выключена feature flag'ом (FEATURE_DISABLED)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }
+        traceId: { type: string }
+    Money:
+      type: object
+      required: [amountMinor, currency]
+      properties:
+        amountMinor: { type: integer, format: int64, minimum: 0 }
+        currency: { type: string, enum: [RUB] }
+    PaymentStatus:
+      type: string
+      enum: [CREATED, PENDING, SUCCEEDED, FAILED, EXPIRED, REFUND_PENDING, PARTIALLY_REFUNDED, REFUNDED]
+    CreatePaymentRequest:
+      type: object
+      required: [bookingId, payerId, amount, expiresAt, receipt]
+      additionalProperties: false
+      properties:
+        bookingId: { type: string, format: uuid }
+        payerId: { type: string, format: uuid }
+        amount: { $ref: '#/components/schemas/Money' }
+        description: { type: string, maxLength: 140 }
+        expiresAt: { type: string, format: date-time }
+        receipt:
+          type: object
+          description: Данные для фискального чека (54-ФЗ)
+          required: [customerContact, items]
+          properties:
+            customerContact: { type: string, description: Телефон или email для отправки чека }
+            items:
+              type: array
+              minItems: 1
+              items:
+                type: object
+                required: [name, quantity, price, vat]
+                properties:
+                  name: { type: string, maxLength: 128 }
+                  quantity: { type: number }
+                  price: { $ref: '#/components/schemas/Money' }
+                  vat: { type: string, enum: [NONE, VAT0, VAT10, VAT20] }
+    Payment:
+      type: object
+      required: [id, amount, status, method, expiresAt, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        bookingId: { type: string, format: uuid, nullable: true }
+        orderId: { type: string, format: uuid, nullable: true }
+        amount: { $ref: '#/components/schemas/Money' }
+        status: { $ref: '#/components/schemas/PaymentStatus' }
+        method: { type: string, enum: [SBP] }
+        paymentUrl: { type: string, format: uri, description: Ссылка СБП (открывает выбор банка) }
+        qrPayload: { type: string, description: Данные для отрисовки QR }
+        expiresAt: { type: string, format: date-time }
+        refundedAmount: { $ref: '#/components/schemas/Money' }
+        createdAt: { type: string, format: date-time }
+    PaymentStatusResponse:
+      type: object
+      required: [paymentId, status]
+      properties:
+        paymentId: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/PaymentStatus' }
+        bookingStatus: { type: string, nullable: true }
+        paidAt: { type: string, format: date-time, nullable: true }
+        failureReason: { type: string, nullable: true }
+        receiptUrl: { type: string, format: uri, nullable: true }
+    RefundRequest:
+      type: object
+      required: [amount, reason]
+      additionalProperties: false
+      properties:
+        amount: { $ref: '#/components/schemas/Money' }
+        reason: { type: string, enum: [TRAINER_CANCELLED, STUDENT_CANCELLED, SLOT_UNAVAILABLE, DISPUTE, OTHER] }
+        comment: { type: string, maxLength: 500 }
+    Refund:
+      type: object
+      required: [id, paymentId, amount, reason, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        paymentId: { type: string, format: uuid }
+        amount: { $ref: '#/components/schemas/Money' }
+        reason: { type: string }
+        status: { type: string, enum: [PENDING, SUCCEEDED, FAILED] }
+        createdAt: { type: string, format: date-time }
+    BankWebhook:
+      type: object
+      required: [operationId, eventType, paymentId, amount, currency, occurredAt]
+      properties:
+        operationId: { type: string, description: Уникальный ID операции банка — ключ дедупликации }
+        eventType: { type: string, enum: [PAYMENT_SUCCEEDED, PAYMENT_FAILED, PAYMENT_EXPIRED, REFUND_SUCCEEDED, REFUND_FAILED] }
+        paymentId: { type: string, format: uuid }
+        bankPaymentId: { type: string }
+        refundId: { type: string, format: uuid }
+        amount: { type: integer, format: int64 }
+        currency: { type: string }
+        occurredAt: { type: string, format: date-time }

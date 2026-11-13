@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.bitok.app/progress/evaluated/v1.json",
+  "title": "PlayerEvaluated",
+  "description": "data для CloudEvent type = progress.evaluated",
+  "type": "object",
+  "required": [
+    "recordId",
+    "bookingId",
+    "studentId",
+    "trainerId",
+    "scores"
+  ],
+  "properties": {
+    "recordId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "bookingId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "studentId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "trainerId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "scores": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "stanceAndStroke": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "aiming": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "positionPlay": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "cueBallControl": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "tacticalThinking": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        }
+      }
+    },
+    "revision": {
+      "type": "integer"
+    }
+  },
+  "additionalProperties": true
+}

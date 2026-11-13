@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.bitok.app/booking/payment_rejected/v1.json",
+  "title": "BookingPaymentRejected",
+  "description": "data для CloudEvent type = booking.payment_rejected",
+  "type": "object",
+  "required": [
+    "bookingId",
+    "paymentId",
+    "reason"
+  ],
+  "properties": {
+    "bookingId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "paymentId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "reason": {
+      "enum": [
+        "SLOT_LOST",
+        "CANCELLED"
+      ]
+    }
+  },
+  "additionalProperties": true
+}

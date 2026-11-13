@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.bitok.app/payment/expired/v1.json",
+  "title": "PaymentExpired",
+  "description": "data для CloudEvent type = payment.expired",
+  "type": "object",
+  "required": [
+    "paymentId"
+  ],
+  "properties": {
+    "paymentId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "bookingId": {
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "additionalProperties": true
+}
