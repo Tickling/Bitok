@@ -198,6 +198,23 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .fr-hero h2 { font-size: clamp(2.4rem, 6vw, 4.6rem); margin-top: 12px; }
 .fr-hero h2 em { font-style: normal; color: var(--gold); }
 .fr-hero p { color: var(--muted); font-size: 1.2rem; max-width: 44ch; margin: 18px auto 0; }
+.vs { padding-block: 30px 90px; }
+.vs .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.vs .col { border-radius: 30px; padding: 28px; display: grid; gap: 14px; align-content: start; }
+.vs .old { background: #121314; border: 1px solid var(--line); color: var(--muted); }
+.vs .new { background: linear-gradient(160deg, #2b230d, #141516 65%); border: 1px solid #f2c14e66; }
+.vs .col h3 { font-size: 1.4rem; }
+.vs .old h3 { color: #c7c7cc; }
+.vs ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.vs li { display: grid; grid-template-columns: 26px 1fr; gap: 10px; align-items: start; }
+.vs .old li::before { content: "✕"; color: #8e8e93; font-weight: 700; }
+.vs .old li span { text-decoration: line-through; text-decoration-color: #ffffff40; }
+.vs .new li::before { content: ""; width: 14px; height: 14px; margin-top: 5px; border-radius: 50%; background: radial-gradient(circle at 34% 28%, #fff, #e9e1cf 55%, #a99f88); }
+.vs .new li { color: #f2f2f7; }
+.vs .tag { justify-self: start; padding: 6px 12px; border-radius: 99px; font-size: .8rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.vs .old .tag { background: #ffffff10; }
+.vs .new .tag { background: var(--gold); color: #1a1305; }
+@media (max-width: 800px) { .vs .grid { grid-template-columns: 1fr; } }
 .gets { padding-block: 40px 90px; }
 .gets .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
 .get { background: var(--card); border: 1px solid var(--line); border-radius: 26px; padding: 22px; display: grid; gap: 10px; align-content: start; transition: transform .35s cubic-bezier(.2,.7,.2,1), border-color .35s; }
@@ -459,8 +476,37 @@ footer { border-top: 1px solid var(--line); padding-block: 26px 40px; color: var
   <section class="fr-hero" id="franchise">
     <div class="wrap rv">
       <span class="eyebrow">Франшиза «Биток»</span>
-      <h2>Клиенты — наша задача.<br><em>Мастерство — ваша.</em></h2>
-      <p>Приложение само по себе не приносит денег. Франшиза приводит учеников, а вы превращаете их в постоянных.</p>
+      <h2>Не нужен клуб.<br><em>Нужен тренер.</em></h2>
+      <p>Вы сами знаете, где в городе лучшие столы и свет. Арендуете стол на час — и ведёте занятие. Клиенты — наша задача, мастерство — ваша.</p>
+    </div>
+  </section>
+
+  <section class="vs">
+    <div class="wrap">
+      <div class="grid">
+        <div class="col old rv">
+          <span class="tag">Франшиза бильярдного клуба</span>
+          <h3>Сначала построить зал</h3>
+          <ul>
+            <li><span>Помещение, ремонт и вентиляция</span></li>
+            <li><span>Столы, лампы, бар, мебель</span></li>
+            <li><span>Аренда зала каждый месяц, даже пустого</span></li>
+            <li><span>Администраторы, бармены, уборка</span></li>
+            <li><span>Окупаемость — годы</span></li>
+          </ul>
+        </div>
+        <div class="col new rv">
+          <span class="tag">Франшиза «Биток»</span>
+          <h3>Сразу тренировать</h3>
+          <ul>
+            <li>Играете там, где лучше: любой клуб города, стол — почасово</li>
+            <li>Платите за стол, только когда есть ученик</li>
+            <li>Учеников приводит реклама и сайт школы</li>
+            <li>Запись, оплата и упражнения — в приложении</li>
+            <li>Старт за 4 недели: телефон, штатив и ваше мастерство</li>
+          </ul>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -536,7 +582,7 @@ footer { border-top: 1px solid var(--line); padding-block: 26px 40px; color: var
       <div class="grid">
         <div class="format rv"><span class="who">Частный тренер</span><h3>«Тренер»</h3><ul><li>Сайт и реклама в городе</li><li>Приложение с вашим именем</li><li>Методичка и упражнения</li><li>Занятия в клубе-партнёре</li></ul></div>
         <div class="format hot rv"><span class="who">Чаще выбирают</span><h3>«Школа»</h3><ul><li>Всё из «Тренера»</li><li>2–5 тренеров, детские группы</li><li>Свой бренд, цвета и логотип</li><li>Турниры и магазин школы</li></ul></div>
-        <div class="format rv"><span class="who">Есть свой зал</span><h3>«Клуб»</h3><ul><li>Всё из «Школы»</li><li>Бронирование столов гостями</li><li>Корпоративы и события</li><li>Камеры-помощники на столах</li></ul></div>
+        <div class="format rv"><span class="who">Владельцам залов</span><h3>«Клуб-партнёр»</h3><ul><li>Тренеры «Битка» приводят учеников к вашим столам</li><li>Загрузка в дневные и пустые часы</li><li>Турниры школы — у вас в зале</li><li>Ваш клуб на сайте и в приложении</li></ul></div>
       </div>
     </div>
   </section>
@@ -546,7 +592,7 @@ footer { border-top: 1px solid var(--line); padding-block: 26px 40px; color: var
       <h2 class="rv">Запуск за 4 недели.</h2>
       <div class="road">
         <div class="rv"><i>1</i><b>Заявка</b><span>Расскажите о себе и городе.</span></div>
-        <div class="rv"><i>2</i><b>Знакомство</b><span>Созвон, разбор города и клубов.</span></div>
+        <div class="rv"><i>2</i><b>Знакомство</b><span>Разбор города: в каких клубах лучше столы.</span></div>
         <div class="rv"><i>3</i><b>Обучение</b><span>Методичка, первая тренировка, продажи.</span></div>
         <div class="rv"><i>4</i><b>Сайт и приложение</b><span>Ваш бренд, цены, расписание.</span></div>
         <div class="rv"><i>5</i><b>Реклама</b><span>Запускаем — идут заявки.</span></div>
