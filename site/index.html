@@ -261,6 +261,9 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .road span { color: var(--muted); font-size: .9rem; }
 @media (max-width: 900px) { .road { grid-template-columns: 1fr 1fr; gap: 26px; } .road::before { display: none; } }
 
+.frcard { display: grid; gap: 16px; padding: clamp(28px, 5vw, 56px); border-radius: 34px; text-decoration: none; background: radial-gradient(70% 90% at 15% 0%, #3a2a0a, #141516 70%); border: 1px solid #f2c14e55; transition: transform .4s cubic-bezier(.2,.7,.2,1), border-color .4s; }
+.frcard:hover { transform: translateY(-6px); border-color: var(--gold); }
+
 /* 7. Заявка */
 .apply { padding-block: 100px 70px; }
 .apply .wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 50px; }
@@ -293,7 +296,7 @@ footer { border-top: 1px solid var(--line); padding-block: 26px 40px; color: var
       Биток
     </a>
     <nav aria-label="Разделы">
-      <a href="#play">Игра</a><a href="#moments">Моменты</a><a href="#app">Приложение</a><a href="#ages">Возраст</a><a href="#why">Почему</a><a href="#school">Школам</a><a href="#franchise">Франшиза</a>
+      <a href="#play">Игра</a><a href="#moments">Моменты</a><a href="#app">Приложение</a><a href="#ages">Возраст</a><a href="#why">Почему</a><a href="#school">Школам</a><a href="franchise.html">Франшиза</a>
     </nav>
     <a class="btn btn-blue" href="#apply">Заявка</a>
   </div>
@@ -472,133 +475,14 @@ footer { border-top: 1px solid var(--line); padding-block: 26px 40px; color: var
     </div>
   </section>
 
-  <!-- Франшиза -->
-  <section class="fr-hero" id="franchise">
-    <div class="wrap rv">
-      <span class="eyebrow">Франшиза «Биток»</span>
-      <h2>Не нужен клуб.<br><em>Нужен тренер.</em></h2>
-      <p>Вы сами знаете, где в городе лучшие столы и свет. Арендуете стол на час — и ведёте занятие. Клиенты — наша задача, мастерство — ваша.</p>
-    </div>
-  </section>
-
-  <section class="vs">
+  <section style="padding-block:20px 80px">
     <div class="wrap">
-      <div class="grid">
-        <div class="col old rv">
-          <span class="tag">Франшиза бильярдного клуба</span>
-          <h3>Сначала построить зал</h3>
-          <ul>
-            <li><span>Помещение, ремонт и вентиляция</span></li>
-            <li><span>Столы, лампы, бар, мебель</span></li>
-            <li><span>Аренда зала каждый месяц, даже пустого</span></li>
-            <li><span>Администраторы, бармены, уборка</span></li>
-            <li><span>Окупаемость — годы</span></li>
-          </ul>
-        </div>
-        <div class="col new rv">
-          <span class="tag">Франшиза «Биток»</span>
-          <h3>Сразу тренировать</h3>
-          <ul>
-            <li>Играете там, где лучше: любой клуб города, стол — почасово</li>
-            <li>Платите за стол, только когда есть ученик</li>
-            <li>Учеников приводит реклама и сайт школы</li>
-            <li>Запись, оплата и упражнения — в приложении</li>
-            <li>Старт за 4 недели: телефон, штатив и ваше мастерство</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section class="gets">
-    <div class="wrap">
-      <h2 class="rv" style="margin-bottom:28px">Что вы получаете.</h2>
-      <div class="grid">
-        <div class="get big rv"><svg viewBox="0 0 32 32" fill="none" stroke="#F2C14E" stroke-width="2"><path d="M4 22l7-7 5 5 12-12"/><path d="M20 8h8v8"/></svg><h3>Поток учеников в вашем городе</h3><p>Сайт вашей школы и реклама во ВКонтакте и Яндексе — настраиваем и ведём. Заявки приходят вам в приложение.</p></div>
-        <div class="get rv"><svg viewBox="0 0 32 32" fill="none" stroke="#F2C14E" stroke-width="2"><rect x="9" y="3" width="14" height="26" rx="3"/><path d="M14 25h4"/></svg><h3>Приложение под вашим брендом</h3><p>Запись, оплата, упражнения, камера, чат и магазин.</p></div>
-        <div class="get rv"><svg viewBox="0 0 32 32" fill="none" stroke="#F2C14E" stroke-width="2"><path d="M6 5h14l6 6v16H6z"/><path d="M20 5v6h6M10 17h12M10 22h8"/></svg><h3>Методичка и программа</h3><p>Уровни от новичка до турниров, 20 упражнений со схемами, детская программа.</p></div>
-        <div class="get rv"><svg viewBox="0 0 32 32" fill="none" stroke="#F2C14E" stroke-width="2"><path d="M10 4h12v8a6 6 0 0 1-12 0z"/><path d="M16 18v6M11 28h10M10 7H5a4 4 0 0 0 5 5M22 7h5a4 4 0 0 1-5 5"/></svg><h3>Турниры и события</h3><p>Готовые сценарии турниров, детских кубков и открытых дней — то, что приводит людей.</p></div>
-        <div class="get rv"><svg viewBox="0 0 32 32" fill="none" stroke="#F2C14E" stroke-width="2"><path d="M5 10h22l-2 16H7z"/><path d="M11 10a5 5 0 0 1 10 0"/></svg><h3>Магазин и поставки</h3><p>Кии, мел, перчатки и ремонт — продаёте ученикам через приложение.</p></div>
-        <div class="get rv"><svg viewBox="0 0 32 32" fill="none" stroke="#F2C14E" stroke-width="2"><circle cx="16" cy="11" r="5"/><path d="M6 28c1-6 5-9 10-9s9 3 10 9"/></svg><h3>Обучение тренера</h3><p>Как вести первую тренировку, продавать абонементы и удерживать учеников.</p></div>
-        <div class="get rv"><svg viewBox="0 0 32 32" fill="none" stroke="#F2C14E" stroke-width="2"><circle cx="9" cy="12" r="4"/><circle cx="23" cy="12" r="4"/><circle cx="16" cy="22" r="4"/></svg><h3>Сообщество</h3><p>Тренеры других городов, обмен упражнениями, общие турниры и рейтинг.</p></div>
-      </div>
-    </div>
-  </section>
-
-  <section class="funnel">
-    <div class="wrap">
-      <h2 class="rv">Как приходят ученики.</h2>
-      <svg viewBox="0 0 1000 220" role="img" aria-label="Воронка: реклама, сайт школы, заявка, пробная тренировка, абонемент">
-        <defs><linearGradient id="fg" x1="0" x2="1"><stop offset="0" stop-color="#5AC8FA"/><stop offset="1" stop-color="#F2C14E"/></linearGradient></defs>
-        <path id="fpath" d="M70 110 C 210 20, 330 200, 500 110 S 790 20, 930 110" fill="none" stroke="url(#fg)" stroke-width="3" stroke-dasharray="2 10" stroke-linecap="round"/>
-        <g font-family="Onest, sans-serif" text-anchor="middle">
-          <g><circle cx="70" cy="110" r="26" fill="#17191A" stroke="#5AC8FA"/><text x="70" y="117" fill="#fff" font-size="18" font-weight="800">1</text><text x="70" y="170" fill="#fff" font-size="16" font-weight="700">Реклама</text><text x="70" y="192" fill="#9a9ea3" font-size="13">ВК и Яндекс</text></g>
-          <g><circle cx="285" cy="110" r="26" fill="#17191A" stroke="#7fc6e8"/><text x="285" y="117" fill="#fff" font-size="18" font-weight="800">2</text><text x="285" y="170" fill="#fff" font-size="16" font-weight="700">Сайт школы</text><text x="285" y="192" fill="#9a9ea3" font-size="13">мини-игра и запись</text></g>
-          <g><circle cx="500" cy="110" r="26" fill="#17191A" stroke="#a6c6b5"/><text x="500" y="117" fill="#fff" font-size="18" font-weight="800">3</text><text x="500" y="170" fill="#fff" font-size="16" font-weight="700">Заявка</text><text x="500" y="192" fill="#9a9ea3" font-size="13">сразу в приложении</text></g>
-          <g><circle cx="715" cy="110" r="26" fill="#17191A" stroke="#d9c38a"/><text x="715" y="117" fill="#fff" font-size="18" font-weight="800">4</text><text x="715" y="170" fill="#fff" font-size="16" font-weight="700">Пробная</text><text x="715" y="192" fill="#9a9ea3" font-size="13">ваше мастерство</text></g>
-          <g><circle cx="930" cy="110" r="26" fill="#F2C14E"/><text x="930" y="117" fill="#1a1305" font-size="18" font-weight="800">5</text><text x="930" y="170" fill="#fff" font-size="16" font-weight="700">Абонемент</text><text x="930" y="192" fill="#9a9ea3" font-size="13">ученик остаётся</text></g>
-        </g>
-        <g id="dots"></g>
-      </svg>
-      <p class="note">Шаги 1–3 делаем мы. Шаги 4–5 — вы: тренировка решает, вернётся ли человек.</p>
-    </div>
-  </section>
-
-  <section class="money" id="money">
-    <div class="wrap">
-      <div class="rv">
-        <h2>На чём вы зарабатываете.</h2>
-        <div class="streams">
-          <div class="stream"><b>Индивидуальные</b><span>Час с тренером, можно 2–3 часа подряд.</span></div>
-          <div class="stream"><b>Группы</b><span>Детские и взрослые, 4–6 человек за столом.</span></div>
-          <div class="stream"><b>Абонементы</b><span>8 занятий в месяц — предсказуемая выручка.</span></div>
-          <div class="stream"><b>Турниры</b><span>Взносы участников, призы от партнёров.</span></div>
-          <div class="stream"><b>Магазин</b><span>Кии, мел, перчатки, ремонт киёв.</span></div>
-          <div class="stream"><b>Разборы видео</b><span>Удалённо: ученик присылает серию с камеры.</span></div>
-        </div>
-      </div>
-      <form class="calc rv" id="calc" aria-label="Калькулятор дохода" onsubmit="return false">
-        <h3>Посчитайте свой месяц</h3>
-        <label for="c-price">Цена индивидуального часа <output id="o-price"></output><input type="range" id="c-price" min="1000" max="5000" step="100" value="2500"></label>
-        <label for="c-hours">Индивидуальных часов в неделю <output id="o-hours"></output><input type="range" id="c-hours" min="0" max="40" step="1" value="15"></label>
-        <label for="c-groups">Групповых занятий в неделю <output id="o-groups"></output><input type="range" id="c-groups" min="0" max="12" step="1" value="3"></label>
-        <label for="c-gsize">Человек в группе × цена <output id="o-gsize"></output><input type="range" id="c-gsize" min="2" max="8" step="1" value="5"></label>
-        <label for="c-table">Аренда стола в час <output id="o-table"></output><input type="range" id="c-table" min="0" max="1500" step="50" value="500"></label>
-        <label for="c-fee">Роялти франшизы <output id="o-fee"></output><input type="range" id="c-fee" min="0" max="20" step="1" value="10"></label>
-        <div class="total">
-          <div class="row"><span>Выручка за месяц</span><span id="r-rev"></span></div>
-          <div class="row"><span>Аренда столов</span><span id="r-rent"></span></div>
-          <div class="row"><span>Роялти</span><span id="r-fee"></span></div>
-          <div class="row net"><span>Остаётся вам</span><b id="r-net"></b></div>
-          <small>Пример расчёта: групповое занятие — 900 ₽ с человека, 4,3 недели в месяце. Условия франшизы обсуждаем индивидуально.</small>
-        </div>
-      </form>
-    </div>
-  </section>
-
-  <section class="formats">
-    <div class="wrap">
-      <h2 class="rv">Три формата.</h2>
-      <div class="grid">
-        <div class="format rv"><span class="who">Частный тренер</span><h3>«Тренер»</h3><ul><li>Сайт и реклама в городе</li><li>Приложение с вашим именем</li><li>Методичка и упражнения</li><li>Занятия в клубе-партнёре</li></ul></div>
-        <div class="format hot rv"><span class="who">Чаще выбирают</span><h3>«Школа»</h3><ul><li>Всё из «Тренера»</li><li>2–5 тренеров, детские группы</li><li>Свой бренд, цвета и логотип</li><li>Турниры и магазин школы</li></ul></div>
-        <div class="format rv"><span class="who">Владельцам залов</span><h3>«Клуб-партнёр»</h3><ul><li>Тренеры «Битка» приводят учеников к вашим столам</li><li>Загрузка в дневные и пустые часы</li><li>Турниры школы — у вас в зале</li><li>Ваш клуб на сайте и в приложении</li></ul></div>
-      </div>
-    </div>
-  </section>
-
-  <section class="launch">
-    <div class="wrap">
-      <h2 class="rv">Запуск за 4 недели.</h2>
-      <div class="road">
-        <div class="rv"><i>1</i><b>Заявка</b><span>Расскажите о себе и городе.</span></div>
-        <div class="rv"><i>2</i><b>Знакомство</b><span>Разбор города: в каких клубах лучше столы.</span></div>
-        <div class="rv"><i>3</i><b>Обучение</b><span>Методичка, первая тренировка, продажи.</span></div>
-        <div class="rv"><i>4</i><b>Сайт и приложение</b><span>Ваш бренд, цены, расписание.</span></div>
-        <div class="rv"><i>5</i><b>Реклама</b><span>Запускаем — идут заявки.</span></div>
-        <div class="rv"><i>6</i><b>Первые ученики</b><span>Дальше — ваше мастерство.</span></div>
-      </div>
-      <a class="btn btn-blue rv" href="#apply" data-role="coach" style="margin-top:40px">Хочу открыть школу «Биток»</a>
+      <a class="frcard rv" href="franchise.html">
+        <span class="eyebrow" style="color:var(--gold);font-weight:700;letter-spacing:.14em;font-size:.8rem;text-transform:uppercase">Франшиза «Биток»</span>
+        <h2>Не нужен клуб. Нужен тренер.</h2>
+        <p class="muted" style="font-size:1.15rem;max-width:46ch">Что даёт франшиза, откуда ученики и сколько можно зарабатывать — на отдельной странице.</p>
+        <span class="btn btn-blue" style="justify-self:start">Открыть страницу франшизы →</span>
+      </a>
     </div>
   </section>
 
@@ -1062,6 +946,7 @@ document.querySelectorAll(".tbtn").forEach(b => b.addEventListener("click", () =
 
 // ===================== Франшиза: воронка и калькулятор =====================
 (() => {
+  if (!document.getElementById("calc")) return;
   const dots = document.getElementById("dots"), ns = "http://www.w3.org/2000/svg";
   if (!reduce) for (let i = 0; i < 9; i++) {
     const c = document.createElementNS(ns, "circle"); c.setAttribute("r", i % 3 ? "5" : "7"); c.setAttribute("fill", i % 3 ? "#5AC8FA" : "#F2C14E");
