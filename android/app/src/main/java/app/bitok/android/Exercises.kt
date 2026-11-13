@@ -219,7 +219,11 @@ fun TableScheme(exercise: Exercise, modifier: Modifier = Modifier, labels: Boole
         if (exercise.rack) Exercise.rackPoints(TablePoint(45.0, 40.0)).forEach {
             drawCircle(Color(0xFFFAF2DB), ball / 2, map(it)); drawCircle(Color.Black.copy(alpha = 0.4f), ball / 2, map(it), style = Stroke(1f))
         }
-        exercise.objectBalls.forEach { drawCircle(Color(0xFFEDB833), ball / 2, map(it)) }
+        // «Чужой»/«свояк» — два белых шара, как в русском бильярде
+        exercise.objectBalls.forEach {
+            drawCircle(if (exercise.shot != null) Color(0xFFFAF5E6) else Color(0xFFEDB833), ball / 2, map(it))
+            drawCircle(Color.Black.copy(alpha = 0.6f), ball / 2, map(it), style = Stroke(1.2f))
+        }
         if (exercise.shot != null) {
             exercise.targetPoint(0)?.let { drawCircle(Color.Red, ball, map(it), style = Stroke(3f)) }
             val aim = if (showAim) exercise.aim else null
@@ -236,8 +240,15 @@ fun TableScheme(exercise: Exercise, modifier: Modifier = Modifier, labels: Boole
                     val len = maxOf(0.001f, kotlin.math.hypot(dx, dy))
                     drawLine(Color(0xFFF9D11A), obj, Offset(obj.x + dx / len * ball * 4, obj.y + dy / len * ball * 4), 2.4f, pathEffect = dash)
                 }
-                if (labels) drawContext.canvas.nativeCanvas.drawText("мнимый", ghost.x, ghost.y - ball * 1.2f,
-                    android.graphics.Paint().apply { color = android.graphics.Color.WHITE; textSize = maxOf(14f, size.width / 60); isFakeBoldText = true; textAlign = android.graphics.Paint.Align.CENTER })
+                // Подпись сбоку: «мнимый шар» с выноской, в сторону от линии удара
+                val ax = ghost.x - cue.x; val ay = ghost.y - cue.y
+                val alen = maxOf(0.001f, kotlin.math.hypot(ax, ay))
+                var sx = -ay / alen; var sy = ax / alen
+                if (ghost.y + sy * ball * 3 < fy + ball || ghost.y + sy * ball * 3 > fy + fh - ball) { sx = -sx; sy = -sy }
+                drawLine(Color.White.copy(alpha = 0.9f), Offset(ghost.x + sx * ball * 0.6f, ghost.y + sy * ball * 0.6f),
+                    Offset(ghost.x + sx * ball * 2.3f, ghost.y + sy * ball * 2.3f), 1.6f)
+                drawContext.canvas.nativeCanvas.drawText("мнимый шар", ghost.x + sx * ball * 3.4f, ghost.y + sy * ball * 3.4f + 5f,
+                    android.graphics.Paint().apply { color = android.graphics.Color.WHITE; textSize = maxOf(16f, size.width / (if (labels) 55 else 40)); isFakeBoldText = true; textAlign = android.graphics.Paint.Align.CENTER })
             }
         }
         if (showTripod) {
@@ -245,8 +256,11 @@ fun TableScheme(exercise: Exercise, modifier: Modifier = Modifier, labels: Boole
             val c = Offset((fx + t.x / 160 * fw).toFloat().coerceIn(12f, size.width - 12f), (fy + t.y / 80 * fh).toFloat().coerceIn(12f, size.height - 12f))
             drawContext.canvas.nativeCanvas.drawText("📷", c.x, c.y + paint.textSize / 2, android.graphics.Paint().apply { textSize = size.width / 26; textAlign = android.graphics.Paint.Align.CENTER })
         }
-        exercise.cueBalls.forEach {
-            drawCircle(Color.White, ball / 2, map(it)); drawCircle(Color.Black.copy(alpha = 0.6f), ball / 2, map(it), style = Stroke(1.2f))
+        exercise.cueBalls.forEachIndexed { i, it ->
+            drawCircle(if (exercise.yellowCue == true) Color(0xFFFAC71A) else Color.White, ball / 2, map(it))
+            drawCircle(Color.Black.copy(alpha = 0.6f), ball / 2, map(it), style = Stroke(1.2f))
+            if (exercise.shot != null && i == 0) drawContext.canvas.nativeCanvas.drawText("биток", map(it).x, map(it).y + ball * 1.6f,
+                android.graphics.Paint().apply { color = android.graphics.Color.WHITE; textSize = maxOf(14f, size.width / (if (labels) 60 else 44)); isFakeBoldText = true; textAlign = android.graphics.Paint.Align.CENTER })
         }
     }
 }
@@ -297,6 +311,15 @@ fun ExerciseDetailScreen(app: AppState, exerciseId: String, studentId: String) {
     Screen("№${exercise.number}", app) {
         Text(exercise.title, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = p.text)
         Box(Modifier.clip(RoundedCornerShape(12.dp))) { TableScheme(exercise, showTripod = true) }
+        if (exercise.hasHit) GlassCard {
+            Title("🎯 Куда бить по битку")
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                HitPointBall(exercise.hitX ?: 0.0, exercise.hitY ?: 0.0, 170.dp, exercise.yellowCue == true)
+            }
+            Text(hitDescription(exercise.hitX ?: 0.0, exercise.hitY ?: 0.0), color = p.text, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            Secondary("Красная точка — место на битке, куда приходит кий", size = 12)
+        }
         GlassCard {
             exercise.details.forEach { Text(it, color = p.text, fontSize = 14.sp) }
             Secondary("Точки для шаров: " + exercise.markPoints.take(6).joinToString { "${it.x.toInt()}:${it.y.toInt()}" } + if (exercise.markPoints.size > 6) "…" else "")

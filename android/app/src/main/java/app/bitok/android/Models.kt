@@ -365,7 +365,14 @@ data class Exercise(
     val importedBy: String? = null,
     /** Удар по прицельному шару: «чужой» или «свояк». */
     val shot: ShotKind? = null,
+    /** Точка удара по битку: x — влево/вправо, y — вверх/вниз (−1…1). null — не задана. */
+    val hitX: Double? = null,
+    val hitY: Double? = null,
+    /** Биток цветной (жёлтый), а не белый. */
+    val yellowCue: Boolean? = null,
 ) {
+    val hasHit: Boolean get() = hitX != null && hitY != null
+
     fun target(index: Int): Pocket? = if (targets.isEmpty()) null else targets[minOf(index, targets.size - 1)]
 
     fun targetPoint(index: Int): TablePoint? {

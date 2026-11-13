@@ -54,6 +54,16 @@ struct Exercise: Codable, Identifiable, Hashable, Sendable {
     var importedBy: UserID? = nil
     /// Удар по прицельному шару: «чужой» (забить прицельный) или «свояк» (забить биток от прицельного).
     var shot: ShotKind? = nil
+    /// Точка удара по битку: x — влево/вправо, y — вверх/вниз (−1…1, 0:0 — центр). nil — не задана.
+    var hitX: Double? = nil
+    var hitY: Double? = nil
+    /// Биток цветной (жёлтый), а не белый.
+    var yellowCue: Bool? = nil
+
+    var hitPoint: CGPoint? {
+        guard let hitX, let hitY else { return nil }
+        return CGPoint(x: hitX, y: hitY)
+    }
 
     func target(for index: Int) -> Pocket? {
         targets.isEmpty ? nil : targets[min(index, targets.count - 1)]
@@ -117,6 +127,8 @@ struct AimSolution {
     /// Угол среза в градусах (0 — «в лоб»).
     let cutDegrees: Int
     let kind: ShotKind
+    /// Точка удара по битку (−1…1), если задана.
+    var hit: CGPoint? = nil
 
     /// Толщина в терминах «долей шара» (перекрытие 1 − sin среза).
     var thickness: String {
@@ -130,7 +142,25 @@ struct AimSolution {
         }
     }
 
+    /// Что даёт точка удара: накат, стоп/90°, оттяжка, боковой винт.
+    var hitAdvice: String? {
+        guard let hit else { return nil }
+        var parts: [String] = []
+        if hit.y > 0.25 { parts.append("удар выше центра — накат: после касания биток катится вперёд, угол ухода меньше 90°") }
+        else if hit.y < -0.25 { parts.append("удар ниже центра — оттяжка: биток после касания тянется назад") }
+        else { parts.append("удар в центр — биток уходит под 90° к линии центров") }
+        if hit.x > 0.25 { parts.append("правый винт — от борта биток отскочит правее, прицельный шар чуть уведёт влево") }
+        else if hit.x < -0.25 { parts.append("левый винт — от борта биток отскочит левее, прицельный шар чуть уведёт вправо") }
+        return "Точка удара: " + parts.joined(separator: "; ") + "."
+    }
+
     var advice: [String] {
+        var lines = baseAdvice
+        if let hitAdvice { lines.append(hitAdvice) }
+        return lines
+    }
+
+    private var baseAdvice: [String] {
         switch kind {
         case .objectBall:
             [
@@ -140,9 +170,11 @@ struct AimSolution {
             ]
         case .ownBall:
             [
-                "Свояк: после касания биток уходит под 90° к линии «мнимый шар → чужой шар» — по пунктиру в лузу.",
+                "Свояк: после касания биток уходит по сплошной линии в лузу, чужой шар — по жёлтому пунктиру.",
                 "Прицел — центр мнимого шара, срез \(cutDegrees)° (\(thickness)).",
-                "Бейте в центр битка, без верхнего и нижнего винта, средней силой: тогда угол ухода — ровно 90°. Верхний винт «закатит» биток ближе к чужому шару, нижний — оттянет назад.",
+                (hit?.y ?? 0) > 0.25 ? "Накатом бейте мягче и доводите кий — иначе биток не докатится до лузы."
+                : (hit?.y ?? 0) < -0.25 ? "Оттяжке нужен резкий короткий удар и низкий мост."
+                : "Средняя сила, кий ровно: без верхнего и нижнего винта угол ухода — ровно 90°.",
             ]
         }
     }
@@ -165,33 +197,42 @@ extension Exercise {
         case .objectBall:
             ghost = TablePoint(x: object.x - ux * d, y: object.y - uy * d)
         case .ownBall:
-            // Прямой угол в мнимом шаре: |OG| = d, OG ⟂ GP → угол при O: cos = d / |OP|
-            let theta = acos(d / length)
-            let candidates = [theta, -theta].map { angle -> TablePoint in
-                let rx = ux * cos(angle) - uy * sin(angle), ry = ux * sin(angle) + uy * cos(angle)
-                return TablePoint(x: object.x + rx * d, y: object.y + ry * d)
+            // После касания биток идёт по касательной + доля нормальной скорости:
+            // центр (стоп) — 0, накат — +2/7, оттяжка — −2/7. Ищем точку касания перебором вокруг шара.
+            let follow = 2.0 / 7.0 * max(-1, min(1, hitY ?? 0))
+            var best: (point: TablePoint, error: Double)?
+            for step in 0..<720 {
+                let angle = Double(step) / 720 * 2 * .pi
+                let point = TablePoint(x: object.x + cos(angle) * d, y: object.y + sin(angle) * d)
+                let error = Self.ownError(cue: cue, ghost: point, object: object, pocket: pocket, follow: follow)
+                if error < (best?.error ?? .infinity) { best = (point, error) }
             }
-            // Выбираем, куда биток реально может прийти и уйти в лузу
-            ghost = candidates.max { a, b in Self.ownScore(cue: cue, ghost: a, object: object, pocket: pocket)
-                < Self.ownScore(cue: cue, ghost: b, object: object, pocket: pocket) } ?? candidates[0]
+            guard let best, best.error < 0.09 else { return nil }   // ~5°: с этой точки свояк не сыграть
+            ghost = best.point
         }
         // Срез: угол между направлением битка и линией центров
         let vx = ghost.x - cue.x, vy = ghost.y - cue.y
         let nx = object.x - ghost.x, ny = object.y - ghost.y
         let cosine = (vx * nx + vy * ny) / max(0.001, hypot(vx, vy) * hypot(nx, ny))
         let cut = Int((acos(min(1, max(-1, cosine))) * 180 / .pi).rounded())
-        return AimSolution(ghost: ghost, object: object, pocket: pocket, cue: cue, cutDegrees: cut, kind: shot)
+        return AimSolution(ghost: ghost, object: object, pocket: pocket, cue: cue, cutDegrees: cut, kind: shot, hit: hitPoint)
     }
 
-    private static func ownScore(cue: TablePoint, ghost: TablePoint, object: TablePoint, pocket: TablePoint) -> Double {
+    /// Угол (в радианах) между направлением битка после касания и направлением на лузу.
+    private static func ownError(cue: TablePoint, ghost: TablePoint, object: TablePoint, pocket: TablePoint, follow: Double) -> Double {
         let vx = ghost.x - cue.x, vy = ghost.y - cue.y
         let v = max(0.001, hypot(vx, vy))
         let nx = (object.x - ghost.x) / ballDiameter, ny = (object.y - ghost.y) / ballDiameter
         let along = (vx * nx + vy * ny) / v
-        guard along > 0.05 else { return -10 }   // биток не попадёт в шар
+        guard along > 0.08 else { return .infinity }   // биток не попадёт в шар (или почти не заденет)
+        // Касательная и нормальная составляющие скорости битка
         let tx = vx / v - along * nx, ty = vy / v - along * ny
+        let dx = tx + follow * along * nx, dy = ty + follow * along * ny
+        let length = hypot(dx, dy)
+        guard length > 0.02 else { return .infinity }   // удар «в лоб» без винта — биток встанет
         let px = pocket.x - ghost.x, py = pocket.y - ghost.y
-        return (tx * px + ty * py) / max(0.001, hypot(tx, ty) * hypot(px, py))
+        let cosine = (dx * px + dy * py) / (length * max(0.001, hypot(px, py)))
+        return acos(min(1, max(-1, cosine)))
     }
 
     /// Примеры тренера: «чужой» и «свояк» — чтобы было видно, как работает подсказка.
@@ -204,6 +245,14 @@ extension Exercise {
                  details: ["Биток 50:55, чужой шар 85:20.", "Сыграть свояка: биток от чужого шара уходит в верхнюю среднюю лузу. 10 ударов."],
                  metric: .ownBall, cueBalls: [TablePoint(x: 50, y: 55)], objectBalls: [TablePoint(x: 85, y: 20)],
                  targets: [.topMiddle], shot: .ownBall),
+        Exercise(id: "shot-3", number: 19, level: "Чужой шар и свояк", title: "Резка в угол",
+                 details: ["Биток 60:45, чужой шар у борта 148:8.", "Тонкая резка: чужой шар в правую верхнюю лузу. Удар в центр, без винта. 10 ударов."],
+                 metric: .objectBall, cueBalls: [TablePoint(x: 60, y: 45)], objectBalls: [TablePoint(x: 148, y: 8)],
+                 targets: [.topRight], shot: .objectBall, hitX: 0, hitY: 0),
+        Exercise(id: "shot-4", number: 20, level: "Чужой шар и свояк", title: "Свояк накатом (через лоб)",
+                 details: ["Биток 40:50, чужой шар 110:25.", "Удар выше центра: после касания биток накатом уходит в правую верхнюю лузу. 10 ударов."],
+                 metric: .ownBall, cueBalls: [TablePoint(x: 40, y: 50)], objectBalls: [TablePoint(x: 110, y: 25)],
+                 targets: [.topRight], shot: .ownBall, hitX: 0, hitY: 0.7),
     ]
 }
 
@@ -483,8 +532,11 @@ struct TableSchemeView: View {
             }
             for object in exercise.objectBalls {
                 let c = map(object)
-                context.fill(Path(ellipseIn: CGRect(x: c.x - ball / 2, y: c.y - ball / 2, width: ball, height: ball)),
-                             with: .color(Color(red: 0.93, green: 0.72, blue: 0.20)))
+                let rect = CGRect(x: c.x - ball / 2, y: c.y - ball / 2, width: ball, height: ball)
+                // «Чужой»/«свояк» — два белых шара, как в русском бильярде
+                context.fill(Path(ellipseIn: rect),
+                             with: .color(exercise.shot != nil ? Color(red: 0.98, green: 0.96, blue: 0.90) : Color(red: 0.93, green: 0.72, blue: 0.20)))
+                context.stroke(Path(ellipseIn: rect), with: .color(.black.opacity(0.6)), lineWidth: 0.6)
             }
             if exercise.shot != nil {
                 // Луза, куда играем, — красное кольцо
@@ -516,10 +568,18 @@ struct TableSchemeView: View {
                         context.stroke(objectLine, with: .color(Color(red: 0.98, green: 0.82, blue: 0.10)),
                                        style: StrokeStyle(lineWidth: 1.2, dash: [3, 2]))
                     }
-                    if labels {
-                        context.draw(Text("мнимый").font(.system(size: max(6, size.width / 60), weight: .semibold)).foregroundStyle(.white),
-                                     at: CGPoint(x: ghost.x, y: ghost.y - ball * 1.3))
-                    }
+                    // Подпись сбоку: «мнимый шар» с выноской, в сторону от линии удара
+                    let ax = ghost.x - cue.x, ay = ghost.y - cue.y
+                    let alen = max(0.001, hypot(ax, ay))
+                    var side = CGPoint(x: -ay / alen, y: ax / alen)
+                    if ghost.y + side.y * ball * 3 < field.minY + ball || ghost.y + side.y * ball * 3 > field.maxY - ball { side = CGPoint(x: -side.x, y: -side.y) }
+                    let labelPoint = CGPoint(x: ghost.x + side.x * ball * 3.2, y: ghost.y + side.y * ball * 3.2)
+                    var leader = Path()
+                    leader.move(to: CGPoint(x: ghost.x + side.x * ball * 0.6, y: ghost.y + side.y * ball * 0.6))
+                    leader.addLine(to: CGPoint(x: ghost.x + side.x * ball * 2.3, y: ghost.y + side.y * ball * 2.3))
+                    context.stroke(leader, with: .color(.white.opacity(0.9)), lineWidth: 0.8)
+                    let fontSize = max(6, size.width / (labels ? 55 : 40))
+                    context.draw(Text("мнимый шар").font(.system(size: fontSize, weight: .bold)).foregroundStyle(.white), at: labelPoint)
                 }
             }
             if showTripod {
@@ -532,8 +592,13 @@ struct TableSchemeView: View {
                 let c = map(cue)
                 let active = highlight == nil || highlight == index
                 let rect = CGRect(x: c.x - ball / 2, y: c.y - ball / 2, width: ball, height: ball)
-                context.fill(Path(ellipseIn: rect), with: .color(.white.opacity(active ? 1 : 0.5)))
+                let cueColor: Color = exercise.yellowCue == true ? Color(red: 0.98, green: 0.78, blue: 0.10) : .white
+                context.fill(Path(ellipseIn: rect), with: .color(cueColor.opacity(active ? 1 : 0.5)))
                 context.stroke(Path(ellipseIn: rect), with: .color(.black.opacity(0.6)), lineWidth: 0.6)
+                if exercise.shot != nil && index == 0 {
+                    context.draw(Text("биток").font(.system(size: max(6, size.width / (labels ? 60 : 44)), weight: .semibold)).foregroundStyle(.white),
+                                 at: CGPoint(x: c.x, y: c.y + ball * 1.4))
+                }
             }
         }
         .aspectRatio(labels ? 1.95 : 2.1, contentMode: .fit)
@@ -686,6 +751,18 @@ struct ExerciseDetailView: View {
                 Text(exercise.title).font(.title2.weight(.semibold)).fontDesign(palette.headingDesign)
                 TableSchemeView(exercise: exercise, showTripod: true)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.m, style: .continuous))
+                if let hit = exercise.hitPoint {
+                    VStack(spacing: Space.s) {
+                        Label("Куда бить по битку", systemImage: "smallcircle.filled.circle").font(.headline)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        HitPointView(point: hit, size: 170, yellow: exercise.yellowCue == true)
+                        Text(HitPointView.describe(hit)).font(.callout.weight(.semibold))
+                        Text("Красная точка — место на битке, куда приходит кий").font(.caption).foregroundStyle(palette.textSecondary)
+                    }
+                    .padding(Space.m)
+                    .frame(maxWidth: .infinity)
+                    .glassCard()
+                }
                 VStack(alignment: .leading, spacing: Space.s) {
                     ForEach(exercise.details, id: \.self) { Text($0).font(.callout) }
                     Label("Точки для шаров: " + exercise.markPoints.prefix(6).map { "\(Int($0.x)):\(Int($0.y))" }.joined(separator: ", ")
@@ -877,5 +954,81 @@ struct StudentStatsView: View {
             }
         }
         .frame(height: 6)
+    }
+}
+
+
+// MARK: - Точка удара по битку
+
+/// Отдельная картинка «биток»: сам шар крупно, сетка (кольца и крест) и красная точка — куда бить кием.
+struct HitPointView: View {
+    let point: CGPoint
+    var size: CGFloat = 96
+    var yellow = false
+
+    var body: some View {
+        Canvas { context, canvas in
+            let radius = min(canvas.width, canvas.height) / 2
+            let center = CGPoint(x: canvas.width / 2, y: canvas.height / 2)
+            let light = yellow ? Color(red: 1.0, green: 0.88, blue: 0.35) : Color(red: 1.0, green: 0.99, blue: 0.96)
+            let dark = yellow ? Color(red: 0.85, green: 0.62, blue: 0.05) : Color(red: 0.80, green: 0.77, blue: 0.70)
+            let ballRect = CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
+            // Тень и объём шара
+            context.fill(Path(ellipseIn: ballRect.offsetBy(dx: radius * 0.06, dy: radius * 0.08)), with: .color(.black.opacity(0.18)))
+            context.fill(Path(ellipseIn: ballRect),
+                         with: .radialGradient(Gradient(colors: [light, dark]), center: CGPoint(x: center.x - radius * 0.35, y: center.y - radius * 0.4),
+                                               startRadius: 0, endRadius: radius * 1.6))
+            for ring in [0.33, 0.66, 0.97] {
+                let r = radius * ring
+                context.stroke(Path(ellipseIn: CGRect(x: center.x - r, y: center.y - r, width: r * 2, height: r * 2)),
+                               with: .color(.red.opacity(0.55)), lineWidth: 1)
+            }
+            var cross = Path()
+            cross.move(to: CGPoint(x: center.x - radius, y: center.y)); cross.addLine(to: CGPoint(x: center.x + radius, y: center.y))
+            cross.move(to: CGPoint(x: center.x, y: center.y - radius)); cross.addLine(to: CGPoint(x: center.x, y: center.y + radius))
+            context.stroke(cross, with: .color(.red.opacity(0.55)), lineWidth: 1)
+            let dot = CGPoint(x: center.x + point.x * radius * 0.8, y: center.y - point.y * radius * 0.8)
+            let dotRadius = radius * 0.13
+            context.fill(Path(ellipseIn: CGRect(x: dot.x - dotRadius, y: dot.y - dotRadius, width: dotRadius * 2, height: dotRadius * 2)), with: .color(.red))
+        }
+        .frame(width: size, height: size)
+        .accessibilityLabel(Self.describe(point))
+    }
+
+    static func describe(_ point: CGPoint) -> String {
+        let vertical = point.y > 0.25 ? "выше центра" : point.y < -0.25 ? "ниже центра" : "по центру"
+        let side = point.x > 0.25 ? ", правый винт" : point.x < -0.25 ? ", левый винт" : ""
+        return "Точка удара: \(vertical)\(side)"
+    }
+}
+
+/// Выбор точки удара: нажмите или проведите по битку.
+struct HitPointPicker: View {
+    @Binding var point: CGPoint
+    var yellow = false
+
+    var body: some View {
+        VStack(spacing: Space.m) {
+            HitPointView(point: point, size: 150, yellow: yellow)
+                .contentShape(Circle())
+                .gesture(DragGesture(minimumDistance: 0).onChanged { value in
+                    var x = (value.location.x - 75) / 60, y = -(value.location.y - 75) / 60
+                    let length = hypot(x, y)
+                    if length > 1 { x /= length; y /= length }
+                    point = CGPoint(x: (x * 4).rounded() / 4, y: (y * 4).rounded() / 4)
+                })
+            VStack(spacing: Space.s) {
+                Text("Нажмите на шар — куда бить кием").font(.caption).foregroundStyle(.secondary)
+                Text(HitPointView.describe(point)).font(.callout.weight(.semibold))
+                HStack {
+                    Button("Верх") { point = CGPoint(x: 0, y: 0.75) }
+                    Button("Центр") { point = .zero }
+                    Button("Низ") { point = CGPoint(x: 0, y: -0.75) }
+                }
+                .buttonStyle(.bordered)
+                .font(.caption)
+                Text("Верх — накат, центр — уход 90°, низ — оттяжка").font(.caption).foregroundStyle(.secondary)
+            }
+        }
     }
 }

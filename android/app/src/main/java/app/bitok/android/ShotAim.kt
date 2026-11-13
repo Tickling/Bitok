@@ -68,7 +68,21 @@ enum class ShotKind(val title: String, val metric: Metric) {
 const val BALL_DIAMETER = 4.6
 
 /** Как бить: мнимый шар — где окажется биток в момент удара. */
-data class AimSolution(val ghost: TablePoint, val objectBall: TablePoint, val pocket: TablePoint, val cue: TablePoint, val cutDegrees: Int, val kind: ShotKind) {
+data class AimSolution(val ghost: TablePoint, val objectBall: TablePoint, val pocket: TablePoint, val cue: TablePoint, val cutDegrees: Int, val kind: ShotKind,
+                        val hitX: Double? = null, val hitY: Double? = null) {
+    /** Что даёт точка удара: накат, стоп/90°, оттяжка, боковой винт. */
+    val hitAdvice: String? get() {
+        val x = hitX ?: return null; val y = hitY ?: return null
+        val parts = mutableListOf(when {
+            y > 0.25 -> "удар выше центра — накат: после касания биток катится вперёд, угол ухода меньше 90°"
+            y < -0.25 -> "удар ниже центра — оттяжка: биток после касания тянется назад"
+            else -> "удар в центр — биток уходит под 90° к линии центров"
+        })
+        if (x > 0.25) parts += "правый винт — от борта биток отскочит правее, прицельный шар чуть уведёт влево"
+        else if (x < -0.25) parts += "левый винт — от борта биток отскочит левее, прицельный шар чуть уведёт вправо"
+        return "Точка удара: " + parts.joinToString("; ") + "."
+    }
+
     val thickness: String get() = when {
         cutDegrees < 8 -> "полный шар (в лоб)"
         cutDegrees < 22 -> "≈ ¾ шара"
@@ -78,7 +92,9 @@ data class AimSolution(val ghost: TablePoint, val objectBall: TablePoint, val po
         else -> "очень тонко — удар на грани"
     }
 
-    val advice: List<String> get() = when (kind) {
+    val advice: List<String> get() = baseAdvice + listOfNotNull(hitAdvice)
+
+    private val baseAdvice: List<String> get() = when (kind) {
         ShotKind.OBJECT_BALL -> listOf(
             "Прицельтесь не в сам шар, а в центр мнимого шара (пунктир) — туда должен прийти центр битка.",
             "Срез $cutDegrees° — это $thickness. Линия «мнимый шар → чужой шар» смотрит точно в лузу.",
@@ -86,9 +102,13 @@ data class AimSolution(val ghost: TablePoint, val objectBall: TablePoint, val po
             else "Бейте по центру битка средним ударом, кий проводите прямо по линии прицела.",
         )
         ShotKind.OWN_BALL -> listOf(
-            "Свояк: после касания биток уходит под 90° к линии «мнимый шар → чужой шар» — по пунктиру в лузу.",
+            "Свояк: после касания биток уходит по сплошной линии в лузу, чужой шар — по жёлтому пунктиру.",
             "Прицел — центр мнимого шара, срез $cutDegrees° ($thickness).",
-            "Бейте в центр битка, без верхнего и нижнего винта, средней силой: тогда угол ухода — ровно 90°. Верхний винт «закатит» биток ближе к чужому шару, нижний — оттянет назад.",
+            when {
+                (hitY ?: 0.0) > 0.25 -> "Накатом бейте мягче и доводите кий — иначе биток не докатится до лузы."
+                (hitY ?: 0.0) < -0.25 -> "Оттяжке нужен резкий короткий удар и низкий мост."
+                else -> "Средняя сила, кий ровно: без верхнего и нижнего винта угол ухода — ровно 90°."
+            },
         )
     }
 }
@@ -108,29 +128,38 @@ val Exercise.aim: AimSolution?
         val ghost = when (kind) {
             ShotKind.OBJECT_BALL -> TablePoint(obj.x - ux * d, obj.y - uy * d)
             ShotKind.OWN_BALL -> {
-                // Прямой угол в мнимом шаре: |OG| = d, OG ⟂ GP → угол при O: cos = d / |OP|
-                val theta = acos(d / length)
-                listOf(theta, -theta).map { a ->
-                    TablePoint(obj.x + (ux * cos(a) - uy * sin(a)) * d, obj.y + (ux * sin(a) + uy * cos(a)) * d)
-                }.maxBy { ownScore(cue, it, obj, pocket) }
+                // После касания биток идёт по касательной + доля нормальной скорости:
+                // центр (стоп) — 0, накат — +2/7, оттяжка — −2/7. Ищем точку касания перебором вокруг шара.
+                val follow = 2.0 / 7.0 * (hitY ?: 0.0).coerceIn(-1.0, 1.0)
+                val best = (0 until 720).map { step ->
+                    val a = step / 720.0 * 2 * Math.PI
+                    val point = TablePoint(obj.x + cos(a) * d, obj.y + sin(a) * d)
+                    point to ownError(cue, point, obj, pocket, follow)
+                }.minBy { it.second }
+                if (best.second > 0.09) return null   // ~5°: с этой точки свояк не сыграть
+                best.first
             }
         }
         val vx = ghost.x - cue.x; val vy = ghost.y - cue.y
         val nx = obj.x - ghost.x; val ny = obj.y - ghost.y
         val cosine = (vx * nx + vy * ny) / maxOf(0.001, hypot(vx, vy) * hypot(nx, ny))
         val cut = Math.toDegrees(acos(cosine.coerceIn(-1.0, 1.0))).roundToInt()
-        return AimSolution(ghost, obj, pocket, cue, cut, kind)
+        return AimSolution(ghost, obj, pocket, cue, cut, kind, hitX, hitY)
     }
 
-private fun ownScore(cue: TablePoint, ghost: TablePoint, obj: TablePoint, pocket: TablePoint): Double {
+/** Угол (рад) между направлением битка после касания и направлением на лузу. */
+private fun ownError(cue: TablePoint, ghost: TablePoint, obj: TablePoint, pocket: TablePoint, follow: Double): Double {
     val vx = ghost.x - cue.x; val vy = ghost.y - cue.y
     val v = maxOf(0.001, hypot(vx, vy))
     val nx = (obj.x - ghost.x) / BALL_DIAMETER; val ny = (obj.y - ghost.y) / BALL_DIAMETER
     val along = (vx * nx + vy * ny) / v
-    if (along <= 0.05) return -10.0   // биток не попадёт в шар
+    if (along <= 0.08) return Double.MAX_VALUE   // биток не попадёт в шар
     val tx = vx / v - along * nx; val ty = vy / v - along * ny
+    val dx = tx + follow * along * nx; val dy = ty + follow * along * ny
+    val length = hypot(dx, dy)
+    if (length <= 0.02) return Double.MAX_VALUE
     val px = pocket.x - ghost.x; val py = pocket.y - ghost.y
-    return (tx * px + ty * py) / maxOf(0.001, hypot(tx, ty) * hypot(px, py))
+    return acos(((dx * px + dy * py) / (length * maxOf(0.001, hypot(px, py)))).coerceIn(-1.0, 1.0))
 }
 
 /** Примеры: «чужой» и «свояк» — чтобы было видно, как работает подсказка. */
@@ -141,6 +170,14 @@ val ShotSamples = listOf(
     Exercise("shot-2", 18, "Чужой шар и свояк", "Свояк в середину",
         listOf("Биток 50:55, чужой шар 85:20.", "Сыграть свояка: биток от чужого шара уходит в верхнюю среднюю лузу. 10 ударов."),
         Metric.OWN_BALL, listOf(TablePoint(50.0, 55.0)), listOf(TablePoint(85.0, 20.0)), listOf(Pocket.TOP_MIDDLE), shot = ShotKind.OWN_BALL),
+    Exercise("shot-3", 19, "Чужой шар и свояк", "Резка в угол",
+        listOf("Биток 60:45, чужой шар у борта 148:8.", "Тонкая резка: чужой шар в правую верхнюю лузу. Удар в центр, без винта. 10 ударов."),
+        Metric.OBJECT_BALL, listOf(TablePoint(60.0, 45.0)), listOf(TablePoint(148.0, 8.0)), listOf(Pocket.TOP_RIGHT),
+        shot = ShotKind.OBJECT_BALL, hitX = 0.0, hitY = 0.0),
+    Exercise("shot-4", 20, "Чужой шар и свояк", "Свояк накатом (через лоб)",
+        listOf("Биток 40:50, чужой шар 110:25.", "Удар выше центра: после касания биток накатом уходит в правую верхнюю лузу. 10 ударов."),
+        Metric.OWN_BALL, listOf(TablePoint(40.0, 50.0)), listOf(TablePoint(110.0, 25.0)), listOf(Pocket.TOP_RIGHT),
+        shot = ShotKind.OWN_BALL, hitX = 0.0, hitY = 0.7),
 )
 
 // region Редактор схемы
@@ -277,6 +314,23 @@ fun ManualExerciseEditor(app: AppState, onSave: (Exercise) -> Unit) {
                 repeat(4 - row.size) { androidx.compose.foundation.layout.Spacer(Modifier.weight(1f)) }
             }
         }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Биток жёлтый (цветной)", Modifier.weight(1f), color = LocalPalette.current.text)
+            androidx.compose.material3.Switch(exercise.yellowCue == true, { exercise = exercise.copy(yellowCue = if (it) true else null) })
+        }
+        Title("Точка удара по битку")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Указать точку удара", Modifier.weight(1f), color = LocalPalette.current.text)
+            androidx.compose.material3.Switch(exercise.hasHit, { on ->
+                exercise = exercise.copy(hitX = if (on) 0.0 else null, hitY = if (on) 0.0 else null)
+            })
+        }
+        if (exercise.hasHit) {
+            HitPointPicker(exercise.hitX ?: 0.0, exercise.hitY ?: 0.0, exercise.yellowCue == true) { hx, hy ->
+                exercise = exercise.copy(hitX = hx, hitY = hy)
+            }
+            if (exercise.shot == ShotKind.OWN_BALL) Secondary("Для свояка точка удара меняет траекторию: мнимый шар пересчитается.", size = 12)
+        }
         Title("Видео-урок")
         LessonVideoPicker(app, id)
         PrimaryButton("Сохранить", enabled = title.isNotBlank() && exercise.cueBalls.isNotEmpty() && (exercise.shot == null || exercise.aim != null)) {
@@ -377,6 +431,67 @@ fun LessonCard(app: AppState, exercise: Exercise) {
                 SecondaryButton("🔓 Смотреть в Pro") { app.push(Route.Paywall(null)) }
             }
         }
+    }
+}
+
+// endregion
+
+
+// region Точка удара по битку
+
+fun hitDescription(x: Double, y: Double): String {
+    val vertical = if (y > 0.25) "выше центра" else if (y < -0.25) "ниже центра" else "по центру"
+    val side = if (x > 0.25) ", правый винт" else if (x < -0.25) ", левый винт" else ""
+    return "Точка удара: $vertical$side"
+}
+
+/** Отдельная картинка «биток»: шар крупно, сетка (кольца и крест) и красная точка — куда бить кием. */
+@Composable
+fun HitPointBall(x: Double, y: Double, size: androidx.compose.ui.unit.Dp, yellow: Boolean = false, modifier: Modifier = Modifier) {
+    androidx.compose.foundation.Canvas(modifier.size(size)) {
+        val r = this.size.minDimension / 2
+        val c = Offset(this.size.width / 2, this.size.height / 2)
+        val light = if (yellow) Color(0xFFFFE15A) else Color(0xFFFFFDF5)
+        val dark = if (yellow) Color(0xFFD99E0D) else Color(0xFFCCC4B3)
+        drawCircle(Color.Black.copy(alpha = 0.18f), r, c + Offset(r * 0.06f, r * 0.08f))
+        drawCircle(androidx.compose.ui.graphics.Brush.radialGradient(listOf(light, dark), center = c - Offset(r * 0.35f, r * 0.4f), radius = r * 1.6f), r, c)
+        val grid = Color.Red.copy(alpha = 0.55f)
+        listOf(0.33f, 0.66f, 0.97f).forEach { drawCircle(grid, r * it, c, style = androidx.compose.ui.graphics.drawscope.Stroke(2f)) }
+        drawLine(grid, Offset(c.x - r, c.y), Offset(c.x + r, c.y), 2f)
+        drawLine(grid, Offset(c.x, c.y - r), Offset(c.x, c.y + r), 2f)
+        drawCircle(Color.Red, r * 0.13f, Offset(c.x + (x * r * 0.8).toFloat(), c.y - (y * r * 0.8).toFloat()))
+    }
+}
+
+/** Выбор точки удара: нажмите или проведите по шару. */
+@Composable
+fun HitPointPicker(x: Double, y: Double, yellow: Boolean, onChange: (Double, Double) -> Unit) {
+    val p = LocalPalette.current
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Secondary("Нажмите на шар — куда бить кием", size = 12)
+        Box(Modifier.size(160.dp).pointerInput(Unit) {
+            fun set(o: Offset) {
+                val r = this.size.width / 2f * 0.8f
+                var nx = (o.x - this.size.width / 2f) / r; var ny = -(o.y - this.size.height / 2f) / r
+                val len = kotlin.math.hypot(nx, ny)
+                if (len > 1) { nx /= len; ny /= len }
+                onChange(Math.round(nx * 4) / 4.0, Math.round(ny * 4) / 4.0)
+            }
+            androidx.compose.foundation.gestures.detectDragGestures(onDragStart = { set(it) }) { change, _ -> set(change.position) }
+        }.pointerInput(Unit) { detectTapGestures { o ->
+            val r = this.size.width / 2f * 0.8f
+            var nx = (o.x - this.size.width / 2f) / r; var ny = -(o.y - this.size.height / 2f) / r
+            val len = kotlin.math.hypot(nx, ny)
+            if (len > 1) { nx /= len; ny /= len }
+            onChange(Math.round(nx * 4) / 4.0, Math.round(ny * 4) / 4.0)
+        } }) { HitPointBall(x, y, 160.dp, yellow) }
+        Text(hitDescription(x, y), color = p.text, fontWeight = FontWeight.SemiBold)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Chip("Верх", y > 0.25 && kotlin.math.abs(x) <= 0.25) { onChange(0.0, 0.75) }
+            Chip("Центр", kotlin.math.abs(y) <= 0.25 && kotlin.math.abs(x) <= 0.25) { onChange(0.0, 0.0) }
+            Chip("Низ", y < -0.25 && kotlin.math.abs(x) <= 0.25) { onChange(0.0, -0.75) }
+        }
+        Secondary("Верх — накат, центр — уход 90°, низ — оттяжка", size = 12)
     }
 }
 

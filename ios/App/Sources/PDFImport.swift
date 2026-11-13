@@ -489,6 +489,20 @@ struct ExerciseEditor: View {
                     }
                     Stepper("Ударов: \(exercise.attempts)", value: $exercise.attempts, in: 1...30)
                     Toggle("Отработка винта", isOn: $exercise.spin)
+                    Toggle("Биток жёлтый (цветной)", isOn: Binding(get: { exercise.yellowCue == true }, set: { exercise.yellowCue = $0 ? true : nil }))
+                }
+                Section {
+                    Toggle("Указать точку удара", isOn: Binding(get: { exercise.hitPoint != nil },
+                                                                 set: { on in exercise.hitX = on ? 0 : nil; exercise.hitY = on ? 0 : nil }))
+                    if exercise.hitPoint != nil {
+                        HitPointPicker(point: Binding(get: { exercise.hitPoint ?? .zero },
+                                                      set: { exercise.hitX = $0.x; exercise.hitY = $0.y }),
+                                       yellow: exercise.yellowCue == true)
+                    }
+                } header: {
+                    Text("Точка удара по битку")
+                } footer: {
+                    Text(exercise.shot == .ownBall ? "Для свояка точка удара меняет траекторию: мнимый шар пересчитается." : "Ученик увидит «прицел» с точкой удара, как в видеоуроках.")
                 }
                 Section {
                     Picker("Ставим", selection: $mode) {
