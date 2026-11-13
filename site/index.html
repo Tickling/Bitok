@@ -246,7 +246,7 @@ footer { border-top: 1px solid var(--line); padding-block: 26px 40px; color: var
     <div class="wrap">
       <div class="kicker">Биток</div>
       <h1>Ваш ход.</h1>
-      <p class="lead">Выберите точку на битке, оттяните кий и отпустите. Мнимый шар — в голове, как за настоящим столом.</p>
+      <p class="lead">Выберите точку на битке и режим, оттяните кий и отпустите. Во взрослом мнимый шар — только в голове.</p>
     </div>
     <div class="stage">
       <canvas id="table" aria-label="Мини-игра: забейте прицельный шар. Зажмите у битка, оттяните кий и отпустите."></canvas>
@@ -265,8 +265,16 @@ footer { border-top: 1px solid var(--line); padding-block: 26px 40px; color: var
         <div class="spinball" id="spinball" role="slider" tabindex="0" aria-label="Точка удара по битку, стрелки — сдвинуть" aria-valuetext="центр"><i id="spindot"></i></div>
         <div><small>Куда бить по битку</small><b id="spinlabel">центр — уход под 90°</b></div>
       </div>
+      <div class="glass" style="padding:10px 14px">
+        <div><small>Режим</small>
+          <div class="segs" role="radiogroup" aria-label="Режим игры" id="mode" style="margin-top:4px">
+            <button role="radio" aria-checked="true" aria-selected="true" data-mode="kid" type="button">Детский</button>
+            <button role="radio" aria-checked="false" aria-selected="false" data-mode="adult" type="button">Взрослый</button>
+          </div>
+        </div>
+      </div>
       <div class="glass" style="padding:12px 18px">
-        <div><small>Сила удара</small><b>чем дальше оттянете кий, тем сильнее</b></div>
+        <div><small>Сила удара</small><b>чем дальше оттянете кий, тем сильнее</b><small id="modehint" style="margin-top:2px">Детский: прицел продолжается за шаром</small></div>
       </div>
     </div>
   </section>
@@ -516,62 +524,97 @@ function apply(m, x, y) { const w = m[2][0] * x + m[2][1] * y + m[2][2]; return 
 const P = (x, y) => apply(Hm, x, y);
 const scaleAt = (x, y) => { const a = P(x, y), b = P(x + 1, y); return Math.hypot(b.x - a.x, b.y - a.y); };
 
+let mode = "kid";
 function resize() {
   const rect = canvas.getBoundingClientRect(), dpr = Math.min(devicePixelRatio || 1, 2);
   canvas.width = Math.round(rect.width * dpr); canvas.height = Math.round(rect.height * dpr);
   CW = canvas.width; CH = canvas.height;
   const narrow = rect.width < 620;
-  const top = CH * (narrow ? .16 : .12), bottom = CH * .86;
-  const farHalf = CW * (narrow ? .36 : .31), nearHalf = CW * (narrow ? .5 : .47);
+  // Камера ближе и ниже: дальний борт узкий, ближний уходит за края кадра — шары крупнее
+  const top = CH * (narrow ? .14 : .1), bottom = CH * (narrow ? .96 : 1.02);
+  const farHalf = CW * (narrow ? .38 : .3), nearHalf = CW * (narrow ? .58 : .6);
   Hm = solveHomography([[-RAIL, -RAIL], [W + RAIL, -RAIL], [W + RAIL, H + RAIL], [-RAIL, H + RAIL]],
     [[CW / 2 - farHalf, top], [CW / 2 + farHalf, top], [CW / 2 + nearHalf, bottom], [CW / 2 - nearHalf, bottom]]);
   Hi = invert3(Hm);
-  // Ворс сукна: мелкий шум
   const noise = document.createElement("canvas"); noise.width = noise.height = 96;
   const nctx = noise.getContext("2d"), img = nctx.createImageData(96, 96);
-  for (let i = 0; i < img.data.length; i += 4) { const v = Math.random() * 255; img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 14; }
+  for (let i = 0; i < img.data.length; i += 4) { const v = Math.random() * 255; img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 13; }
   nctx.putImageData(img, 0, 0); feltPattern = ctx.createPattern(noise, "repeat");
   draw();
 }
 function poly(points) { ctx.beginPath(); points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath(); }
 function rectPts(x0, y0, x1, y1) { return [P(x0, y0), P(x1, y0), P(x1, y1), P(x0, y1)]; }
+function tablePoly(pts) { poly(pts.map(([x, y]) => P(x, y))); }
+// Борта (резина) между лузами: «губки» срезаны к лузам, как на настоящем столе
+const CUSH = 2.6, CM = 5.2, MM = 4.6;   // ширина борта, отступ у угловой и у средней лузы
+const CUSHIONS = [
+  [[CM, 0], [80 - MM, 0], [80 - MM + 1.2, -CUSH], [CM - CUSH, -CUSH]],
+  [[80 + MM, 0], [W - CM, 0], [W - CM + CUSH, -CUSH], [80 + MM - 1.2, -CUSH]],
+  [[CM, H], [80 - MM, H], [80 - MM + 1.2, H + CUSH], [CM - CUSH, H + CUSH]],
+  [[80 + MM, H], [W - CM, H], [W - CM + CUSH, H + CUSH], [80 + MM - 1.2, H + CUSH]],
+  [[0, CM], [0, H - CM], [-CUSH, H - CM + CUSH], [-CUSH, CM - CUSH]],
+  [[W, CM], [W, H - CM], [W + CUSH, H - CM + CUSH], [W + CUSH, CM - CUSH]],
+];
+const HOLES = [[-1.6, -1.6, 4.4], [80, -2.9, 3.9], [W + 1.6, -1.6, 4.4], [-1.6, H + 1.6, 4.4], [80, H + 2.9, 3.9], [W + 1.6, H + 1.6, 4.4]];
+function ringPts(x, y, r, from = 0, to = Math.PI * 2, n = 28) { const pts = []; for (let i = 0; i <= n; i++) { const a = from + (to - from) * i / n; pts.push(P(x + Math.cos(a) * r, y + Math.sin(a) * r)); } return pts; }
 
 function draw() {
   if (!Hm) return;
   ctx.clearRect(0, 0, CW, CH);
-  const outer = rectPts(-RAIL, -RAIL, W + RAIL, H + RAIL), felt = rectPts(-1.2, -1.2, W + 1.2, H + 1.2);
-  // Тень стола
+  const outer = rectPts(-RAIL, -RAIL, W + RAIL, H + RAIL);
+  // Тень стола и передняя грань ближнего борта
   ctx.save(); ctx.filter = `blur(${CW * .02}px)`; ctx.fillStyle = "rgba(0,0,0,.7)";
   poly(outer.map(p => ({ x: CW / 2 + (p.x - CW / 2) * 1.02, y: p.y + CH * .05 }))); ctx.fill(); ctx.restore();
-  // Передняя грань ближнего борта (объём)
-  const depth = CH * .05, nl = outer[3], nr = outer[2];
+  const depth = CH * .06, nl = outer[3], nr = outer[2];
   const fg = ctx.createLinearGradient(0, nl.y, 0, nl.y + depth); fg.addColorStop(0, "#3b1219"); fg.addColorStop(1, "#14060a");
   ctx.fillStyle = fg; poly([nl, nr, { x: nr.x - CW * .006, y: nr.y + depth }, { x: nl.x + CW * .006, y: nl.y + depth }]); ctx.fill();
-  // Борт: дерево с лаком
-  const rg = ctx.createLinearGradient(0, outer[0].y, 0, outer[3].y); rg.addColorStop(0, "#4d1822"); rg.addColorStop(.5, "#6e2532"); rg.addColorStop(1, "#8a3443");
+  // Дерево борта: лак, отражение лампы
+  const rg = ctx.createLinearGradient(0, outer[0].y, 0, outer[3].y); rg.addColorStop(0, "#43141c"); rg.addColorStop(.5, "#6a2230"); rg.addColorStop(1, "#8a3443");
   ctx.fillStyle = rg; poly(outer); ctx.fill();
-  ctx.strokeStyle = "rgba(255,230,200,.18)"; ctx.lineWidth = 1.2; poly(outer); ctx.stroke();
-  // Сукно со светом лампы
-  const c = P(W / 2, H * .42), r0 = Math.hypot(outer[2].x - outer[0].x, outer[2].y - outer[0].y) * .55;
+  const sheen = ctx.createLinearGradient(outer[0].x, 0, outer[1].x, 0); sheen.addColorStop(0, "rgba(255,255,255,0)"); sheen.addColorStop(.5, "rgba(255,220,200,.10)"); sheen.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = sheen; poly(outer); ctx.fill();
+  // Сукно с пятном света
+  const felt = rectPts(-CUSH, -CUSH, W + CUSH, H + CUSH), c = P(W / 2, H * .42);
+  const r0 = Math.hypot(outer[2].x - outer[0].x, outer[2].y - outer[0].y) * .5;
   const lg = ctx.createRadialGradient(c.x, c.y, r0 * .05, c.x, c.y, r0);
-  lg.addColorStop(0, "#22b3a5"); lg.addColorStop(.55, "#15897e"); lg.addColorStop(1, "#0a4d47");
+  lg.addColorStop(0, "#26b8aa"); lg.addColorStop(.55, "#158b80"); lg.addColorStop(1, "#0a4d47");
   ctx.fillStyle = lg; poly(felt); ctx.fill();
   if (feltPattern) { ctx.fillStyle = feltPattern; poly(felt); ctx.fill(); }
-  // Резина бортов
-  ctx.strokeStyle = "rgba(0,0,0,.35)"; ctx.lineWidth = Math.max(1, scaleAt(80, 40) * .9); poly(rectPts(0, 0, W, H)); ctx.stroke();
   // Ромбы-отметки
   ctx.fillStyle = "#f1dfb9";
-  for (let i = 20; i < 160; i += 20) if (i !== 80) for (const y of [-RAIL / 2, H + RAIL / 2]) { const p = P(i, y), s = scaleAt(i, y) * .7; ctx.beginPath(); ctx.ellipse(p.x, p.y, s, s * .55, 0, 0, Math.PI * 2); ctx.fill(); }
-  for (const y of [20, 40, 60]) for (const x of [-RAIL / 2, W + RAIL / 2]) { const p = P(x, y), s = scaleAt(x, y) * .7; ctx.beginPath(); ctx.ellipse(p.x, p.y, s * .6, s * .6, 0, 0, Math.PI * 2); ctx.fill(); }
+  for (let i = 20; i < 160; i += 20) if (i !== 80) for (const y of [-RAIL / 2 - 1, H + RAIL / 2 + 1]) { const p = P(i, y), s = scaleAt(i, y) * .65; ctx.beginPath(); ctx.ellipse(p.x, p.y, s, s * .5, 0, 0, Math.PI * 2); ctx.fill(); }
+  for (const y of [20, 40, 60]) for (const x of [-RAIL / 2 - 1, W + RAIL / 2 + 1]) { const p = P(x, y), s = scaleAt(x, y) * .55; ctx.beginPath(); ctx.ellipse(p.x, p.y, s, s * .6, 0, 0, Math.PI * 2); ctx.fill(); }
+  // Лузы: отверстие с глубиной, кожаная обшивка со строчкой, сетка у ближних
+  for (const [x, y, r] of HOLES) {
+    const back = y < H / 2 ? -1 : 1;   // обшивка — со стороны борта
+    const from = y < H / 2 ? Math.PI : 0, to = from + Math.PI;
+    const leather = [...ringPts(x, y, r + 2.4, from - .5, to + .5), ...ringPts(x, y, r - .2, to + .5, from - .5)];
+    const lgL = ctx.createLinearGradient(0, P(x, y - 3).y, 0, P(x, y + 3).y);
+    lgL.addColorStop(0, "#e9dcc0"); lgL.addColorStop(1, "#b49b70");
+    ctx.fillStyle = lgL; poly(leather); ctx.fill();
+    ctx.setLineDash([2, 3]); ctx.strokeStyle = "rgba(90,60,30,.7)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ringPts(x, y, r + 1.3, from - .4, to + .4).forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke(); ctx.setLineDash([]);
+    const hole = ringPts(x, y, r), hc = P(x, y), hs = scaleAt(x, y) * r;
+    const hg = ctx.createRadialGradient(hc.x, hc.y - hs * .4, hs * .1, hc.x, hc.y, hs * 1.2);
+    hg.addColorStop(0, "#000"); hg.addColorStop(.7, "#050505"); hg.addColorStop(1, "#1d1410");
+    ctx.fillStyle = hg; poly(hole); ctx.fill();
+    if (back > 0) {   // сетка ближних луз видна под бортом
+      const s = scaleAt(x, y), base = P(x, y + r);
+      ctx.strokeStyle = "rgba(235,225,200,.35)"; ctx.lineWidth = 1;
+      for (let k = -3; k <= 3; k++) { ctx.beginPath(); ctx.moveTo(base.x + k * s * 1.2, base.y); ctx.lineTo(base.x + k * s * .8, base.y + s * 6); ctx.stroke(); }
+      for (let k = 1; k <= 4; k++) { ctx.beginPath(); ctx.ellipse(base.x, base.y + k * s * 1.4, s * (3.6 - k * .35), s * .6, 0, 0, Math.PI); ctx.stroke(); }
+    }
+  }
+  // Резина бортов с «губками» и бликом по кромке
+  for (const cu of CUSHIONS) {
+    ctx.fillStyle = "#107a70"; tablePoly(cu); ctx.fill();
+    const a = P(...cu[0]), b = P(...cu[1]);
+    ctx.strokeStyle = "rgba(160,255,240,.35)"; ctx.lineWidth = Math.max(1, scaleAt(...cu[0]) * .35);
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    ctx.strokeStyle = "rgba(0,0,0,.35)"; ctx.lineWidth = 1; tablePoly(cu); ctx.stroke();
+  }
   // Меловая линия
   ctx.strokeStyle = "rgba(255,255,255,.12)"; ctx.lineWidth = 1; ctx.beginPath(); const l0 = P(40, 0), l1 = P(40, H); ctx.moveTo(l0.x, l0.y); ctx.lineTo(l1.x, l1.y); ctx.stroke();
-  // Лузы
-  for (const [px, py] of POCKETS) {
-    const x = Math.min(Math.max(px, 0), W), y = Math.min(Math.max(py, 0), H), pts = [];
-    for (let a = 0; a < Math.PI * 2; a += Math.PI / 12) pts.push(P(x + Math.cos(a) * 4.2, y + Math.sin(a) * 4.2));
-    ctx.fillStyle = "#050807"; poly(pts); ctx.fill();
-    ctx.strokeStyle = "rgba(201,163,92,.8)"; ctx.lineWidth = Math.max(1, scaleAt(x, y) * .5); poly(pts); ctx.stroke();
-  }
   // Разбор промаха
   if (lesson) {
     ctx.setLineDash([6, 6]); ctx.lineWidth = 2; ctx.strokeStyle = "rgba(255,255,255,.9)";
@@ -579,49 +622,78 @@ function draw() {
     ctx.strokeStyle = "#F5D547"; line(lesson.obj, lesson.pocket); ctx.setLineDash([]);
     const g = P(lesson.ghost.x, lesson.ghost.y);
     ctx.fillStyle = "#fff"; ctx.font = `700 ${Math.max(12, CW * .012)}px Onest, sans-serif`; ctx.textAlign = "center";
-    ctx.fillText("мнимый шар", g.x, g.y - scaleAt(lesson.ghost.x, lesson.ghost.y) * R * 2.4);
+    ctx.fillText("мнимый шар", g.x, g.y - scaleAt(lesson.ghost.x, lesson.ghost.y) * R * 2.6);
   }
-  // Прицел вдоль кия и сам кий
+  // Прицел: детский — продолжение за шаром, взрослый — обрыв у шара
   const cue = balls[0], obj = balls[1];
   if (aiming && !cue.in) {
     const d = aiming.dir; let t = 400;
     if (d.x > 0) t = Math.min(t, (W - R - cue.x) / d.x); else if (d.x < 0) t = Math.min(t, (R - cue.x) / d.x);
     if (d.y > 0) t = Math.min(t, (H - R - cue.y) / d.y); else if (d.y < 0) t = Math.min(t, (R - cue.y) / d.y);
-    if (!obj.in) { const hit = rayHit(cue, d, obj); if (hit) t = Math.min(t, Math.hypot(hit.x - cue.x, hit.y - cue.y)); }
-    ctx.setLineDash([4, 6]); ctx.strokeStyle = "rgba(255,255,255,.55)"; ctx.lineWidth = 1.5;
+    const hit = obj.in ? null : rayHit(cue, d, obj);
+    if (hit) t = Math.min(t, Math.hypot(hit.x - cue.x, hit.y - cue.y));
+    ctx.setLineDash([4, 6]); ctx.strokeStyle = "rgba(255,255,255,.6)"; ctx.lineWidth = 1.6;
     line({ x: cue.x + d.x * R, y: cue.y + d.y * R }, { x: cue.x + d.x * t, y: cue.y + d.y * t }); ctx.setLineDash([]);
+    if (hit && mode === "kid") {
+      // Касание и куда покатится прицельный шар
+      ctx.strokeStyle = "rgba(255,255,255,.75)"; ctx.lineWidth = 1.2; circle(hit, false);
+      const nx = obj.x - hit.x, ny = obj.y - hit.y, nl = Math.hypot(nx, ny);
+      let tt = 400, ux = nx / nl, uy = ny / nl;
+      if (ux > 0) tt = Math.min(tt, (W - obj.x) / ux); else if (ux < 0) tt = Math.min(tt, -obj.x / ux);
+      if (uy > 0) tt = Math.min(tt, (H - obj.y) / uy); else if (uy < 0) tt = Math.min(tt, -obj.y / uy);
+      ctx.setLineDash([4, 5]); ctx.strokeStyle = "#F5D547"; ctx.lineWidth = 2;
+      line({ x: obj.x, y: obj.y }, { x: obj.x + ux * tt, y: obj.y + uy * tt }); ctx.setLineDash([]);
+    }
   }
-  // Шары (дальние первыми)
   for (const ball of [...balls].sort((a, b) => a.y - b.y)) if (!ball.in) drawBall(ball);
   if (aiming && !cue.in) drawCue(cue, aiming.dir, aiming.power);
 }
 function line(a, b) { const p = P(a.x, a.y), q = P(b.x, b.y); ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke(); }
 function circle(c, fill) { const pts = []; for (let a = 0; a < Math.PI * 2; a += Math.PI / 16) pts.push(P(c.x + Math.cos(a) * R, c.y + Math.sin(a) * R)); poly(pts); fill ? ctx.fill() : ctx.stroke(); }
+// Шар: слоновая кость, свет лампы сверху, отражение сукна снизу, мягкая тень
 function drawBall(ball) {
-  const p = P(ball.x, ball.y), s = scaleAt(ball.x, ball.y), r = s * R;
-  // тень на сукне
-  ctx.fillStyle = "rgba(0,0,0,.35)"; ctx.beginPath(); ctx.ellipse(p.x + r * .25, p.y + r * .15, r * 1.05, r * .55, 0, 0, Math.PI * 2); ctx.fill();
-  const cy = p.y - r * .78;
-  const g = ctx.createRadialGradient(p.x - r * .35, cy - r * .4, r * .05, p.x, cy, r * 1.05);
-  if (ball.cue) { g.addColorStop(0, "#fff"); g.addColorStop(.35, "#f6f0e1"); g.addColorStop(1, "#9b917b"); }
-  else { g.addColorStop(0, "#fff"); g.addColorStop(.4, "#efe7d4"); g.addColorStop(1, "#a59a82"); }
+  const p = P(ball.x, ball.y), s = scaleAt(ball.x, ball.y), r = s * R, cy = p.y - r * .8;
+  const sh = ctx.createRadialGradient(p.x + r * .2, p.y + r * .1, r * .1, p.x + r * .2, p.y + r * .1, r * 1.4);
+  sh.addColorStop(0, "rgba(0,0,0,.55)"); sh.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = sh; ctx.beginPath(); ctx.ellipse(p.x + r * .2, p.y + r * .1, r * 1.4, r * .7, 0, 0, Math.PI * 2); ctx.fill();
+  const g = ctx.createRadialGradient(p.x - r * .3, cy - r * .45, r * .05, p.x, cy, r * 1.05);
+  g.addColorStop(0, "#ffffff"); g.addColorStop(.3, "#fbf6ea"); g.addColorStop(.75, "#d9cfb8"); g.addColorStop(1, "#8f8571");
   ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, cy, r, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = "rgba(255,255,255,.85)"; ctx.beginPath(); ctx.ellipse(p.x - r * .38, cy - r * .45, r * .22, r * .14, -.5, 0, Math.PI * 2); ctx.fill();
-  if (ball.cue) { ctx.fillStyle = "#c0392b"; ctx.beginPath(); ctx.arc(p.x + spin.x * r * .55, cy - spin.y * r * .55, r * .16, 0, Math.PI * 2); ctx.fill(); }
+  const bounce = ctx.createLinearGradient(0, cy + r * .3, 0, cy + r); bounce.addColorStop(0, "rgba(40,180,165,0)"); bounce.addColorStop(1, "rgba(40,180,165,.35)");
+  ctx.fillStyle = bounce; ctx.beginPath(); ctx.arc(p.x, cy, r, 0, Math.PI * 2); ctx.fill();
+  if (!ball.cue && r > 6) {   // номер прицельного шара
+    ctx.fillStyle = "rgba(255,255,255,.9)"; ctx.beginPath(); ctx.ellipse(p.x + r * .25, cy + r * .12, r * .32, r * .28, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#2a2a2a"; ctx.font = `700 ${r * .38}px Onest, sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText("7", p.x + r * .25, cy + r * .14); ctx.textBaseline = "alphabetic";
+  }
+  ctx.fillStyle = "rgba(255,255,255,.95)"; ctx.beginPath(); ctx.ellipse(p.x - r * .36, cy - r * .48, r * .2, r * .12, -.5, 0, Math.PI * 2); ctx.fill();
+  if (ball.cue && (spin.x || spin.y)) { ctx.fillStyle = "#c0392b"; ctx.beginPath(); ctx.arc(p.x + spin.x * r * .55, cy - spin.y * r * .55, r * .13, 0, Math.PI * 2); ctx.fill(); }
 }
+// Кий объёмный: цилиндр с бликом, синяя наклейка, белый колпачок, чёрная вставка
 function drawCue(cue, d, power) {
-  const back = R + 1.5 + power * 16, len = 95;
+  const back = R + 1.2 + power * 16, len = 120;
   const a = P(cue.x - d.x * back, cue.y - d.y * back), b = P(cue.x - d.x * (back + len), cue.y - d.y * (back + len));
-  const lift = scaleAt(cue.x, cue.y) * R * .8;
-  const sa = scaleAt(cue.x - d.x * back, cue.y - d.y * back), sb = scaleAt(cue.x - d.x * (back + len), cue.y - d.y * (back + len));
-  const ax = a.x, ay = a.y - lift, bx = b.x, by = b.y - lift * 1.4;
-  const nx = -(by - ay), ny = bx - ax, nl = Math.hypot(nx, ny) || 1;
-  const w0 = sa * .55, w1 = sb * 1.3;
-  const g = ctx.createLinearGradient(ax, ay, bx, by);
-  g.addColorStop(0, "#f3e6c9"); g.addColorStop(.02, "#2c6fd6"); g.addColorStop(.035, "#f1dcae"); g.addColorStop(.6, "#d9b27a"); g.addColorStop(.62, "#1d1d1f"); g.addColorStop(1, "#3a1a10");
-  ctx.fillStyle = g; ctx.beginPath();
-  ctx.moveTo(ax + nx / nl * w0, ay + ny / nl * w0); ctx.lineTo(bx + nx / nl * w1, by + ny / nl * w1);
-  ctx.lineTo(bx - nx / nl * w1, by - ny / nl * w1); ctx.lineTo(ax - nx / nl * w0, ay - ny / nl * w0); ctx.closePath(); ctx.fill();
+  const sa = scaleAt(cue.x - d.x * back, cue.y - d.y * back), lift = sa * R * .8;
+  const ax = a.x, ay = a.y - lift, bx = b.x, by = b.y - lift * 2.2;
+  const vx = bx - ax, vy = by - ay, vl = Math.hypot(vx, vy) || 1, nx = -vy / vl, ny = vx / vl;
+  const w0 = Math.max(2, sa * .62), w1 = Math.max(6, w0 * 4.2);
+  const seg = (t0, t1, colors) => {
+    const p0 = { x: ax + vx * t0, y: ay + vy * t0 }, p1 = { x: ax + vx * t1, y: ay + vy * t1 };
+    const r0 = w0 + (w1 - w0) * t0, r1 = w0 + (w1 - w0) * t1;
+    const g = ctx.createLinearGradient(p0.x + nx * r0, p0.y + ny * r0, p0.x - nx * r0, p0.y - ny * r0);
+    colors.forEach(([o, c]) => g.addColorStop(o, c));
+    ctx.fillStyle = g; ctx.beginPath();
+    ctx.moveTo(p0.x + nx * r0, p0.y + ny * r0); ctx.lineTo(p1.x + nx * r1, p1.y + ny * r1);
+    ctx.lineTo(p1.x - nx * r1, p1.y - ny * r1); ctx.lineTo(p0.x - nx * r0, p0.y - ny * r0); ctx.closePath(); ctx.fill();
+  };
+  const cyl = (dark, mid, light) => [[0, dark], [.3, mid], [.45, light], [.6, mid], [1, dark]];
+  ctx.save(); ctx.shadowColor = "rgba(0,0,0,.5)"; ctx.shadowBlur = w1; ctx.shadowOffsetY = w0 * 2;
+  seg(0, .012, cyl("#123f86", "#2c6fd6", "#79a8f0"));          // наклейка
+  seg(.012, .03, cyl("#b9b2a2", "#efe9dc", "#ffffff"));         // колпачок
+  seg(.03, .62, cyl("#8a6534", "#d7b47c", "#f6e3bd"));          // клён
+  seg(.62, .7, cyl("#0c0c0c", "#2b2b2b", "#6a6a6a"));           // вставка
+  seg(.7, 1, cyl("#2a1209", "#5b2b17", "#9a5a35"));             // турняк
+  ctx.restore();
 }
 function rayHit(cue, d, obj) {
   const fx = cue.x - obj.x, fy = cue.y - obj.y, b = fx * d.x + fy * d.y, c = fx * fx + fy * fy - 4 * R * R, disc = b * b - c;
@@ -718,6 +790,12 @@ function spinFrom(e) { const r = spinball.getBoundingClientRect(); setSpin((e.cl
 spinball.addEventListener("pointerdown", e => { spinball.setPointerCapture(e.pointerId); spinFrom(e); });
 spinball.addEventListener("pointermove", e => { if (e.buttons) spinFrom(e); });
 spinball.addEventListener("keydown", e => { const d = { ArrowUp: [0, .25], ArrowDown: [0, -.25], ArrowLeft: [-.25, 0], ArrowRight: [.25, 0] }[e.key]; if (d) { e.preventDefault(); setSpin(spin.x + d[0], spin.y + d[1]); } });
+document.querySelectorAll("#mode button").forEach(b => b.addEventListener("click", () => {
+  mode = b.dataset.mode;
+  document.querySelectorAll("#mode button").forEach(x => { const on = x === b; x.setAttribute("aria-checked", String(on)); x.setAttribute("aria-selected", String(on)); });
+  document.getElementById("modehint").textContent = mode === "kid" ? "Детский: прицел продолжается за шаром" : "Взрослый: линия обрывается у шара";
+  draw();
+}));
 new ResizeObserver(resize).observe(canvas);
 reset();
 
