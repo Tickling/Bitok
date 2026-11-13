@@ -8,6 +8,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -477,7 +478,7 @@ fun HitPointPicker(x: Double, y: Double, yellow: Boolean, onChange: (Double, Dou
                 if (len > 1) { nx /= len; ny /= len }
                 onChange(Math.round(nx * 4) / 4.0, Math.round(ny * 4) / 4.0)
             }
-            androidx.compose.foundation.gestures.detectDragGestures(onDragStart = { set(it) }) { change, _ -> set(change.position) }
+            detectDragGestures(onDragStart = { set(it) }) { change, _ -> set(change.position) }
         }.pointerInput(Unit) { detectTapGestures { o ->
             val r = this.size.width / 2f * 0.8f
             var nx = (o.x - this.size.width / 2f) / r; var ny = -(o.y - this.size.height / 2f) / r
