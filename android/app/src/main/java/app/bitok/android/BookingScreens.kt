@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -107,6 +108,47 @@ fun SlotGrid(app: AppState, slots: List<Slot>, selected: String?, showPlace: Boo
     }
 }
 
+/** Сетка ученика: свободное время + занятое другими (неактивно, «забронировано»); можно выбрать несколько часов подряд. */
+@Composable
+fun StudentSlotGrid(app: AppState, slots: List<Slot>, held: List<Slot>, selected: List<String>, showPlace: Boolean, onSelect: (Slot) -> Unit) {
+    val p = LocalPalette.current
+    val heldIds = held.map { it.id }.toSet()
+    (slots + held).sortedBy { it.start }.chunked(3).forEach { row ->
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            row.forEach { slot ->
+                if (slot.id in heldIds) {
+                    Column(
+                        Modifier.weight(1f).heightIn(min = 44.dp)
+                            .background(p.textSecondary.copy(alpha = 0.12f), androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                            .padding(vertical = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(Fmt.time(slot.start), color = p.textSecondary, fontWeight = FontWeight.SemiBold,
+                            textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough)
+                        Text("забронировано", color = p.textSecondary, fontSize = 11.sp)
+                    }
+                } else {
+                    val label = Fmt.time(slot.start) + if (showPlace) "\n" + (app.backend.venue(slot.venueId)?.name ?: "") else ""
+                    Chip(label, slot.id in selected, Modifier.weight(1f)) { onSelect(slot) }
+                }
+            }
+            repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+        }
+    }
+}
+
+/** Выбор подряд: соседний час того же места добавляется (до 3), крайний — убирается, остальное — новый выбор. */
+fun toggleConsecutive(b: DemoBackend, selected: List<String>, slot: Slot): List<String> {
+    val chosen = selected.mapNotNull { b.slot(it) }.sortedBy { it.start }
+    if (slot.id in selected) {
+        return if (slot.id == chosen.first().id || slot.id == chosen.last().id) selected - slot.id else listOf(slot.id)
+    }
+    val first = chosen.firstOrNull() ?: return listOf(slot.id)
+    val last = chosen.last()
+    return if (chosen.size < 3 && slot.venueId == first.venueId && (slot.start == last.end || slot.end == first.start)) selected + slot.id
+    else listOf(slot.id)
+}
+
 // endregion
 
 // region Запись ученика
@@ -119,7 +161,7 @@ fun StudentBookingScreen(app: AppState) {
     val me = app.me
     var month by remember { mutableStateOf(LocalDate.now().withDayOfMonth(1)) }
     var day by remember(coachId) { mutableStateOf<LocalDate?>(null) }
-    var slotId by remember(coachId) { mutableStateOf<String?>(null) }
+    var slotIds by remember(coachId) { mutableStateOf<List<String>>(emptyList()) }
     val info = b.coachInfo(coachId)
     // Скриншот «Помощи»: выбран ближайший день и первое время.
     androidx.compose.runtime.LaunchedEffect(app.uiPage) {
@@ -128,16 +170,19 @@ fun StudentBookingScreen(app: AppState) {
             if (first != null) {
                 day = first
                 kotlinx.coroutines.delay(300)
-                slotId = b.freeSlots(coachId, first, me).firstOrNull { b.leadTime(it) > 600_000 }?.id
+                slotIds = listOfNotNull(b.freeSlots(coachId, first, me).firstOrNull { b.leadTime(it) > 600_000 }?.id)
             }
             app.uiPage = null
         }
     }
 
     Screen("Запись", app, bottom = {
-        val slot = slotId?.let { b.slot(it) }
-        if (slot != null) {
-            PrimaryButton("Продолжить · ${Fmt.time(slot.start)}", Modifier.padding(16.dp)) { app.push(Route.Confirm(slot.id)) }
+        val chosen = slotIds.mapNotNull { b.slot(it) }.sortedBy { it.start }
+        if (chosen.isNotEmpty()) {
+            val hours = if (chosen.size > 1) " · ${chosen.size} ч" else ""
+            PrimaryButton("Продолжить · ${Fmt.time(chosen.first().start)}–${Fmt.time(chosen.last().end)}$hours", Modifier.padding(16.dp)) {
+                app.push(Route.Confirm(chosen.map { it.id }))
+            }
         }
     }) {
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -161,15 +206,19 @@ fun StudentBookingScreen(app: AppState) {
             IconButton({ month = month.plusMonths(1); day = null }) { Icon(Icons.Filled.ChevronRight, "Следующий месяц", tint = p.accent) }
         }
         val myDays = b.bookingsOfStudent(me).filter { it.status.holdsSlot }.map { it.start.toDate() }.toSet()
-        MonthGrid(month, day, b.availableDays(coachId, me), myDays) { day = it; slotId = null }
+        MonthGrid(month, day, b.availableDays(coachId, me), myDays) { day = it; slotIds = emptyList() }
         val selectedDay = day
         if (selectedDay == null) {
             Secondary("👆 Выберите день — доступные дни выделены", size = 15)
         } else {
             Title(Fmt.dayTitle(selectedDay))
             val slots = b.freeSlots(coachId, selectedDay, me)
-            if (slots.isEmpty()) Secondary("На этот день свободного времени нет")
-            SlotGrid(app, slots, slotId, slots.map { it.venueId }.toSet().size > 1) { slotId = if (slotId == it.id) null else it.id }
+            val held = b.heldSlots(coachId, selectedDay, me)
+            if (slots.isEmpty() && held.isEmpty()) Secondary("На этот день свободного времени нет")
+            StudentSlotGrid(app, slots, held, slotIds, slots.map { it.venueId }.toSet().size > 1) { slotIds = toggleConsecutive(b, slotIds, it) }
+            if (slots.isNotEmpty()) {
+                Secondary(if (slotIds.size == 1) "Нажмите на соседнее время, чтобы взять 2 часа подряд" else "Можно выбрать до 3 часов подряд", size = 13)
+            }
         }
         val groups = b.openGroups(coachId, me)
         if (groups.isNotEmpty()) {
@@ -193,17 +242,23 @@ fun StudentBookingScreen(app: AppState) {
 }
 
 @Composable
-fun ConfirmBookingScreen(app: AppState, slotId: String) {
+fun ConfirmBookingScreen(app: AppState, slotIds: List<String>) {
     val b = app.backend
-    val slot = b.slot(slotId) ?: return Screen("Запись", app) { Secondary("Слот уже заняли") }
+    val chosen = slotIds.mapNotNull { b.slot(it) }.sortedBy { it.start }
+    val slot = chosen.firstOrNull()?.takeIf { chosen.size == slotIds.size } ?: return Screen("Запись", app) { Secondary("Слот уже заняли") }
+    val minutes = chosen.sumOf { it.minutes }
     var comment by remember { mutableStateOf("") }
     var isGroup by remember { mutableStateOf(false) }
     Screen("Проверьте запись", app, bottom = {
         PrimaryButton("Записаться", Modifier.padding(16.dp)) {
             app.run {
                 val text = comment.trim()
-                val booking = b.book(slot.id, app.me, if (isGroup) "👥 Групповая тренировка" + (if (text.isEmpty()) "" else ". $text") else text.ifEmpty { null })
-                if (isGroup) b.markGroup(booking.id)
+                var note = if (isGroup) "👥 Групповая тренировка" + (if (text.isEmpty()) "" else ". $text") else text
+                if (chosen.size > 1) note = "${chosen.size} часа подряд" + (if (note.isEmpty()) "" else ". $note")
+                chosen.forEach { item ->
+                    val booking = b.book(item.id, app.me, note.ifEmpty { null })
+                    if (isGroup) b.markGroup(booking.id)
+                }
                 app.openChat(slot.coachId)
             }
         }
@@ -218,10 +273,10 @@ fun ConfirmBookingScreen(app: AppState, slotId: String) {
                 }
             }
             InfoRow(Icons.Filled.CalendarMonth, Fmt.day(slot.start))
-            InfoRow(Icons.Filled.AccessTime, Fmt.range(slot.start, slot.minutes))
+            InfoRow(Icons.Filled.AccessTime, Fmt.range(slot.start, minutes) + if (chosen.size > 1) " · ${chosen.size} ч подряд" else "")
             InfoRow(Icons.Filled.Place, b.place(slot.id))
             InfoRow(Icons.Filled.Domain, b.address(slot.id))
-            InfoRow(Icons.Filled.Payments, "${Fmt.rubles(b.price(slot.coachId, app.me))} · оплата в клубе")
+            InfoRow(Icons.Filled.Payments, "${Fmt.rubles(b.price(slot.coachId, app.me) * chosen.size)} · оплата в клубе")
         }
         GlassCard {
             Row(verticalAlignment = Alignment.CenterVertically) {

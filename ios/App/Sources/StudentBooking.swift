@@ -10,7 +10,8 @@ struct StudentBookingScreen: View {
     let container: AppContainer
     @State private var month = Calendar.current.date(from: Calendar.current.dateComponents([.year, .month], from: Date())) ?? Date()
     @State private var selectedDay: Date?
-    @State private var selectedSlotId: SlotID?
+    /// Выбранные слоты: 1–3 подряд (тренировка на 2–3 часа).
+    @State private var selectedSlots: [SlotID] = []
     @State private var showConfirm = false
     @State private var openedBooking: BookingRef?
     @State private var openedGroup: GroupRef?
@@ -39,17 +40,18 @@ struct StudentBookingScreen: View {
             .safeAreaInset(edge: .bottom) { continueBar }
             .background(ThemedBackground())
             .navigationTitle("Запись")
-            .onChange(of: selectedDay) { _, _ in selectedSlotId = nil }
+            .onChange(of: selectedDay) { _, _ in selectedSlots = [] }
             .onChange(of: container.selectedCoachId) { _, _ in
-                selectedSlotId = nil
+                selectedSlots = []
                 selectedDay = nil
             }
             .sheet(isPresented: $showConfirm) {
-                if let id = selectedSlotId, let slot = backend.slot(id) {
-                    BookingConfirmSheet(slot: slot, container: container) { _ in
+                let chosen = selectedSlots.compactMap { backend.slot($0) }.sorted { $0.startsAt < $1.startsAt }
+                if let first = chosen.first {
+                    BookingConfirmSheet(slots: chosen, container: container) { _ in
                         showConfirm = false
-                        selectedSlotId = nil
-                        container.openChat(with: slot.trainerId)
+                        selectedSlots = []
+                        container.openChat(with: first.trainerId)
                     }
                 }
             }
@@ -64,7 +66,7 @@ struct StudentBookingScreen: View {
                       }) else { return }
                 selectedDay = first
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                    selectedSlotId = backend.freeSlots(of: coachId, on: first, for: me).first { backend.leadTime($0) > 600 }?.id
+                    selectedSlots = backend.freeSlots(of: coachId, on: first, for: me).first { backend.leadTime($0) > 600 }.map { [$0.id] } ?? []
                 }
             }
             .sheet(item: $openedGroup) { ref in
@@ -160,38 +162,33 @@ struct StudentBookingScreen: View {
     private var slotsSection: some View {
         if let day = selectedDay {
             let slots = backend.freeSlots(of: coachId, on: day, for: me)
+            let held = backend.heldSlots(of: coachId, on: day, for: me)
             let manyPlaces = Set(slots.map(\.clubId)).count > 1
             VStack(alignment: .leading, spacing: Space.s) {
                 Text(Fmt.day(day)).font(.headline)
-                if slots.isEmpty {
+                if slots.isEmpty && held.isEmpty {
                     Text("На этот день свободного времени нет").foregroundStyle(palette.textSecondary)
                 } else {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Space.s), count: 3), spacing: Space.s) {
-                        ForEach(slots) { slot in
-                            let isSelected = slot.id == selectedSlotId
-                            Button {
-                                withAnimation(.spring(duration: 0.25)) { selectedSlotId = isSelected ? nil : slot.id }
-                            } label: {
+                        ForEach((slots + held).sorted { $0.startsAt < $1.startsAt }) { slot in
+                            if held.contains(where: { $0.id == slot.id }) {
+                                // Уже забронировано другим учеником (ждёт тренера) — неактивно
                                 VStack(spacing: 0) {
-                                    Text(Fmt.time(slot.startsAt))
-                                        .font(.callout.weight(.semibold).monospacedDigit())
-                                    if manyPlaces {
-                                        Text(backend.venue(clubId: slot.clubId)?.name ?? "").font(.caption2).lineLimit(1)
-                                    }
+                                    Text(Fmt.time(slot.startsAt)).font(.callout.weight(.semibold).monospacedDigit()).strikethrough()
+                                    Text("забронировано").font(.caption2)
                                 }
-                                    .frame(maxWidth: .infinity, minHeight: 44)
-                                    .foregroundStyle(isSelected ? palette.onAccent : palette.textPrimary)
-                                    .background {
-                                        if isSelected {
-                                            RoundedRectangle(cornerRadius: Radius.m, style: .continuous).fill(palette.accent)
-                                        }
-                                    }
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                                .foregroundStyle(palette.textSecondary)
+                                .background(palette.textSecondary.opacity(0.12), in: RoundedRectangle(cornerRadius: Radius.m, style: .continuous))
+                                .accessibilityLabel("\(Fmt.time(slot.startsAt)), забронировано другим учеником")
+                            } else {
+                                slotButton(slot, all: slots, manyPlaces: manyPlaces)
                             }
-                            .buttonStyle(.plain)
-                            .glassCard(cornerRadius: Radius.m)
-                            .accessibilityAddTraits(isSelected ? .isSelected : [])
                         }
                     }
+                    Text(selectedSlots.count == 1 ? "Нажмите на соседнее время, чтобы взять 2 часа подряд"
+                                                  : "Можно выбрать до 3 часов подряд")
+                        .font(.caption).foregroundStyle(palette.textSecondary)
                 }
             }
         } else {
@@ -238,10 +235,53 @@ struct StudentBookingScreen: View {
         }
     }
 
+    /// Время: нажатие выбирает; соседнее свободное время добавляет час подряд (до 3), нажатие на крайнее — убирает.
+    private func slotButton(_ slot: BookingSlot, all: [BookingSlot], manyPlaces: Bool) -> some View {
+        let isSelected = selectedSlots.contains(slot.id)
+        return Button {
+            withAnimation(.spring(duration: 0.25)) { toggle(slot, all: all) }
+        } label: {
+            VStack(spacing: 0) {
+                Text(Fmt.time(slot.startsAt)).font(.callout.weight(.semibold).monospacedDigit())
+                if manyPlaces {
+                    Text(backend.venue(clubId: slot.clubId)?.name ?? "").font(.caption2).lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .foregroundStyle(isSelected ? palette.onAccent : palette.textPrimary)
+            .background {
+                if isSelected { RoundedRectangle(cornerRadius: Radius.m, style: .continuous).fill(palette.accent) }
+            }
+        }
+        .buttonStyle(.plain)
+        .glassCard(cornerRadius: Radius.m)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private func toggle(_ slot: BookingSlot, all: [BookingSlot]) {
+        let chosen = selectedSlots.compactMap { backend.slot($0) }.sorted { $0.startsAt < $1.startsAt }
+        if selectedSlots.contains(slot.id) {
+            // Убрать можно только крайний час, чтобы оставалось «подряд»
+            if slot.id == chosen.first?.id || slot.id == chosen.last?.id { selectedSlots.removeAll { $0 == slot.id } }
+            else { selectedSlots = [slot.id] }
+            return
+        }
+        guard let first = chosen.first, let last = chosen.last, chosen.count < 3, slot.clubId == first.clubId else {
+            selectedSlots = [slot.id]
+            return
+        }
+        if slot.startsAt == last.endsAt || slot.endsAt == first.startsAt {
+            selectedSlots.append(slot.id)
+        } else {
+            selectedSlots = [slot.id]
+        }
+    }
+
     @ViewBuilder
     private var continueBar: some View {
-        if let id = selectedSlotId, let slot = backend.slot(id) {
-            Button("Продолжить · \(Fmt.time(slot.startsAt))") { showConfirm = true }
+        let chosen = selectedSlots.compactMap { backend.slot($0) }.sorted { $0.startsAt < $1.startsAt }
+        if let slot = chosen.first, let last = chosen.last {
+            Button("Продолжить · \(Fmt.time(slot.startsAt))–\(Fmt.time(last.endsAt))\(chosen.count > 1 ? " · \(chosen.count) ч" : "")") { showConfirm = true }
                 .buttonStyle(.cueGlassProminent)
                 .padding(.horizontal, Space.l)
                 .padding(.bottom, Space.s)
@@ -260,9 +300,12 @@ struct StudentBookingScreen: View {
 struct BookingConfirmSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.palette) private var palette
-    let slot: BookingSlot
+    /// Один или несколько слотов подряд (тренировка на 2–3 часа).
+    let slots: [BookingSlot]
     let container: AppContainer
     let onBooked: (Booking) -> Void
+    private var slot: BookingSlot { slots[0] }
+    private var minutes: Int { slots.reduce(0) { $0 + $1.durationMinutes } }
     @State private var comment = ""
     @State private var isGroup = false
     @State private var errorText: String?
@@ -282,11 +325,11 @@ struct BookingConfirmSheet: View {
                         }
                         Divider()
                         row("calendar", "Дата", Fmt.day(slot.startsAt))
-                        row("clock", "Время", Fmt.range(slot.startsAt, minutes: slot.durationMinutes))
+                        row("clock", "Время", Fmt.range(slot.startsAt, minutes: minutes) + (slots.count > 1 ? " · \(slots.count) ч подряд" : ""))
                         row("mappin.and.ellipse", "Где", container.backend.placeTitle(slotId: slot.id))
                         row("building.2", "Адрес", container.backend.placeAddress(slotId: slot.id))
                         row("rublesign.circle", "Стоимость",
-                            "\(Fmt.price(container.backend.price(coach: slot.trainerId, student: container.currentUserId))) · оплата в клубе")
+                            "\(Fmt.price(Money(amountMinor: container.backend.price(coach: slot.trainerId, student: container.currentUserId).amountMinor * Int64(slots.count), currency: .rub))) · оплата в клубе")
                     }
                     .padding(Space.l)
                     .glassCard()
@@ -341,11 +384,15 @@ struct BookingConfirmSheet: View {
     private func book() {
         do {
             let text = comment.trimmingCharacters(in: .whitespacesAndNewlines)
-            let booking = try container.backend.book(slotId: slot.id, studentId: container.currentUserId,
-                                                     comment: isGroup ? "👥 Групповая тренировка" + (text.isEmpty ? "" : ". \(text)")
-                                                                      : (text.isEmpty ? nil : text))
-            if isGroup { container.backend.markGroup(booking.id) }
-            onBooked(booking)
+            var note = isGroup ? "👥 Групповая тренировка" + (text.isEmpty ? "" : ". \(text)") : text
+            if slots.count > 1 { note = "\(slots.count) часа подряд" + (note.isEmpty ? "" : ". \(note)") }
+            var created: [Booking] = []
+            for item in slots {
+                let booking = try container.backend.book(slotId: item.id, studentId: container.currentUserId, comment: note.isEmpty ? nil : note)
+                if isGroup { container.backend.markGroup(booking.id) }
+                created.append(booking)
+            }
+            if let first = created.first { onBooked(first) }
         } catch {
             errorText = DemoBackend.message(for: error)
         }

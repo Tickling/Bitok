@@ -86,7 +86,7 @@ sealed interface Route {
     data class PersonProfile(val id: String) : Route
     data class StudentDetail(val id: String) : Route
     data class Propose(val studentId: String, val replacing: String? = null) : Route
-    data class Confirm(val slotId: String) : Route
+    data class Confirm(val slotIds: List<String>) : Route
     data class Evaluate(val bookingId: String) : Route
     data class Swap(val bookingId: String) : Route
     data class GroupDetail(val id: String) : Route
@@ -250,7 +250,7 @@ private fun RouteScreen(app: AppState, route: Route) {
         is Route.PersonProfile -> PersonProfileScreen(app, route.id)
         is Route.StudentDetail -> StudentDetailScreen(app, route.id)
         is Route.Propose -> ProposeSlotScreen(app, route.studentId, route.replacing)
-        is Route.Confirm -> ConfirmBookingScreen(app, route.slotId)
+        is Route.Confirm -> ConfirmBookingScreen(app, route.slotIds)
         is Route.Evaluate -> EvaluateScreen(app, route.bookingId)
         is Route.Swap -> SwapScreen(app, route.bookingId)
         is Route.GroupDetail -> GroupDetailScreen(app, route.id)

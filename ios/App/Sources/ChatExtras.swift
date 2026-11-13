@@ -138,3 +138,18 @@ extension DemoBackend {
 
     func stars(of studentId: UserID, exercise: String) -> Int { exerciseStars[studentId]?[exercise] ?? 0 }
 }
+
+// MARK: - Слоты «на рассмотрении»
+
+extension DemoBackend {
+    /// Слоты, на которые другой ученик уже подал заявку (ждёт тренера): видны как «забронировано», нажать нельзя.
+    /// После подтверждения тренером слот становится «booked» и пропадает из расписания совсем.
+    func heldSlots(of coachId: UserID, on day: Date, for student: UserID?, now: Date = Date()) -> [BookingSlot] {
+        slots.filter { slot in
+            slot.trainerId == coachId && Calendar.current.isDate(slot.startsAt, inSameDayAs: day) && slot.startsAt > now
+                && !slot.isBookable(at: now)
+                && bookings.contains { $0.slotId == slot.id && $0.status == .awaitingCoachApproval && $0.studentId != student }
+        }
+        .filter { student == nil || canBook(clubId: $0.clubId, student: student!) }
+    }
+}

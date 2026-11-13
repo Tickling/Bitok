@@ -309,8 +309,8 @@ final class DemoBackend {
             throw BookingError.leadTimeViolation(minimumMinutes: Int(leadTime(slot) / 60))
         }
         let active = bookings.filter { $0.studentId == studentId && $0.status.holdsSlot }
-        guard active.filter({ $0.status == .awaitingCoachApproval }).count < 3 else {
-            throw BookingError.pendingLimitExceeded(limit: 3)
+        guard active.filter({ $0.status == .awaitingCoachApproval }).count < 6 else {
+            throw BookingError.pendingLimitExceeded(limit: 6)
         }
         let overlaps = active.contains { other in
             let otherEnd = other.startsAt.addingTimeInterval(TimeInterval(other.durationMinutes * 60))
@@ -679,8 +679,11 @@ final class DemoBackend {
 
     /// Рейтинг, видимый другим ученикам. Демо приватности: Олег скрыл прогресс → nil (в UI — 🔒).
     func publicRating(of studentId: UserID) -> Int? {
-        studentId == students[2].id ? nil : progress(for: studentId).overallRating
+        hidesProgress(studentId) ? nil : progress(for: studentId).overallRating
     }
+
+    /// Ученик скрыл прогресс от других (замок показываем только в этом случае, а не когда оценок ещё нет).
+    func hidesProgress(_ studentId: UserID) -> Bool { students.count > 2 && studentId == students[2].id }
 
     // MARK: - Сброс
 
@@ -907,7 +910,7 @@ final class DemoBackend {
         switch error {
         case BookingError.slotAlreadyTaken, BookingError.slotNotAvailable: "Этот слот уже заняли. Выберите другое время."
         case BookingError.leadTimeViolation: "Записаться можно не позднее чем за 2 часа до начала."
-        case BookingError.pendingLimitExceeded(let limit): "У вас уже \(limit) заявки ждут тренера."
+        case BookingError.pendingLimitExceeded(let limit): "У вас уже \(limit) заявок ждут тренера."
         case BookingError.overlappingBooking: "У вас уже есть тренировка в это время."
         case BookingError.invalidStateTransition: "Это действие недоступно в текущем статусе."
         case BookingError.reasonRequired: "Укажите причину."

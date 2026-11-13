@@ -163,6 +163,14 @@ class DemoBackend(private val prefs: SharedPreferences) {
                 (studentId == null || canBook(it.venueId, studentId))
         }.sortedBy { it.start }
 
+    /** Слоты, которые уже заняли другие ученики и тренер ещё не подтвердил — видны неактивными. */
+    fun heldSlots(coachId: String, day: LocalDate, studentId: String?): List<Slot> =
+        state.slots.filter { slot ->
+            slot.coachId == coachId && slot.start.toDate() == day && slot.status == SlotStatus.HELD && slot.start > now() &&
+                state.bookings.any { it.slotId == slot.id && it.status == BookingStatus.AWAITING && it.studentId != studentId } &&
+                (studentId == null || canBook(slot.venueId, studentId))
+        }.sortedBy { it.start }
+
     fun availableDays(coachId: String, studentId: String? = null): Set<LocalDate> =
         state.slots.filter {
             it.coachId == coachId && bookable(it) && it.start - now() >= leadTime(it) &&
@@ -197,8 +205,8 @@ class DemoBackend(private val prefs: SharedPreferences) {
         val slot = slot(slotId)?.takeIf { bookable(it) } ?: throw DemoError("Этот слот уже заняли. Выберите другое время.")
         if (slot.start - now() < leadTime(slot)) throw DemoError("Записаться можно не позднее чем за ${leadTime(slot) / 60_000} мин до начала.")
         if (!canBook(slot.venueId, studentId)) throw DemoError("Это место доступно только ученикам тренера по приглашению.")
-        if (state.bookings.count { it.studentId == studentId && it.status == BookingStatus.AWAITING } >= 3) {
-            throw DemoError("У вас уже 3 заявки ждут тренера.")
+        if (state.bookings.count { it.studentId == studentId && it.status == BookingStatus.AWAITING } >= 6) {
+            throw DemoError("У вас уже 6 заявок ждут тренера.")
         }
         if (overlaps(studentId, slot.start, slot.end)) throw DemoError("У вас уже есть тренировка в это время.")
         val booking = Booking(newId(), slot.id, studentId, slot.coachId, slot.start, slot.minutes, price(slot.coachId, studentId),

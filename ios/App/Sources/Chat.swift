@@ -171,7 +171,7 @@ struct ChatRootView: View {
                     Spacer()
                     if let rating = backend.publicRating(of: player.id) {
                         Text("\(rating)").font(.title3.bold().monospacedDigit()).foregroundStyle(palette.accent)
-                    } else {
+                    } else if backend.hidesProgress(player.id) {
                         Image(systemName: "lock.fill").foregroundStyle(palette.textSecondary)
                             .accessibilityLabel("Игрок скрыл прогресс")
                     }
