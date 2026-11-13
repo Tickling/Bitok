@@ -43,7 +43,7 @@ struct ProCarouselStep: Identifiable {
 
     static let all: [ProCarouselStep] = [
         ProCarouselStep(image: "Help-pro-exercise", title: "1. Выберите упражнение",
-                        items: ["Схема: где стоит биток, куда бить и «часы» винта", "📷 — где поставить штатив", "«Камера-помощник» — начать"]),
+                        items: ["Схема: где стоит биток, куда бить и «часы» винта", "📷 — где поставить штатив", "«Расставить шары с камерой» — начать"]),
         ProCarouselStep(image: "Help-pro-framing", title: "2. Весь стол в кадре",
                         items: ["Рамка зелёная — стол найден", "Подсказка: отойти назад или подойти ближе", "«Дальше» — к точкам для шаров"]),
         ProCarouselStep(image: "Help-pro-marks", title: "3. Наклейте точки",

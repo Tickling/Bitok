@@ -48,3 +48,4 @@ shot pro-marks        -uiAccount dmitry -uiPage proMarks
 shot pro-balls        -uiAccount dmitry -uiPage proBalls
 shot pro-perform      -uiAccount dmitry -uiPage proPerform
 shot pro-result       -uiAccount dmitry -uiPage proResult
+shot pro-help         -uiAccount dmitry -uiTab profile -uiPage help

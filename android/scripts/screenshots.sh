@@ -43,4 +43,5 @@ shot pro-marks    --es uiAccount DMITRY --es uiPage proMarks
 shot pro-balls    --es uiAccount DMITRY --es uiPage proBalls
 shot pro-perform  --es uiAccount DMITRY --es uiPage proPerform
 shot pro-result   --es uiAccount DMITRY --es uiPage proResult
+shot pro-help     --es uiAccount DMITRY --es uiTab PROFILE --es uiPage help
 adb logcat -d -s AndroidRuntime:E > "$OUT/crash-log.txt" || true

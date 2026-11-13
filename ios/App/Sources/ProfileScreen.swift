@@ -50,6 +50,9 @@ struct ProfileRootView: View {
             .navigationDestination(isPresented: Binding(get: { autoPage == "settings" }, set: { if !$0 { autoPage = nil } })) {
                 SettingsView(container: container)
             }
+            .navigationDestination(isPresented: Binding(get: { autoPage == "help" }, set: { if !$0 { autoPage = nil } })) {
+                HelpView(role: container.role, isPro: backend.hasSubscription(me))
+            }
         }
     }
 
