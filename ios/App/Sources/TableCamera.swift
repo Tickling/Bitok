@@ -871,6 +871,8 @@ struct PaywallView: View {
                         feature("exclamationmark.bubble", "Показывает момент ошибки и как исправить")
                         feature("paperplane", "Видео и кусочек с ошибкой — тренеру в чат")
                         feature("person.3.sequence", "Групповые чаты с друзьями и тренером")
+                        feature("scope", "Чужой шар и свояк: мнимый шар, срез и как бить")
+                        feature("play.rectangle", "Видео-уроки тренера к упражнениям")
                         feature("sparkles", "Оформление профиля: фоны карточки, редкие рамки, значок PRO и статус")
                     }
                     .padding(Space.l)

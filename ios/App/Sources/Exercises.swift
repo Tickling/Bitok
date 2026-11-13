@@ -52,6 +52,8 @@ struct Exercise: Codable, Identifiable, Hashable, Sendable {
     var rack = false
     /// Загружено тренером из PDF.
     var importedBy: UserID? = nil
+    /// Удар по прицельному шару: «чужой» (забить прицельный) или «свояк» (забить биток от прицельного).
+    var shot: ShotKind? = nil
 
     func target(for index: Int) -> Pocket? {
         targets.isEmpty ? nil : targets[min(index, targets.count - 1)]
@@ -98,6 +100,111 @@ struct Exercise: Codable, Identifiable, Hashable, Sendable {
         }
         return points
     }
+}
+
+enum ShotKind: String, Codable, CaseIterable, Sendable {
+    case objectBall, ownBall
+    var title: String { self == .objectBall ? "Чужой шар" : "Свояк" }
+    var metric: MetricKey { self == .objectBall ? .objectBall : .ownBall }
+}
+
+/// Как бить: мнимый шар (где окажется биток в момент удара), срез и толщина.
+struct AimSolution {
+    let ghost: TablePoint
+    let object: TablePoint
+    let pocket: TablePoint
+    let cue: TablePoint
+    /// Угол среза в градусах (0 — «в лоб»).
+    let cutDegrees: Int
+    let kind: ShotKind
+
+    /// Толщина в терминах «долей шара» (перекрытие 1 − sin среза).
+    var thickness: String {
+        switch cutDegrees {
+        case ..<8: "полный шар (в лоб)"
+        case 8..<22: "≈ ¾ шара"
+        case 22..<38: "≈ ½ шара"
+        case 38..<55: "≈ ¼ шара"
+        case 55..<75: "тонко (≈ ⅛ шара)"
+        default: "очень тонко — удар на грани"
+        }
+    }
+
+    var advice: [String] {
+        switch kind {
+        case .objectBall:
+            [
+                "Прицельтесь не в сам шар, а в центр мнимого шара (пунктир) — туда должен прийти центр битка.",
+                "Срез \(cutDegrees)° — это \(thickness). Линия «мнимый шар → чужой шар» смотрит точно в лузу.",
+                cutDegrees > 45 ? "Тонкий срез: добавьте силы и держите кий ровно — малейший увод даст промах." : "Бейте по центру битка средним ударом, кий проводите прямо по линии прицела.",
+            ]
+        case .ownBall:
+            [
+                "Свояк: после касания биток уходит под 90° к линии «мнимый шар → чужой шар» — по пунктиру в лузу.",
+                "Прицел — центр мнимого шара, срез \(cutDegrees)° (\(thickness)).",
+                "Бейте в центр битка, без верхнего и нижнего винта, средней силой: тогда угол ухода — ровно 90°. Верхний винт «закатит» биток ближе к чужому шару, нижний — оттянет назад.",
+            ]
+        }
+    }
+}
+
+extension Exercise {
+    /// Диаметр шара в единицах схемы (как на рисунке).
+    static let ballDiameter = 4.6
+
+    var aim: AimSolution? {
+        guard let shot, let cue = cueBalls.first, let object = objectBalls.first, let target = target(for: 0) else { return nil }
+        let pocket = target == .shortRail ? TablePoint(x: 0, y: object.y) : target.point
+        let d = Self.ballDiameter
+        let dx = pocket.x - object.x, dy = pocket.y - object.y
+        let length = hypot(dx, dy)
+        guard length > d + 0.5 else { return nil }
+        let ux = dx / length, uy = dy / length
+        let ghost: TablePoint
+        switch shot {
+        case .objectBall:
+            ghost = TablePoint(x: object.x - ux * d, y: object.y - uy * d)
+        case .ownBall:
+            // Прямой угол в мнимом шаре: |OG| = d, OG ⟂ GP → угол при O: cos = d / |OP|
+            let theta = acos(d / length)
+            let candidates = [theta, -theta].map { angle -> TablePoint in
+                let rx = ux * cos(angle) - uy * sin(angle), ry = ux * sin(angle) + uy * cos(angle)
+                return TablePoint(x: object.x + rx * d, y: object.y + ry * d)
+            }
+            // Выбираем, куда биток реально может прийти и уйти в лузу
+            ghost = candidates.max { a, b in Self.ownScore(cue: cue, ghost: a, object: object, pocket: pocket)
+                < Self.ownScore(cue: cue, ghost: b, object: object, pocket: pocket) } ?? candidates[0]
+        }
+        // Срез: угол между направлением битка и линией центров
+        let vx = ghost.x - cue.x, vy = ghost.y - cue.y
+        let nx = object.x - ghost.x, ny = object.y - ghost.y
+        let cosine = (vx * nx + vy * ny) / max(0.001, hypot(vx, vy) * hypot(nx, ny))
+        let cut = Int((acos(min(1, max(-1, cosine))) * 180 / .pi).rounded())
+        return AimSolution(ghost: ghost, object: object, pocket: pocket, cue: cue, cutDegrees: cut, kind: shot)
+    }
+
+    private static func ownScore(cue: TablePoint, ghost: TablePoint, object: TablePoint, pocket: TablePoint) -> Double {
+        let vx = ghost.x - cue.x, vy = ghost.y - cue.y
+        let v = max(0.001, hypot(vx, vy))
+        let nx = (object.x - ghost.x) / ballDiameter, ny = (object.y - ghost.y) / ballDiameter
+        let along = (vx * nx + vy * ny) / v
+        guard along > 0.05 else { return -10 }   // биток не попадёт в шар
+        let tx = vx / v - along * nx, ty = vy / v - along * ny
+        let px = pocket.x - ghost.x, py = pocket.y - ghost.y
+        return (tx * px + ty * py) / max(0.001, hypot(tx, ty) * hypot(px, py))
+    }
+
+    /// Примеры тренера: «чужой» и «свояк» — чтобы было видно, как работает подсказка.
+    static let shotSamples: [Exercise] = [
+        Exercise(id: "shot-1", number: 17, level: "Чужой шар и свояк", title: "Чужой шар в правый верхний угол",
+                 details: ["Биток 40:40, чужой шар 120:22.", "Забить чужой шар в правую верхнюю лузу. 10 ударов."],
+                 metric: .objectBall, cueBalls: [TablePoint(x: 40, y: 40)], objectBalls: [TablePoint(x: 120, y: 22)],
+                 targets: [.topRight], shot: .objectBall),
+        Exercise(id: "shot-2", number: 18, level: "Чужой шар и свояк", title: "Свояк в середину",
+                 details: ["Биток 50:55, чужой шар 85:20.", "Сыграть свояка: биток от чужого шара уходит в верхнюю среднюю лузу. 10 ударов."],
+                 metric: .ownBall, cueBalls: [TablePoint(x: 50, y: 55)], objectBalls: [TablePoint(x: 85, y: 20)],
+                 targets: [.topMiddle], shot: .ownBall),
+    ]
 }
 
 /// Результат упражнения на тренировке: забито `made` из `attempts`.
@@ -186,7 +293,7 @@ extension Exercise {
 // MARK: - Хранилище результатов
 
 extension DemoBackend {
-    var allExercises: [Exercise] { Exercise.preparatory + customExercises }
+    var allExercises: [Exercise] { Exercise.preparatory + Exercise.shotSamples + customExercises }
 
     func exercise(_ id: String) -> Exercise? { allExercises.first { $0.id == id } }
 
@@ -246,6 +353,25 @@ struct TableSchemeView: View {
     var labels = true
     /// Показать, где поставить штатив для съёмки.
     var showTripod = false
+    /// «Чужой»/«свояк»: показать мнимый шар и линии прицела (Pro и тренер).
+    var showAim = false
+
+    /// Поле стола (внутри бортов) для размера холста — общая формула для рисования и нажатий.
+    static func field(in size: CGSize, labels: Bool) -> CGRect {
+        let margin = labels ? size.width * 0.05 : 0
+        let tableRect = CGRect(x: margin, y: margin, width: size.width - margin * 2, height: size.height - margin * 2)
+        let rail = tableRect.width * 0.035
+        return tableRect.insetBy(dx: rail, dy: rail)
+    }
+
+    /// Точка стола по нажатию (nil — мимо поля).
+    static func point(at location: CGPoint, in size: CGSize, labels: Bool) -> TablePoint? {
+        let field = field(in: size, labels: labels)
+        let x = ((location.x - field.minX) / field.width * 160).rounded()
+        let y = ((location.y - field.minY) / field.height * 80).rounded()
+        guard (-3...163).contains(x), (-3...83).contains(y) else { return nil }
+        return TablePoint(x: min(160, max(0, x)), y: min(80, max(0, y)))
+    }
 
     var body: some View {
         Canvas { context, size in
@@ -329,7 +455,7 @@ struct TableSchemeView: View {
                 context.stroke(guide, with: .color(.black.opacity(0.75)), style: StrokeStyle(lineWidth: 0.8, dash: [3, 2]))
             }
             // Линии удара со стрелкой
-            for (index, cue) in exercise.cueBalls.enumerated() {
+            for (index, cue) in exercise.cueBalls.enumerated() where exercise.shot == nil {
                 guard let targetPoint = exercise.targetPoint(for: index) else { continue }
                 let from = map(cue), to = map(targetPoint)
                 let active = highlight == nil || highlight == index
@@ -359,6 +485,42 @@ struct TableSchemeView: View {
                 let c = map(object)
                 context.fill(Path(ellipseIn: CGRect(x: c.x - ball / 2, y: c.y - ball / 2, width: ball, height: ball)),
                              with: .color(Color(red: 0.93, green: 0.72, blue: 0.20)))
+            }
+            if exercise.shot != nil {
+                // Луза, куда играем, — красное кольцо
+                if let target = exercise.targetPoint(for: 0) {
+                    let c = map(target)
+                    context.stroke(Path(ellipseIn: CGRect(x: c.x - ball, y: c.y - ball, width: ball * 2, height: ball * 2)),
+                                   with: .color(.red), lineWidth: 1.6)
+                }
+                if showAim, let aim = exercise.aim {
+                    let cue = map(aim.cue), ghost = map(aim.ghost), object = map(aim.object), pocket = map(aim.pocket)
+                    var cueLine = Path()
+                    cueLine.move(to: cue); cueLine.addLine(to: ghost)
+                    context.stroke(cueLine, with: .color(.white.opacity(0.9)), style: StrokeStyle(lineWidth: 1.2, dash: [4, 3]))
+                    context.stroke(Path(ellipseIn: CGRect(x: ghost.x - ball / 2, y: ghost.y - ball / 2, width: ball, height: ball)),
+                                   with: .color(.white), style: StrokeStyle(lineWidth: 1, dash: [2, 2]))
+                    if aim.kind == .objectBall {
+                        var objectLine = Path()
+                        objectLine.move(to: object); objectLine.addLine(to: pocket)
+                        context.stroke(objectLine, with: .color(Color(red: 0.98, green: 0.82, blue: 0.10)), lineWidth: 1.4)
+                    } else {
+                        var cueAfter = Path()
+                        cueAfter.move(to: ghost); cueAfter.addLine(to: pocket)
+                        context.stroke(cueAfter, with: .color(.white), style: StrokeStyle(lineWidth: 1.4))
+                        let dx = object.x - ghost.x, dy = object.y - ghost.y
+                        let len = max(0.001, hypot(dx, dy))
+                        var objectLine = Path()
+                        objectLine.move(to: object)
+                        objectLine.addLine(to: CGPoint(x: object.x + dx / len * ball * 4, y: object.y + dy / len * ball * 4))
+                        context.stroke(objectLine, with: .color(Color(red: 0.98, green: 0.82, blue: 0.10)),
+                                       style: StrokeStyle(lineWidth: 1.2, dash: [3, 2]))
+                    }
+                    if labels {
+                        context.draw(Text("мнимый").font(.system(size: max(6, size.width / 60), weight: .semibold)).foregroundStyle(.white),
+                                     at: CGPoint(x: ghost.x, y: ghost.y - ball * 1.3))
+                    }
+                }
             }
             if showTripod {
                 let t = exercise.tripod.point
@@ -447,6 +609,74 @@ struct ExerciseDetailView: View {
     let studentId: UserID
     @State private var showTrainer = false
     @State private var showPaywall = false
+    @State private var showEditor = false
+    @State private var showProPaywall = false
+
+    private var isPro: Bool { container.role == .trainer || container.backend.hasSubscription(container.currentUserId) }
+
+    /// «Как бить» для чужого шара и свояка: мнимый шар, срез, советы (Pro).
+    @ViewBuilder
+    private var aimCard: some View {
+        VStack(alignment: .leading, spacing: Space.s) {
+            Label("Как бить: \(exercise.shot?.title.lowercased() ?? "")", systemImage: "scope").font(.headline)
+            if isPro, let aim = exercise.aim {
+                TableSchemeView(exercise: exercise, showAim: true)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.s, style: .continuous))
+                HStack(spacing: Space.m) {
+                    Label("Срез \(aim.cutDegrees)°", systemImage: "angle")
+                    Label(aim.thickness, systemImage: "circle.lefthalf.filled")
+                }
+                .font(.caption.weight(.semibold))
+                ForEach(aim.advice, id: \.self) { line in
+                    Label(line, systemImage: "checkmark.circle").font(.callout)
+                }
+                Text("Пунктирный круг — мнимый шар: в этой точке должен оказаться центр битка в момент удара.")
+                    .font(.caption).foregroundStyle(palette.textSecondary)
+            } else {
+                Text("В Pro приложение рисует мнимый шар, показывает срез и толщину и объясняет, как сыграть \(exercise.shot == .ownBall ? "свояка" : "чужой шар").")
+                    .font(.callout).foregroundStyle(palette.textSecondary)
+                Button { showProPaywall = true } label: { Label("Открыть в Pro", systemImage: "lock.open") }
+                    .buttonStyle(.cueSecondary)
+            }
+        }
+        .padding(Space.m)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassCard()
+    }
+
+    /// Видео-урок тренера: ученик с Pro смотрит, тренер добавляет.
+    @ViewBuilder
+    private var lessonCard: some View {
+        let file = container.backend.exerciseLessons[exercise.id]
+        if container.role == .trainer {
+            VStack(alignment: .leading, spacing: Space.s) {
+                Label("Видео-урок", systemImage: "play.rectangle").font(.headline)
+                LessonVideoPicker(container: container, exerciseId: exercise.id)
+            }
+            .padding(Space.m)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .glassCard()
+        } else if let file {
+            VStack(alignment: .leading, spacing: Space.s) {
+                Label("Видео-урок тренера", systemImage: "play.rectangle").font(.headline)
+                if isPro {
+                    VideoPlayer(player: AVPlayer(url: DemoBackend.videoURL(file)))
+                        .frame(height: 220)
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.m))
+                    Text("Тренер рассказывает, как выполнять упражнение и на что обратить внимание.")
+                        .font(.caption).foregroundStyle(palette.textSecondary)
+                } else {
+                    Text("Тренер записал видео: как выполнять упражнение и на что обратить внимание. Доступно в Pro.")
+                        .font(.callout).foregroundStyle(palette.textSecondary)
+                    Button { showProPaywall = true } label: { Label("Смотреть в Pro", systemImage: "lock.open") }
+                        .buttonStyle(.cueSecondary)
+                }
+            }
+            .padding(Space.m)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .glassCard()
+        }
+    }
 
     var body: some View {
         let results = container.backend.results(of: studentId, exercise: exercise.id)
@@ -469,6 +699,9 @@ struct ExerciseDetailView: View {
                 .padding(Space.m)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .glassCard()
+
+                if exercise.shot != nil { aimCard }
+                lessonCard
 
                 if container.role == .student && studentId == container.currentUserId {
                     Button {
@@ -521,7 +754,16 @@ struct ExerciseDetailView: View {
         .navigationTitle("№\(exercise.number)")
         .navigationBarTitleDisplayMode(.inline)
         .fullScreenCover(isPresented: $showTrainer) { TableCameraTrainer(container: container, exercise: exercise) }
+        .sheet(isPresented: $showEditor) {
+            ExerciseEditor(exercise: exercise, container: container) { container.backend.saveImported([$0]) }
+        }
+        .toolbar {
+            if container.role == .trainer && exercise.importedBy == container.currentUserId {
+                Button("Изменить") { showEditor = true }
+            }
+        }
         .sheet(isPresented: $showPaywall) { PaywallView(container: container) { showTrainer = true } }
+        .sheet(isPresented: $showProPaywall) { PaywallView(container: container) }
     }
 }
 

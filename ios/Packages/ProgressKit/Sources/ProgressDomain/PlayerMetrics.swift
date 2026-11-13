@@ -4,7 +4,7 @@ import CoreDomain
 
 /// 5 метрик оценки игрока, шкала 0–100 (FR-011).
 public enum MetricKey: String, Codable, Sendable, CaseIterable, Identifiable {
-    case stanceAndStroke, aiming, positionPlay, cueBallControl, tacticalThinking
+    case stanceAndStroke, aiming, positionPlay, cueBallControl, tacticalThinking, objectBall, ownBall
 
     public var id: String { rawValue }
 
@@ -16,6 +16,8 @@ public enum MetricKey: String, Codable, Sendable, CaseIterable, Identifiable {
         case .positionPlay: "Удар в угол"
         case .cueBallControl: "Сила и возврат битка"
         case .tacticalThinking: "Винт"
+        case .objectBall: "Чужой шар"
+        case .ownBall: "Свояк"
         }
     }
 
@@ -26,6 +28,8 @@ public enum MetricKey: String, Codable, Sendable, CaseIterable, Identifiable {
         case .positionPlay: "arrow.up.left"
         case .cueBallControl: "circle.circle"
         case .tacticalThinking: "arrow.clockwise.circle"
+        case .objectBall: "circle.lefthalf.filled"
+        case .ownBall: "arrow.triangle.branch"
         }
     }
 }

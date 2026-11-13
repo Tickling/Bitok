@@ -153,3 +153,15 @@ extension DemoBackend {
         .filter { student == nil || canBook(clubId: $0.clubId, student: student!) }
     }
 }
+
+// MARK: - Видео-уроки к упражнениям
+
+extension DemoBackend {
+    /// Сообщить ученикам тренера, что к упражнению появился видео-урок.
+    func announceLesson(exerciseId: String, coachId: UserID) {
+        guard let exercise = exercise(exerciseId) else { return }
+        for student in students where coachesOf(student.id).contains(where: { $0.id == coachId }) {
+            notify(student.id, "🎬 Видео-урок от тренера", "№\(exercise.number) «\(exercise.title)» — как выполнять и на что обратить внимание")
+        }
+    }
+}

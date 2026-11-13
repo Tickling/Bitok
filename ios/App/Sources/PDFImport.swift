@@ -6,6 +6,8 @@ import SwiftUI
 import PDFKit
 import Vision
 import UniformTypeIdentifiers
+import PhotosUI
+import AVKit
 import CoreDomain
 import DesignSystem
 import ProgressDomain
@@ -228,7 +230,7 @@ struct CoachExercisesView: View {
             }
         }
         .sheet(item: $review) { item in ImportReviewView(container: container, review: item) }
-        .sheet(item: $editing) { item in ExerciseEditor(exercise: item) { container.backend.saveImported([$0]) } }
+        .sheet(item: $editing) { item in ExerciseEditor(exercise: item, container: container) { container.backend.saveImported([$0]) } }
     }
 }
 
@@ -308,12 +310,169 @@ struct ImportReviewView: View {
     }
 }
 
-/// Ручной редактор упражнения: название, описание, метрика, луза; нажатие на стол ставит точку битка.
+/// Что ставит нажатие на стол в редакторе.
+enum SchemePlaceMode: String, CaseIterable {
+    case cue, object
+    var title: String { self == .cue ? "Биток" : "Прицельный шар" }
+}
+
+/// Стол редактора: нажатие ставит биток или прицельный шар; для «чужого»/«свояка» рисуется мнимый шар.
+struct SchemeEditorTable: View {
+    @Binding var exercise: Exercise
+    @Binding var mode: SchemePlaceMode
+    var labels = false
+
+    var body: some View {
+        GeometryReader { geometry in
+            TableSchemeView(exercise: exercise, labels: labels, showAim: true)
+                .frame(width: geometry.size.width, height: geometry.size.height)
+                .contentShape(Rectangle())
+                .onTapGesture { location in
+                    guard let point = TableSchemeView.point(at: location, in: geometry.size, labels: labels) else { return }
+                    place(point)
+                }
+        }
+        .aspectRatio(labels ? 1.95 : 2.1, contentMode: .fit)
+    }
+
+    private func place(_ point: TablePoint) {
+        let single = exercise.shot != nil
+        switch mode {
+        case .cue:
+            if single { exercise.cueBalls = [point] } else { exercise.cueBalls.append(point) }
+        case .object:
+            if single { exercise.objectBalls = [point] } else { exercise.objectBalls.append(point) }
+        }
+        // После битка для «чужого»/«свояка» сразу предлагаем поставить прицельный шар
+        if single, mode == .cue, exercise.objectBalls.isEmpty { mode = .object }
+    }
+}
+
+/// Лупа: стол на весь экран (повёрнут вдоль экрана), повторное нажатие на лупу возвращает назад.
+struct SchemeMagnifier: View {
+    @Environment(\.dismiss) private var dismiss
+    @Binding var exercise: Exercise
+    @Binding var mode: SchemePlaceMode
+
+    var body: some View {
+        VStack(spacing: Space.s) {
+            HStack {
+                Picker("Ставим", selection: $mode) {
+                    ForEach(SchemePlaceMode.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                Button { dismiss() } label: {
+                    Image(systemName: "minus.magnifyingglass").font(.title2)
+                }
+                .accessibilityLabel("Уменьшить и вернуться")
+            }
+            .padding(.horizontal, Space.l)
+            GeometryReader { geometry in
+                let long = min(geometry.size.height, geometry.size.width * 1.95)
+                let short = long / 1.95
+                SchemeEditorTable(exercise: $exercise, mode: $mode, labels: true)
+                    .frame(width: long, height: short)
+                    .rotationEffect(.degrees(90))
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+            }
+            HStack {
+                Text(summary).font(.caption.monospacedDigit()).lineLimit(2)
+                Spacer()
+                Button("Отменить точку", systemImage: "arrow.uturn.backward") { undo() }
+                    .font(.caption)
+            }
+            .padding(.horizontal, Space.l)
+        }
+        .padding(.vertical, Space.s)
+        .background(Color.white.ignoresSafeArea())
+        .environment(\.colorScheme, .light)
+    }
+
+    private var summary: String {
+        var parts = ["Биток: " + exercise.cueBalls.map { "\(Int($0.x)):\(Int($0.y))" }.joined(separator: ", ")]
+        if !exercise.objectBalls.isEmpty {
+            parts.append("Шар: " + exercise.objectBalls.map { "\(Int($0.x)):\(Int($0.y))" }.joined(separator: ", "))
+        }
+        if let aim = exercise.aim { parts.append("Мнимый: \(Int(aim.ghost.x)):\(Int(aim.ghost.y)), срез \(aim.cutDegrees)°") }
+        return parts.joined(separator: " · ")
+    }
+
+    private func undo() {
+        if mode == .object, !exercise.objectBalls.isEmpty { exercise.objectBalls.removeLast() }
+        else if !exercise.cueBalls.isEmpty { exercise.cueBalls.removeLast() }
+    }
+}
+
+/// Видео из галереи как файл.
+struct PickedMovie: Transferable {
+    let url: URL
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(contentType: .movie) { SentTransferredFile($0.url) } importing: { received in
+            let copy = URL.temporaryDirectory.appending(path: "\(UUID().uuidString).\(received.file.pathExtension.isEmpty ? "mov" : received.file.pathExtension)")
+            try FileManager.default.copyItem(at: received.file, to: copy)
+            return PickedMovie(url: copy)
+        }
+    }
+}
+
+/// Видео-урок тренера к упражнению: выбрать из галереи, посмотреть, убрать.
+struct LessonVideoPicker: View {
+    let container: AppContainer
+    let exerciseId: String
+    @State private var item: PhotosPickerItem?
+    @State private var loading = false
+
+    var body: some View {
+        let file = container.backend.exerciseLessons[exerciseId]
+        VStack(alignment: .leading, spacing: Space.s) {
+            if let file {
+                VideoPlayer(player: AVPlayer(url: DemoBackend.videoURL(file)))
+                    .frame(height: 200)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.m))
+            }
+            HStack {
+                PhotosPicker(selection: $item, matching: .videos) {
+                    Label(file == nil ? "Добавить видео-урок" : "Заменить видео", systemImage: "video.badge.plus")
+                }
+                .buttonStyle(.cueSecondary)
+                if loading { ProgressView() }
+                if file != nil {
+                    Button("Убрать", role: .destructive) {
+                        container.backend.exerciseLessons[exerciseId] = nil
+                        container.backend.save()
+                    }
+                    .buttonStyle(.cueSecondary)
+                }
+            }
+            Text("Расскажите, как выполнять упражнение и на что обратить внимание. Ученики с Pro увидят урок в упражнении.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .onChange(of: item) { _, newItem in
+            guard let newItem else { return }
+            loading = true
+            Task {
+                if let movie = try? await newItem.loadTransferable(type: PickedMovie.self),
+                   let name = container.backend.storeVideo(movie.url) {
+                    container.backend.exerciseLessons[exerciseId] = name
+                    container.backend.save()
+                    container.backend.announceLesson(exerciseId: exerciseId, coachId: container.currentUserId)
+                }
+                loading = false
+                item = nil
+            }
+        }
+    }
+}
+
+/// Ручной редактор упражнения: название, описание, тип удара, метрика, луза; стол с лупой; видео-урок.
 struct ExerciseEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State var exercise: Exercise
+    var container: AppContainer? = nil
     let onSave: (Exercise) -> Void
     @State private var details = ""
+    @State private var mode: SchemePlaceMode = .cue
+    @State private var magnified = false
 
     var body: some View {
         NavigationStack {
@@ -321,6 +480,10 @@ struct ExerciseEditor: View {
                 Section("Упражнение") {
                     TextField("Название", text: $exercise.title)
                     TextField("Описание: координаты, винт, сколько ударов", text: $details, axis: .vertical).lineLimit(2...6)
+                    Picker("Удар", selection: Binding(get: { exercise.shot }, set: { setShot($0) })) {
+                        Text("По битку в лузу").tag(ShotKind?.none)
+                        ForEach(ShotKind.allCases, id: \.self) { Text($0.title).tag(ShotKind?.some($0)) }
+                    }
                     Picker("Метрика", selection: $exercise.metric) {
                         ForEach(MetricKey.allCases) { Text($0.title).tag($0) }
                     }
@@ -328,38 +491,61 @@ struct ExerciseEditor: View {
                     Toggle("Отработка винта", isOn: $exercise.spin)
                 }
                 Section {
-                    GeometryReader { geometry in
-                        TableSchemeView(exercise: exercise, labels: false)
-                            .contentShape(Rectangle())
-                            .onTapGesture { location in
-                                let rail = geometry.size.width * 0.035
-                                let width = geometry.size.width - rail * 2
-                                let height = geometry.size.width / 2.1 - rail * 2
-                                let x = ((location.x - rail) / width * 160).rounded()
-                                let y = ((location.y - rail) / height * 80).rounded()
-                                guard (0...160).contains(x), (0...80).contains(y) else { return }
-                                exercise.cueBalls.append(TablePoint(x: x, y: y))
+                    Picker("Ставим", selection: $mode) {
+                        ForEach(SchemePlaceMode.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    SchemeEditorTable(exercise: $exercise, mode: $mode)
+                        .overlay(alignment: .topTrailing) {
+                            Button { magnified = true } label: {
+                                Image(systemName: "plus.magnifyingglass")
+                                    .font(.headline)
+                                    .padding(8)
+                                    .background(.ultraThinMaterial, in: Circle())
                             }
-                    }
-                    .aspectRatio(2.1, contentMode: .fit)
+                            .buttonStyle(.plain)
+                            .padding(6)
+                            .accessibilityLabel("Открыть стол крупно")
+                        }
                     Picker("Луза", selection: Binding(get: { exercise.targets.first ?? .topMiddle }, set: { exercise.targets = [$0] })) {
-                        Text("Середина").tag(Pocket.topMiddle)
-                        Text("Левый угол").tag(Pocket.topLeft)
-                        Text("Правый угол").tag(Pocket.topRight)
-                        Text("Короткий борт").tag(Pocket.shortRail)
+                        Text("Верх · середина").tag(Pocket.topMiddle)
+                        Text("Верх · левый угол").tag(Pocket.topLeft)
+                        Text("Верх · правый угол").tag(Pocket.topRight)
+                        Text("Низ · середина").tag(Pocket.bottomMiddle)
+                        Text("Низ · левый угол").tag(Pocket.bottomLeft)
+                        Text("Низ · правый угол").tag(Pocket.bottomRight)
+                        if exercise.shot == nil { Text("Короткий борт").tag(Pocket.shortRail) }
                     }
-                    Text("Точки: " + exercise.cueBalls.map { "\(Int($0.x)):\(Int($0.y))" }.joined(separator: ", ")).font(.caption)
-                    Button("Убрать последнюю точку", role: .destructive) { _ = exercise.cueBalls.popLast() }
-                        .disabled(exercise.cueBalls.isEmpty)
+                    Text(pointsText).font(.caption)
+                    if let aim = exercise.aim {
+                        Label("Мнимый шар \(Int(aim.ghost.x)):\(Int(aim.ghost.y)) · срез \(aim.cutDegrees)° · \(aim.thickness)", systemImage: "scope")
+                            .font(.caption)
+                    } else if exercise.shot != nil {
+                        Text(exercise.objectBalls.isEmpty ? "Поставьте прицельный шар" : "Шар слишком близко к лузе — передвиньте")
+                            .font(.caption).foregroundStyle(.orange)
+                    }
+                    Button("Убрать последнюю точку", role: .destructive) {
+                        if mode == .object, !exercise.objectBalls.isEmpty { exercise.objectBalls.removeLast() }
+                        else if !exercise.cueBalls.isEmpty { exercise.cueBalls.removeLast() }
+                    }
+                    .disabled(exercise.cueBalls.isEmpty && exercise.objectBalls.isEmpty)
                 } header: {
                     Text("Схема")
                 } footer: {
-                    Text("Нажмите на стол, чтобы поставить точку битка. Координаты — в сантиметрах сетки 160×80.")
+                    Text(exercise.shot == nil
+                         ? "Нажмите на стол, чтобы поставить биток или шар. Лупа открывает стол крупно. Координаты — сетка 160×80."
+                         : "Поставьте биток, затем прицельный шар — приложение нарисует мнимый шар: куда должен прийти биток, чтобы \(exercise.shot == .objectBall ? "забить чужой шар" : "сыграть свояка").")
+                }
+                if let container {
+                    Section("Видео-урок") {
+                        LessonVideoPicker(container: container, exerciseId: exercise.id)
+                    }
                 }
             }
             .navigationTitle("Упражнение №\(exercise.number)")
             .navigationBarTitleDisplayMode(.inline)
             .onAppear { details = exercise.details.joined(separator: "\n") }
+            .fullScreenCover(isPresented: $magnified) { SchemeMagnifier(exercise: $exercise, mode: $mode) }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -368,9 +554,28 @@ struct ExerciseEditor: View {
                         onSave(exercise)
                         dismiss()
                     }
-                    .disabled(exercise.title.trimmingCharacters(in: .whitespaces).isEmpty || exercise.cueBalls.isEmpty)
+                    .disabled(exercise.title.trimmingCharacters(in: .whitespaces).isEmpty || exercise.cueBalls.isEmpty
+                              || (exercise.shot != nil && exercise.aim == nil))
                 }
             }
+        }
+    }
+
+    private var pointsText: String {
+        let cue: String = exercise.cueBalls.map { "\(Int($0.x)):\(Int($0.y))" }.joined(separator: ", ")
+        let objects: String = exercise.objectBalls.map { "\(Int($0.x)):\(Int($0.y))" }.joined(separator: ", ")
+        return objects.isEmpty ? "Биток: \(cue)" : "Биток: \(cue) · шар: \(objects)"
+    }
+
+    private func setShot(_ shot: ShotKind?) {
+        exercise.shot = shot
+        if let shot {
+            exercise.metric = shot.metric
+            exercise.cueBalls = Array(exercise.cueBalls.prefix(1))
+            exercise.objectBalls = Array(exercise.objectBalls.prefix(1))
+            if exercise.targets.first == .shortRail { exercise.targets = [.topRight] }
+            mode = exercise.objectBalls.isEmpty ? .object : .cue
+            if exercise.objectBalls.isEmpty { exercise.objectBalls = [TablePoint(x: 110, y: 25)] }
         }
     }
 }

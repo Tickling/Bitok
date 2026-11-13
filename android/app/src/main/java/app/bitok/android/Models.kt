@@ -30,6 +30,8 @@ enum class Metric(val title: String, val short: String) {
     POSITION("Удар в угол", "УГОЛ"),
     CUE_BALL("Сила и возврат битка", "СИЛА"),
     TACTICS("Винт", "ВИНТ"),
+    OBJECT_BALL("Чужой шар", "ЧУЖ"),
+    OWN_BALL("Свояк", "СВОЯК"),
 }
 
 @Serializable
@@ -276,6 +278,8 @@ data class DemoState(
     val groupMessages: List<GroupMessage> = emptyList(),
     /** Друзья: связь взаимная, хранится у обоих. */
     val friendships: Map<String, Set<String>> = emptyMap(),
+    /** Видео-уроки тренера: id упражнения → файл видео. */
+    val exerciseLessons: Map<String, String> = emptyMap(),
     val profiles: Map<String, Profile> = emptyMap(),
     val coachInfo: Map<String, CoachInfo> = emptyMap(),
     /** Ключ «coachId|studentId» → цена в рублях. */
@@ -339,6 +343,8 @@ data class Exercise(
     val spin: Boolean = false,
     val rack: Boolean = false,
     val importedBy: String? = null,
+    /** Удар по прицельному шару: «чужой» или «свояк». */
+    val shot: ShotKind? = null,
 ) {
     fun target(index: Int): Pocket? = if (targets.isEmpty()) null else targets[minOf(index, targets.size - 1)]
 

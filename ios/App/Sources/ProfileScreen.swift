@@ -131,6 +131,8 @@ struct ProfileRootView: View {
         case .positionPlay: "УГОЛ"
         case .cueBallControl: "СИЛА"
         case .tacticalThinking: "ВИНТ"
+        case .objectBall: "ЧУЖ"
+        case .ownBall: "СВОЯК"
         }
     }
 

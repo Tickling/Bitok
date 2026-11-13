@@ -106,7 +106,7 @@ val PreparatoryExercises = listOf(
 
 // region Хранилище
 
-val DemoBackend.allExercises: List<Exercise> get() = PreparatoryExercises + state.customExercises
+val DemoBackend.allExercises: List<Exercise> get() = PreparatoryExercises + ShotSamples + state.customExercises
 fun DemoBackend.exercise(id: String) = allExercises.firstOrNull { it.id == id }
 fun DemoBackend.results(studentId: String, exerciseId: String? = null) =
     state.exerciseResults.filter { it.studentId == studentId && (exerciseId == null || it.exerciseId == exerciseId) }.sortedBy { it.at }
@@ -154,7 +154,7 @@ fun DemoBackend.seedResults(): List<ExerciseResult> {
 
 /** Стол 160×80 как в методичке: цифры на бортах, пунктир до бортов, стрелка удара, «часы» винта, штатив. */
 @Composable
-fun TableScheme(exercise: Exercise, modifier: Modifier = Modifier, labels: Boolean = true, showTripod: Boolean = false) {
+fun TableScheme(exercise: Exercise, modifier: Modifier = Modifier, labels: Boolean = true, showTripod: Boolean = false, showAim: Boolean = false) {
     Canvas(modifier.fillMaxWidth().aspectRatio(if (labels) 1.95f else 2.1f).background(if (labels) Color.White else Color.Transparent)) {
         val margin = if (labels) size.width * 0.05f else 0f
         val tableW = size.width - margin * 2; val tableH = size.height - margin * 2
@@ -203,7 +203,7 @@ fun TableScheme(exercise: Exercise, modifier: Modifier = Modifier, labels: Boole
             drawLine(Color.Black.copy(alpha = 0.75f), Offset(fx, c.y), c, 1.5f, pathEffect = dash)
             drawLine(Color.Black.copy(alpha = 0.75f), c, Offset(c.x, fy + fh), 1.5f, pathEffect = dash)
         }
-        exercise.cueBalls.forEachIndexed { i, cue ->
+        if (exercise.shot == null) exercise.cueBalls.forEachIndexed { i, cue ->
             val t = exercise.targetPoint(i) ?: return@forEachIndexed
             val from = map(cue); val to = map(t)
             drawLine(Color.Black.copy(alpha = 0.85f), from, to, 2f)
@@ -220,6 +220,26 @@ fun TableScheme(exercise: Exercise, modifier: Modifier = Modifier, labels: Boole
             drawCircle(Color(0xFFFAF2DB), ball / 2, map(it)); drawCircle(Color.Black.copy(alpha = 0.4f), ball / 2, map(it), style = Stroke(1f))
         }
         exercise.objectBalls.forEach { drawCircle(Color(0xFFEDB833), ball / 2, map(it)) }
+        if (exercise.shot != null) {
+            exercise.targetPoint(0)?.let { drawCircle(Color.Red, ball, map(it), style = Stroke(3f)) }
+            val aim = if (showAim) exercise.aim else null
+            if (aim != null) {
+                val cue = map(aim.cue); val ghost = map(aim.ghost); val obj = map(aim.objectBall); val pocket = map(aim.pocket)
+                val dash = PathEffect.dashPathEffect(floatArrayOf(10f, 7f))
+                drawLine(Color.White.copy(alpha = 0.9f), cue, ghost, 2.4f, pathEffect = dash)
+                drawCircle(Color.White, ball / 2, ghost, style = Stroke(2f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(5f, 4f))))
+                if (aim.kind == ShotKind.OBJECT_BALL) {
+                    drawLine(Color(0xFFF9D11A), obj, pocket, 2.8f)
+                } else {
+                    drawLine(Color.White, ghost, pocket, 2.8f)
+                    val dx = obj.x - ghost.x; val dy = obj.y - ghost.y
+                    val len = maxOf(0.001f, kotlin.math.hypot(dx, dy))
+                    drawLine(Color(0xFFF9D11A), obj, Offset(obj.x + dx / len * ball * 4, obj.y + dy / len * ball * 4), 2.4f, pathEffect = dash)
+                }
+                if (labels) drawContext.canvas.nativeCanvas.drawText("мнимый", ghost.x, ghost.y - ball * 1.2f,
+                    android.graphics.Paint().apply { color = android.graphics.Color.WHITE; textSize = maxOf(14f, size.width / 60); isFakeBoldText = true; textAlign = android.graphics.Paint.Align.CENTER })
+            }
+        }
         if (showTripod) {
             val t = exercise.tripod.first
             val c = Offset((fx + t.x / 160 * fw).toFloat().coerceIn(12f, size.width - 12f), (fy + t.y / 80 * fh).toFloat().coerceIn(12f, size.height - 12f))
@@ -283,6 +303,8 @@ fun ExerciseDetailScreen(app: AppState, exerciseId: String, studentId: String) {
             Secondary("${exercise.attempts} ударов · метрика «${exercise.metric.title}»")
             Secondary("📷 " + exercise.tripod.second)
         }
+        if (exercise.shot != null) AimCard(app, exercise)
+        LessonCard(app, exercise)
         if (!app.isCoach && studentId == app.me) {
             PrimaryButton("📷 Камера-помощник") {
                 if (b.hasSubscription(app.me)) app.push(Route.CameraTrainer(exercise.id)) else app.push(Route.Paywall(exercise.id))

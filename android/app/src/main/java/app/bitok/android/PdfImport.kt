@@ -128,31 +128,3 @@ fun CoachExercisesScreen(app: AppState) {
         }
     }
 }
-
-/** Ручное упражнение: название, описание, точки битка «x:y», луза, метрика. */
-@Composable
-private fun ManualExerciseEditor(app: AppState, onSave: (Exercise) -> Unit) {
-    var title by remember { mutableStateOf("") }
-    var details by remember { mutableStateOf("") }
-    var points by remember { mutableStateOf("70:40") }
-    var target by remember { mutableStateOf(Pocket.TOP_MIDDLE) }
-    var metric by remember { mutableStateOf(Metric.AIMING) }
-    val cue = Regex("""(\d{1,3})\s*:\s*(\d{1,2})""").findAll(points).map { TablePoint(it.groupValues[1].toDouble().coerceIn(0.0, 160.0), it.groupValues[2].toDouble().coerceIn(0.0, 80.0)) }.toList()
-    val preview = Exercise("custom-${title.hashCode()}", app.backend.allExercises.size + 1, "Мои упражнения", title.ifBlank { "Новое упражнение" },
-        details.lines().filter { it.isNotBlank() }, metric, cue.ifEmpty { listOf(TablePoint(70.0, 40.0)) }, targets = listOf(target), importedBy = app.me)
-    GlassCard {
-        OutlinedTextField(title, { title = it }, Modifier.fillMaxWidth(), label = { Text("Название") })
-        OutlinedTextField(details, { details = it }, Modifier.fillMaxWidth(), label = { Text("Описание: винт, сколько ударов") }, minLines = 2)
-        OutlinedTextField(points, { points = it }, Modifier.fillMaxWidth(), label = { Text("Точки битка: 70:40, 60:40") })
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf(Pocket.TOP_MIDDLE to "Середина", Pocket.TOP_LEFT to "Л. угол", Pocket.TOP_RIGHT to "П. угол", Pocket.SHORT_RAIL to "Борт").forEach { (pk, t) ->
-                Chip(t, pk == target, Modifier.weight(1f)) { target = pk }
-            }
-        }
-        Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Metric.entries.forEach { m -> Chip(m.short, m == metric, Modifier.weight(1f)) { metric = m } }
-        }
-        TableScheme(preview, labels = false)
-        PrimaryButton("Сохранить", enabled = title.isNotBlank() && cue.isNotEmpty()) { onSave(preview.copy(id = "custom-${newId().take(8)}")) }
-    }
-}

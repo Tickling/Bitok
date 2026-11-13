@@ -118,6 +118,7 @@ private struct DemoSnapshot: Codable {
     var chatGroups: [DemoChatGroup]? = nil
     var groupMessages: [DemoGroupMessage]? = nil
     var friendships: [UserID: [UserID]]? = nil
+    var exerciseLessons: [String: String]? = nil
     var slots: [BookingSlot]
     var bookings: [Booking]
     var records: [ProgressRecord]
@@ -189,6 +190,8 @@ final class DemoBackend {
     var groupMessagesStore: [DemoGroupMessage] = []
     /// Друзья: связь взаимная, хранится у обоих.
     var friendships: [UserID: Set<UserID>] = [:]
+    /// Видео-уроки тренера к упражнениям: id упражнения → файл видео.
+    var exerciseLessons: [String: String] = [:]
 
     private static let storageKey = "demoBackend.v6"
 
@@ -714,6 +717,7 @@ final class DemoBackend {
         chatGroupsStore = []
         groupMessagesStore = []
         friendships = [:]
+        exerciseLessons = [:]
         coaches = Self.baseCoaches
         seed()
     }
@@ -750,7 +754,7 @@ final class DemoBackend {
                                     exerciseResults: exerciseResults, readMarks: readMarks, noticesSeen: noticesSeen,
                                     groupBookings: groupBookings, subscriptions: subscriptions, exerciseStars: exerciseStars,
                                     trainingVideos: trainingVideos, chatGroups: chatGroupsStore, groupMessages: groupMessagesStore,
-                                    friendships: friendships.mapValues(Array.init),
+                                    friendships: friendships.mapValues(Array.init), exerciseLessons: exerciseLessons,
                                     slots: slots, bookings: bookings, records: records, events: events,
                                     messages: messages, privacy: privacy)
         if let data = try? JSONEncoder().encode(snapshot) {
@@ -784,6 +788,7 @@ final class DemoBackend {
         chatGroupsStore = snapshot.chatGroups ?? []
         groupMessagesStore = snapshot.groupMessages ?? []
         friendships = (snapshot.friendships ?? [:]).mapValues(Set.init)
+        exerciseLessons = snapshot.exerciseLessons ?? [:]
         syncCoaches()
     }
 

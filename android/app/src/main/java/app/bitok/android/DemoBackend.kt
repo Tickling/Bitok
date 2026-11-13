@@ -385,10 +385,11 @@ class DemoBackend(private val prefs: SharedPreferences) {
     fun progress(studentId: String): Map<Metric, Int> {
         var current = emptyMap<Metric, Int>()
         for (e in state.evaluations.filter { it.studentId == studentId }.sortedBy { it.at }) {
-            current = Metric.entries.associateWith { m ->
-                val new = e.scores[m.name] ?: current[m] ?: 0
-                current[m]?.let { (it * 0.3 + new * 0.7).toInt() } ?: new
-            }
+            // Неоценённые метрики (например, «Чужой шар» до первой оценки) не тянут рейтинг вниз
+            current = Metric.entries.mapNotNull { m ->
+                val new = e.scores[m.name] ?: current[m] ?: return@mapNotNull null
+                m to (current[m]?.let { (it * 0.3 + new * 0.7).toInt() } ?: new)
+            }.toMap()
         }
         return current
     }
@@ -397,10 +398,11 @@ class DemoBackend(private val prefs: SharedPreferences) {
         val result = mutableListOf<Pair<Long, Int>>()
         var current = emptyMap<Metric, Int>()
         for (e in state.evaluations.filter { it.studentId == studentId }.sortedBy { it.at }) {
-            current = Metric.entries.associateWith { m ->
-                val new = e.scores[m.name] ?: current[m] ?: 0
-                current[m]?.let { (it * 0.3 + new * 0.7).toInt() } ?: new
-            }
+            // Неоценённые метрики (например, «Чужой шар» до первой оценки) не тянут рейтинг вниз
+            current = Metric.entries.mapNotNull { m ->
+                val new = e.scores[m.name] ?: current[m] ?: return@mapNotNull null
+                m to (current[m]?.let { (it * 0.3 + new * 0.7).toInt() } ?: new)
+            }.toMap()
             result += e.at to current.values.average().toInt()
         }
         return result
