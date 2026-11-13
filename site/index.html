@@ -69,7 +69,11 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .hero .lead { margin: 18px auto 0; max-width: 34ch; font-size: 1.2rem; color: var(--muted); }
 .stage { position: relative; margin-top: 34px; }
 .stage::before { content: ""; position: absolute; left: 50%; top: -6%; width: 80%; height: 70%; transform: translateX(-50%); background: radial-gradient(closest-side, #f6d99a33, transparent 70%); pointer-events: none; }
-#table { display: block; width: 100%; max-width: 1100px; margin: 0 auto; aspect-ratio: 16 / 9; touch-action: none; cursor: crosshair; }
+#table { display: block; width: 100%; max-width: 1100px; margin: 0 auto; aspect-ratio: 16 / 10; touch-action: none; cursor: crosshair; border-radius: 28px; }
+@media (max-width: 620px) { #table { aspect-ratio: 4 / 5; border-radius: 20px; } }
+#mode button { border: 0; background: transparent; color: var(--muted); padding: 8px 14px; border-radius: 99px; font: 600 .9rem var(--font); cursor: pointer; transition: background .25s, color .25s; }
+#mode button[aria-checked="true"] { background: var(--gold); color: #1a1305; box-shadow: 0 6px 16px -6px #f2c14e99; }
+#mode { display: inline-flex; gap: 4px; padding: 4px; border-radius: 99px; background: #ffffff14; }
 .controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; margin-top: 8px; }
 .glass { display: flex; align-items: center; gap: 14px; padding: 12px 18px 12px 12px; border-radius: 22px; background: #ffffff10; border: 1px solid #ffffff14; backdrop-filter: blur(10px); text-align: left; }
 .spinball { position: relative; width: 62px; height: 62px; border-radius: 50%; flex: none; cursor: pointer; touch-action: none;
@@ -568,23 +572,36 @@ function resize() {
   canvas.width = Math.round(rect.width * dpr); canvas.height = Math.round(rect.height * dpr);
   CW = canvas.width; CH = canvas.height;
   const narrow = rect.width < 620;
-  // Камера ближе и ниже: дальний борт узкий, ближний уходит за края кадра — шары крупнее
-  const top = CH * (narrow ? .14 : .1), bottom = CH * (narrow ? .96 : 1.02);
-  const farHalf = CW * (narrow ? .38 : .3), nearHalf = CW * (narrow ? .58 : .6);
-  Hm = solveHomography([[-RAIL, -RAIL], [W + RAIL, -RAIL], [W + RAIL, H + RAIL], [-RAIL, H + RAIL]],
-    [[CW / 2 - farHalf, top], [CW / 2 + farHalf, top], [CW / 2 + nearHalf, bottom], [CW / 2 - nearHalf, bottom]]);
+  // Камера у короткого борта, смотрит вдоль стола: ближний борт снизу, дальний — вверху
+  const top = CH * (narrow ? .2 : .2), bottom = CH * .93;
+  const farHalf = CW * (narrow ? .25 : .2), nearHalf = CW * (narrow ? .48 : .4);
+  Hm = solveHomography([[-RAIL, -RAIL], [-RAIL, H + RAIL], [W + RAIL, H + RAIL], [W + RAIL, -RAIL]],
+    [[CW / 2 - nearHalf, bottom], [CW / 2 + nearHalf, bottom], [CW / 2 + farHalf, top], [CW / 2 - farHalf, top]]);
   Hi = invert3(Hm);
   const noise = document.createElement("canvas"); noise.width = noise.height = 96;
   const nctx = noise.getContext("2d"), img = nctx.createImageData(96, 96);
   for (let i = 0; i < img.data.length; i += 4) { const v = Math.random() * 255; img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 13; }
   nctx.putImageData(img, 0, 0); feltPattern = ctx.createPattern(noise, "repeat");
+  // Ковёр зала: тёмно-бирюзовый с мелким узором
+  const rug = document.createElement("canvas"); rug.width = rug.height = 40; const r2 = rug.getContext("2d");
+  r2.fillStyle = "#0d2a2c"; r2.fillRect(0, 0, 40, 40); r2.fillStyle = "rgba(242,193,78,.18)";
+  r2.beginPath(); r2.moveTo(20, 14); r2.lineTo(23, 20); r2.lineTo(20, 26); r2.lineTo(17, 20); r2.closePath(); r2.fill();
+  r2.fillStyle = "rgba(120,200,190,.08)"; r2.fillRect(0, 0, 2, 2); r2.fillRect(38, 38, 2, 2);
+  rugPattern = ctx.createPattern(rug, "repeat");
+  // Волокна красного дерева
+  const wood = document.createElement("canvas"); wood.width = 220; wood.height = 60; const w2 = wood.getContext("2d");
+  const wg = w2.createLinearGradient(0, 0, 0, 60); wg.addColorStop(0, "#5a1a20"); wg.addColorStop(1, "#7a2a2e"); w2.fillStyle = wg; w2.fillRect(0, 0, 220, 60);
+  for (let i = 0; i < 26; i++) { w2.strokeStyle = `rgba(${20 + Math.random() * 40},5,5,${.15 + Math.random() * .2})`; w2.lineWidth = .6 + Math.random();
+    w2.beginPath(); const y = Math.random() * 60; w2.moveTo(0, y); for (let x = 0; x <= 220; x += 20) w2.lineTo(x, y + Math.sin(x / 30 + i) * 2.5); w2.stroke(); }
+  woodPattern = ctx.createPattern(wood, "repeat");
   draw();
 }
+let rugPattern = null, woodPattern = null;
 function poly(points) { ctx.beginPath(); points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath(); }
 function rectPts(x0, y0, x1, y1) { return [P(x0, y0), P(x1, y0), P(x1, y1), P(x0, y1)]; }
 function tablePoly(pts) { poly(pts.map(([x, y]) => P(x, y))); }
 // Борта (резина) между лузами: «губки» срезаны к лузам, как на настоящем столе
-const CUSH = 2.6, CM = 5.2, MM = 4.6;   // ширина борта, отступ у угловой и у средней лузы
+const CUSH = 2.6, CM = 5.2, MM = 4.6;
 const CUSHIONS = [
   [[CM, 0], [80 - MM, 0], [80 - MM + 1.2, -CUSH], [CM - CUSH, -CUSH]],
   [[80 + MM, 0], [W - CM, 0], [W - CM + CUSH, -CUSH], [80 + MM - 1.2, -CUSH]],
@@ -599,55 +616,76 @@ function ringPts(x, y, r, from = 0, to = Math.PI * 2, n = 28) { const pts = []; 
 function draw() {
   if (!Hm) return;
   ctx.clearRect(0, 0, CW, CH);
+  // Зал: деревянная панель на стене и ковёр
+  const wallH = CH * .16;
+  const wall = ctx.createLinearGradient(0, 0, 0, wallH); wall.addColorStop(0, "#1b0d08"); wall.addColorStop(1, "#3a1d12");
+  ctx.fillStyle = wall; ctx.fillRect(0, 0, CW, wallH);
+  ctx.fillStyle = "rgba(255,210,150,.05)"; for (let x = 0; x < CW; x += CW / 9) ctx.fillRect(x, 0, 2, wallH);
+  ctx.fillStyle = rugPattern || "#0d2a2c"; ctx.fillRect(0, wallH, CW, CH - wallH);
+  const vign = ctx.createRadialGradient(CW / 2, CH * .55, CW * .1, CW / 2, CH * .55, CW * .75);
+  vign.addColorStop(0, "rgba(0,0,0,0)"); vign.addColorStop(1, "rgba(0,0,0,.75)"); ctx.fillStyle = vign; ctx.fillRect(0, 0, CW, CH);
+  const lamp = ctx.createRadialGradient(CW / 2, CH * .45, 0, CW / 2, CH * .45, CW * .55);
+  lamp.addColorStop(0, "rgba(255,230,170,.16)"); lamp.addColorStop(1, "rgba(255,230,170,0)"); ctx.fillStyle = lamp; ctx.fillRect(0, 0, CW, CH);
   const outer = rectPts(-RAIL, -RAIL, W + RAIL, H + RAIL);
-  // Тень стола и передняя грань ближнего борта
-  ctx.save(); ctx.filter = `blur(${CW * .02}px)`; ctx.fillStyle = "rgba(0,0,0,.7)";
-  poly(outer.map(p => ({ x: CW / 2 + (p.x - CW / 2) * 1.02, y: p.y + CH * .05 }))); ctx.fill(); ctx.restore();
-  const depth = CH * .06, nl = outer[3], nr = outer[2];
-  const fg = ctx.createLinearGradient(0, nl.y, 0, nl.y + depth); fg.addColorStop(0, "#3b1219"); fg.addColorStop(1, "#14060a");
-  ctx.fillStyle = fg; poly([nl, nr, { x: nr.x - CW * .006, y: nr.y + depth }, { x: nl.x + CW * .006, y: nl.y + depth }]); ctx.fill();
-  // Дерево борта: лак, отражение лампы
-  const rg = ctx.createLinearGradient(0, outer[0].y, 0, outer[3].y); rg.addColorStop(0, "#43141c"); rg.addColorStop(.5, "#6a2230"); rg.addColorStop(1, "#8a3443");
-  ctx.fillStyle = rg; poly(outer); ctx.fill();
-  const sheen = ctx.createLinearGradient(outer[0].x, 0, outer[1].x, 0); sheen.addColorStop(0, "rgba(255,255,255,0)"); sheen.addColorStop(.5, "rgba(255,220,200,.10)"); sheen.addColorStop(1, "rgba(255,255,255,0)");
-  ctx.fillStyle = sheen; poly(outer); ctx.fill();
-  // Сукно с пятном света
-  const felt = rectPts(-CUSH, -CUSH, W + CUSH, H + CUSH), c = P(W / 2, H * .42);
-  const r0 = Math.hypot(outer[2].x - outer[0].x, outer[2].y - outer[0].y) * .5;
+  const nl = P(-RAIL, -RAIL), nr = P(-RAIL, H + RAIL);
+  // Тень стола на ковре
+  ctx.save(); ctx.filter = `blur(${CW * .015}px)`; ctx.fillStyle = "rgba(0,0,0,.75)";
+  poly(outer.map(p => ({ x: CW / 2 + (p.x - CW / 2) * 1.04, y: p.y + CH * .035 }))); ctx.fill(); ctx.restore();
+  // Торец ближнего борта и боковины — объём
+  const depth = CH * .07, sideDepth = CH * .045;
+  ctx.fillStyle = woodPattern || "#4a161d";
+  poly([nl, nr, { x: nr.x - CW * .004, y: nr.y + depth }, { x: nl.x + CW * .004, y: nl.y + depth }]); ctx.fill();
+  const shade = ctx.createLinearGradient(0, nl.y, 0, nl.y + depth); shade.addColorStop(0, "rgba(0,0,0,.15)"); shade.addColorStop(1, "rgba(0,0,0,.6)");
+  ctx.fillStyle = shade; ctx.fill();
+  const fl = P(W + RAIL, -RAIL), fr = P(W + RAIL, H + RAIL);
+  for (const [a, b] of [[nl, fl], [nr, fr]]) {
+    ctx.fillStyle = "#2a0b10"; poly([a, b, { x: b.x, y: b.y + sideDepth * .4 }, { x: a.x, y: a.y + sideDepth }]); ctx.fill();
+  }
+  // Борт: красное дерево, лак, светлая фаска по внутреннему краю
+  ctx.fillStyle = woodPattern || "#6a2230"; poly(outer); ctx.fill();
+  const lac = ctx.createLinearGradient(0, outer[3].y, 0, nl.y); lac.addColorStop(0, "rgba(0,0,0,.35)"); lac.addColorStop(.5, "rgba(255,200,170,.08)"); lac.addColorStop(1, "rgba(255,190,160,.18)");
+  ctx.fillStyle = lac; poly(outer); ctx.fill();
+  ctx.strokeStyle = "rgba(255,215,180,.35)"; ctx.lineWidth = 1.2; poly(outer); ctx.stroke();
+  ctx.strokeStyle = "rgba(255,200,160,.25)"; ctx.lineWidth = 1.5; poly(rectPts(-CUSH - .4, -CUSH - .4, W + CUSH + .4, H + CUSH + .4)); ctx.stroke();
+  // Сукно
+  const felt = rectPts(-CUSH, -CUSH, W + CUSH, H + CUSH), c = P(W * .5, H / 2);
+  const r0 = Math.hypot(nr.x - nl.x, nl.y - outer[3].y) * .55;
   const lg = ctx.createRadialGradient(c.x, c.y, r0 * .05, c.x, c.y, r0);
-  lg.addColorStop(0, "#26b8aa"); lg.addColorStop(.55, "#158b80"); lg.addColorStop(1, "#0a4d47");
+  lg.addColorStop(0, "#2fbfa9"); lg.addColorStop(.6, "#169482"); lg.addColorStop(1, "#0b5a50");
   ctx.fillStyle = lg; poly(felt); ctx.fill();
   if (feltPattern) { ctx.fillStyle = feltPattern; poly(felt); ctx.fill(); }
-  // Ромбы-отметки
-  ctx.fillStyle = "#f1dfb9";
-  for (let i = 20; i < 160; i += 20) if (i !== 80) for (const y of [-RAIL / 2 - 1, H + RAIL / 2 + 1]) { const p = P(i, y), s = scaleAt(i, y) * .65; ctx.beginPath(); ctx.ellipse(p.x, p.y, s, s * .5, 0, 0, Math.PI * 2); ctx.fill(); }
-  for (const y of [20, 40, 60]) for (const x of [-RAIL / 2 - 1, W + RAIL / 2 + 1]) { const p = P(x, y), s = scaleAt(x, y) * .55; ctx.beginPath(); ctx.ellipse(p.x, p.y, s, s * .6, 0, 0, Math.PI * 2); ctx.fill(); }
-  // Лузы: отверстие с глубиной, кожаная обшивка со строчкой, сетка у ближних
+  // Перламутровые отметки на бортах
+  ctx.fillStyle = "#f6ead0";
+  for (let i = 20; i < 160; i += 20) if (i !== 80) for (const y of [-RAIL / 2 - 1, H + RAIL / 2 + 1]) { const p = P(i, y), s2 = scaleAt(i, y) * .6; ctx.beginPath(); ctx.ellipse(p.x, p.y, s2 * .6, s2 * .45, 0, 0, Math.PI * 2); ctx.fill(); }
+  for (const y of [20, 40, 60]) for (const x of [-RAIL / 2 - 1, W + RAIL / 2 + 1]) { const p = P(x, y), s2 = scaleAt(x, y) * .6; ctx.beginPath(); ctx.ellipse(p.x, p.y, s2 * .6, s2 * .45, 0, 0, Math.PI * 2); ctx.fill(); }
+  // Лузы: кожаная «чашка» с латунным ободком, глубокое отверстие, сетка у ближних
+  const cx0 = W / 2, cy0 = H / 2;
   for (const [x, y, r] of HOLES) {
-    const back = y < H / 2 ? -1 : 1;   // обшивка — со стороны борта
-    const from = y < H / 2 ? Math.PI : 0, to = from + Math.PI;
-    const leather = [...ringPts(x, y, r + 2.4, from - .5, to + .5), ...ringPts(x, y, r - .2, to + .5, from - .5)];
-    const lgL = ctx.createLinearGradient(0, P(x, y - 3).y, 0, P(x, y + 3).y);
-    lgL.addColorStop(0, "#e9dcc0"); lgL.addColorStop(1, "#b49b70");
-    ctx.fillStyle = lgL; poly(leather); ctx.fill();
-    ctx.setLineDash([2, 3]); ctx.strokeStyle = "rgba(90,60,30,.7)"; ctx.lineWidth = 1;
-    ctx.beginPath(); ringPts(x, y, r + 1.3, from - .4, to + .4).forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke(); ctx.setLineDash([]);
-    const hole = ringPts(x, y, r), hc = P(x, y), hs = scaleAt(x, y) * r;
-    const hg = ctx.createRadialGradient(hc.x, hc.y - hs * .4, hs * .1, hc.x, hc.y, hs * 1.2);
-    hg.addColorStop(0, "#000"); hg.addColorStop(.7, "#050505"); hg.addColorStop(1, "#1d1410");
+    const out = Math.atan2(y - cy0, x - cx0), from = out - 1.9, to = out + 1.9;
+    const leather = [...ringPts(x, y, r + 2.6, from, to), ...ringPts(x, y, r - .1, to, from)];
+    const p0 = P(x, y), lg2 = ctx.createRadialGradient(p0.x, p0.y, 0, p0.x, p0.y, scaleAt(x, y) * (r + 3));
+    lg2.addColorStop(0, "#f3e6c8"); lg2.addColorStop(1, "#a8875a");
+    ctx.fillStyle = lg2; poly(leather); ctx.fill();
+    ctx.strokeStyle = "#d9b25a"; ctx.lineWidth = Math.max(1.2, scaleAt(x, y) * .5);
+    ctx.beginPath(); ringPts(x, y, r + 2.6, from, to).forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke();
+    ctx.setLineDash([2, 3]); ctx.strokeStyle = "rgba(90,60,30,.65)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ringPts(x, y, r + 1.3, from + .1, to - .1).forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke(); ctx.setLineDash([]);
+    const hole = ringPts(x, y, r), hs = scaleAt(x, y) * r;
+    const hg = ctx.createRadialGradient(p0.x, p0.y - hs * .3, hs * .1, p0.x, p0.y, hs * 1.2);
+    hg.addColorStop(0, "#000"); hg.addColorStop(.75, "#060606"); hg.addColorStop(1, "#24170f");
     ctx.fillStyle = hg; poly(hole); ctx.fill();
-    if (back > 0) {   // сетка ближних луз видна под бортом
-      const s = scaleAt(x, y), base = P(x, y + r);
-      ctx.strokeStyle = "rgba(235,225,200,.35)"; ctx.lineWidth = 1;
-      for (let k = -3; k <= 3; k++) { ctx.beginPath(); ctx.moveTo(base.x + k * s * 1.2, base.y); ctx.lineTo(base.x + k * s * .8, base.y + s * 6); ctx.stroke(); }
-      for (let k = 1; k <= 4; k++) { ctx.beginPath(); ctx.ellipse(base.x, base.y + k * s * 1.4, s * (3.6 - k * .35), s * .6, 0, 0, Math.PI); ctx.stroke(); }
+    if (x < 1) {   // ближние лузы: плетёная сетка свисает под бортом
+      const s3 = scaleAt(x, y), base = P(x - r - 2, y);
+      ctx.strokeStyle = "rgba(240,230,205,.45)"; ctx.lineWidth = 1;
+      for (let k = -3; k <= 3; k++) { ctx.beginPath(); ctx.moveTo(base.x + k * s3 * 1.3, base.y); ctx.lineTo(base.x + k * s3 * .7, base.y + s3 * 7); ctx.stroke(); }
+      for (let k = 1; k <= 4; k++) { ctx.beginPath(); ctx.ellipse(base.x, base.y + k * s3 * 1.6, s3 * (4 - k * .45), s3 * .7, 0, 0, Math.PI); ctx.stroke(); }
     }
   }
   // Резина бортов с «губками» и бликом по кромке
   for (const cu of CUSHIONS) {
-    ctx.fillStyle = "#107a70"; tablePoly(cu); ctx.fill();
+    ctx.fillStyle = "#11806f"; tablePoly(cu); ctx.fill();
     const a = P(...cu[0]), b = P(...cu[1]);
-    ctx.strokeStyle = "rgba(160,255,240,.35)"; ctx.lineWidth = Math.max(1, scaleAt(...cu[0]) * .35);
+    ctx.strokeStyle = "rgba(170,255,235,.4)"; ctx.lineWidth = Math.max(1, scaleAt(...cu[0]) * .35);
     ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
     ctx.strokeStyle = "rgba(0,0,0,.35)"; ctx.lineWidth = 1; tablePoly(cu); ctx.stroke();
   }
@@ -683,14 +721,14 @@ function draw() {
       line({ x: obj.x, y: obj.y }, { x: obj.x + ux * tt, y: obj.y + uy * tt }); ctx.setLineDash([]);
     }
   }
-  for (const ball of [...balls].sort((a, b) => a.y - b.y)) if (!ball.in) drawBall(ball);
+  for (const ball of [...balls].sort((a, b) => P(a.x, a.y).y - P(b.x, b.y).y)) if (!ball.in) drawBall(ball);
   if (aiming && !cue.in) drawCue(cue, aiming.dir, aiming.power);
 }
 function line(a, b) { const p = P(a.x, a.y), q = P(b.x, b.y); ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke(); }
 function circle(c, fill) { const pts = []; for (let a = 0; a < Math.PI * 2; a += Math.PI / 16) pts.push(P(c.x + Math.cos(a) * R, c.y + Math.sin(a) * R)); poly(pts); fill ? ctx.fill() : ctx.stroke(); }
 // Шар: слоновая кость, свет лампы сверху, отражение сукна снизу, мягкая тень
 function drawBall(ball) {
-  const p = P(ball.x, ball.y), s = scaleAt(ball.x, ball.y), r = s * R, cy = p.y - r * .8;
+  const p = P(ball.x, ball.y), s = scaleAt(ball.x, ball.y), r = s * R * 1.25, cy = p.y - r * .8;   // чуть крупнее для наглядности
   const sh = ctx.createRadialGradient(p.x + r * .2, p.y + r * .1, r * .1, p.x + r * .2, p.y + r * .1, r * 1.4);
   sh.addColorStop(0, "rgba(0,0,0,.55)"); sh.addColorStop(1, "rgba(0,0,0,0)");
   ctx.fillStyle = sh; ctx.beginPath(); ctx.ellipse(p.x + r * .2, p.y + r * .1, r * 1.4, r * .7, 0, 0, Math.PI * 2); ctx.fill();
@@ -714,7 +752,7 @@ function drawCue(cue, d, power) {
   const sa = scaleAt(cue.x - d.x * back, cue.y - d.y * back), lift = sa * R * .8;
   const ax = a.x, ay = a.y - lift, bx = b.x, by = b.y - lift * 2.2;
   const vx = bx - ax, vy = by - ay, vl = Math.hypot(vx, vy) || 1, nx = -vy / vl, ny = vx / vl;
-  const w0 = Math.max(2, sa * .62), w1 = Math.max(6, w0 * 4.2);
+  const w0 = Math.max(2.5, sa * .9), w1 = Math.max(8, w0 * 4);
   const seg = (t0, t1, colors) => {
     const p0 = { x: ax + vx * t0, y: ay + vy * t0 }, p1 = { x: ax + vx * t1, y: ay + vy * t1 };
     const r0 = w0 + (w1 - w0) * t0, r1 = w0 + (w1 - w0) * t1;
