@@ -138,8 +138,8 @@ class FrameGrid(bitmap: Bitmap, columns: Int = 200) {
                 histogram[minOf(35, (hsv[0] / 10).toInt())] += 0.4 + y.toDouble() / height
             }
             // Белый/кремовый шар или жёлтый биток
-            val white = r + g + b > 540 && hsv[1] < 0.22f
-            val yellow = hsv[0] in 35f..65f && hsv[1] > 0.45f && hsv[2] > 0.6f
+            val white = r + g + b > 470 && hsv[1] < 0.2f
+            val yellow = hsv[0] in 35f..60f && hsv[1] > 0.6f && hsv[2] > 0.7f
             bright[i] = white || yellow
         }
         val peakBin = (0 until 36).maxBy { histogram[it] + 0.5 * (histogram[(it + 35) % 36] + histogram[(it + 1) % 36]) }
@@ -153,7 +153,7 @@ class FrameGrid(bitmap: Bitmap, columns: Int = 200) {
         clothBottom = (bottom.maxOrNull() ?: 0).toFloat() / maxOf(1, height)
         for (y in 0 until height) for (x in 0 until width) {
             val i = y * width + x
-            if (bright[i] && (bottom[x] < 0 || y < top[x] - margin || y > bottom[x] + margin)) bright[i] = false
+            if (bright[i] && (bottom[x] < 0 || y < top[x] - margin || y > bottom[x])) bright[i] = false
         }
     }
 

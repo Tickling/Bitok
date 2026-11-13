@@ -89,8 +89,8 @@ struct FrameGrid {
                     histogram[min(35, Int(hue / 10))] += 0.4 + Double(gy) / Double(height)
                 }
                 // Белый/кремовый шар или жёлтый биток
-                let white = r + g + b > 540 && saturation < 0.22
-                let yellow = hue >= 35 && hue <= 65 && saturation > 0.45 && value > 0.6
+                let white = r + g + b > 470 && saturation < 0.2
+                let yellow = hue >= 35 && hue <= 60 && saturation > 0.6 && value > 0.7
                 bright[index] = white || yellow
             }
         }
@@ -112,7 +112,7 @@ struct FrameGrid {
         clothBottom = Double(lowest) / Double(max(1, height))
         for y in 0..<height {
             for x in 0..<width where bright[y * width + x] {
-                if bottom[x] < 0 || y < top[x] - margin || y > bottom[x] + margin { bright[y * width + x] = false }
+                if bottom[x] < 0 || y < top[x] - margin || y > bottom[x] { bright[y * width + x] = false }
             }
         }
     }
