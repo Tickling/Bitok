@@ -22,6 +22,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -67,7 +71,7 @@ fun CustomizationScreen(app: AppState) {
     val p = LocalPalette.current
     val pro = app.backend.hasSubscription(app.me)
     // Перерисовка после смены настроек
-    var version by androidx.compose.runtime.remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    var version by remember { mutableIntStateOf(0) }
     version.let { }
     fun save(key: String, value: String) { app.prefs().edit().putString(key, value).apply(); version++ }
     Screen("Оформление профиля", app) {
