@@ -108,20 +108,63 @@ data class TableQuad(val tl: Offset, val tr: Offset, val br: Offset, val bl: Off
     }
 }
 
-/** Уменьшенный кадр: маска сукна и маска светлых (белых) шаров. */
-class FrameGrid(bitmap: Bitmap, columns: Int = 120) {
+/**
+ * Уменьшенный кадр: маска сукна и маска шаров. Сукно ищется по преобладающему оттенку (зелёное, бирюзовое, синее),
+ * и берётся только самое большое связное пятно — зелёные лампы, стены и соседние столы не путаются со столом.
+ */
+class FrameGrid(bitmap: Bitmap, columns: Int = 200) {
     val width: Int; val height: Int
     val green: BooleanArray; val bright: BooleanArray
+    /** Минимум клеток у шара (наклейка-точка намного меньше шара). */
+    var minBlob = 2
     init {
         val step = maxOf(1, bitmap.width / columns)
         width = bitmap.width / step; height = bitmap.height / step
-        green = BooleanArray(width * height); bright = BooleanArray(width * height)
+        val count = width * height
+        val hues = FloatArray(count); val candidate = BooleanArray(count); val histogram = DoubleArray(36)
+        bright = BooleanArray(count)
+        val hsv = FloatArray(3)
         for (y in 0 until height) for (x in 0 until width) {
             val c = bitmap.getPixel(x * step, y * step)
             val r = (c shr 16) and 0xFF; val g = (c shr 8) and 0xFF; val b = c and 0xFF
-            green[y * width + x] = g > 45 && g > r * 1.18 && g > b * 1.05
-            bright[y * width + x] = r + g + b > 560 && abs(r - g) < 45 && abs(g - b) < 60
+            android.graphics.Color.RGBToHSV(r, g, b, hsv)
+            val i = y * width + x
+            hues[i] = hsv[0]
+            if (hsv[0] in 90f..250f && hsv[1] > 0.25f && hsv[2] > 0.18f) {
+                candidate[i] = true
+                // Стол обычно в нижней части кадра — ей больше веса
+                histogram[minOf(35, (hsv[0] / 10).toInt())] += 0.4 + y.toDouble() / height
+            }
+            // Белый/кремовый шар или жёлтый биток
+            val white = r + g + b > 540 && hsv[1] < 0.22f
+            val yellow = hsv[0] in 35f..65f && hsv[1] > 0.45f && hsv[2] > 0.6f
+            bright[i] = white || yellow
         }
+        val peakBin = (0 until 36).maxBy { histogram[it] + 0.5 * (histogram[(it + 35) % 36] + histogram[(it + 1) % 36]) }
+        val peak = peakBin * 10 + 5f
+        val mask = BooleanArray(count) { candidate[it] && abs(hues[it] - peak) <= 22f }
+        green = largestComponent(mask, width, height)
+    }
+
+    private fun largestComponent(mask: BooleanArray, w: Int, h: Int): BooleanArray {
+        val label = IntArray(mask.size)
+        var best = 0; var bestSize = 0; var current = 0
+        val stack = IntArray(mask.size)
+        for (start in mask.indices) {
+            if (!mask[start] || label[start] != 0) continue
+            current++; label[start] = current
+            var top = 0; stack[top++] = start; var size = 0
+            while (top > 0) {
+                val i = stack[--top]; size++
+                val x = i % w; val y = i / w
+                if (x > 0 && mask[i - 1] && label[i - 1] == 0) { label[i - 1] = current; stack[top++] = i - 1 }
+                if (x < w - 1 && mask[i + 1] && label[i + 1] == 0) { label[i + 1] = current; stack[top++] = i + 1 }
+                if (y > 0 && mask[i - w] && label[i - w] == 0) { label[i - w] = current; stack[top++] = i - w }
+                if (y < h - 1 && mask[i + w] && label[i + w] == 0) { label[i + w] = current; stack[top++] = i + w }
+            }
+            if (size > bestSize) { bestSize = size; best = current }
+        }
+        return BooleanArray(mask.size) { best != 0 && label[it] == best }
     }
 
     fun quad(): Pair<TableQuad, Double>? {
@@ -150,7 +193,7 @@ class FrameGrid(bitmap: Bitmap, columns: Int = 120) {
         for (y in maxOf(0, cy - r)..minOf(height - 1, cy + r)) for (x in maxOf(0, cx - r)..minOf(width - 1, cx + r)) {
             if (bright[y * width + x]) { sx += x; sy += y; n++ }
         }
-        return if (n < 2) null else Offset(sx.toFloat() / n / width, sy.toFloat() / n / height)
+        return if (n < minBlob) null else Offset(sx.toFloat() / n / width, sy.toFloat() / n / height)
     }
 }
 
@@ -172,7 +215,7 @@ fun shotAdvice(start: TablePoint, target: TablePoint, end: TablePoint): String {
 /** Состояние анализа: стол, подсказка, шары, удары. Обновляется из потока анализа камеры. */
 class TrainerState(val exercise: Exercise) {
     var quad by mutableStateOf<TableQuad?>(null)
-    var hint by mutableStateOf("Наведите камеру на стол — нужно видеть зелёное сукно")
+    var hint by mutableStateOf("Наведите камеру на стол — нужно видеть сукно целиком")
     var ready by mutableStateOf(false)
     val marks = mutableStateListOf<Mark>().apply { repeat(exercise.markPoints.size) { add(Mark.Unknown) } }
     val shots = mutableStateListOf<Shot>()
@@ -183,7 +226,7 @@ class TrainerState(val exercise: Exercise) {
 
     fun analyze(grid: FrameGrid) {
         val found = grid.quad()
-        if (found == null) { quad = null; ready = false; hint = "Наведите камеру на стол — нужно видеть зелёное сукно"; return }
+        if (found == null) { quad = null; ready = false; hint = "Наведите камеру на стол — нужно видеть сукно целиком"; return }
         val (raw, fraction) = found
         val q = smoothed?.let { p -> fun m(a: Offset, b: Offset) = Offset(a.x * 0.7f + b.x * 0.3f, a.y * 0.7f + b.y * 0.3f)
             TableQuad(m(p.tl, raw.tl), m(p.tr, raw.tr), m(p.br, raw.br), m(p.bl, raw.bl)) } ?: raw
@@ -198,6 +241,9 @@ class TrainerState(val exercise: Exercise) {
         ready = !touches && fraction >= 0.12
         quad = q
         val radius = maxOf(0.012f, (q.tr - q.tl).getDistance() / 160 * 3.4f)
+        // Шар ≈ 3 единицы схемы в диаметре; наклейка-точка в разы меньше — её за шар не считаем
+        val ballCells = (q.tr - q.tl).getDistance() * grid.width / 160 * 1.6f
+        grid.minBlob = maxOf(2, (0.3 * Math.PI * ballCells * ballCells).toInt())
         exercise.markPoints.forEachIndexed { i, point ->
             val projected = q.project(point)
             marks[i] = when {
@@ -603,7 +649,7 @@ fun ProGuide() {
             Text(step, color = p.text, fontSize = 15.sp)
         }
     }
-    Secondary("Совет: хорошее освещение и однотонное сукно помогают камере. Телефон держите неподвижно.")
+    Secondary("Совет: сукно может быть зелёным, бирюзовым или синим — камера сама определит цвет. Хорошее освещение помогает; телефон держите неподвижно.")
 }
 
 @Composable

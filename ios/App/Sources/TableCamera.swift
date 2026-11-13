@@ -51,13 +51,17 @@ struct TableQuad: Equatable {
     }
 }
 
-/// Уменьшенная копия кадра: яркость и маска «сукна».
+/// Уменьшенная копия кадра: маска сукна и маска шаров.
+/// Сукно ищется по преобладающему оттенку (зелёное, бирюзовое, синее) и берётся только самое большое
+/// связное пятно — так зелёные лампы, стены и соседние столы не путаются со столом.
 struct FrameGrid {
     let width: Int, height: Int
     var green: [Bool]
     var bright: [Bool]
+    /// Сколько клеток минимум должно быть у шара (наклейка-точка намного меньше шара).
+    var minBlob = 2
 
-    init?(_ buffer: CVPixelBuffer, columns: Int = 120) {
+    init?(_ buffer: CVPixelBuffer, columns: Int = 200) {
         CVPixelBufferLockBaseAddress(buffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
         guard let base = CVPixelBufferGetBaseAddress(buffer) else { return nil }
@@ -66,18 +70,74 @@ struct FrameGrid {
         let step = max(1, w / columns)
         width = w / step
         height = h / step
-        green = Array(repeating: false, count: width * height)
-        bright = Array(repeating: false, count: width * height)
+        let count = width * height
+        var hues = [Float](repeating: 0, count: count)
+        var candidate = [Bool](repeating: false, count: count)
+        var histogram = [Double](repeating: 0, count: 36)
+        bright = Array(repeating: false, count: count)
         let pointer = base.assumingMemoryBound(to: UInt8.self)
         for gy in 0..<height {
             for gx in 0..<width {
                 let offset = gy * step * row + gx * step * 4
                 let b = Int(pointer[offset]), g = Int(pointer[offset + 1]), r = Int(pointer[offset + 2])
-                green[gy * width + gx] = g > 45 && Double(g) > Double(r) * 1.18 && Double(g) > Double(b) * 1.05
-                // Белый/кремовый шар: светлый и малонасыщенный
-                bright[gy * width + gx] = r + g + b > 560 && abs(r - g) < 45 && abs(g - b) < 60
+                let (hue, saturation, value) = Self.hsv(r, g, b)
+                let index = gy * width + gx
+                hues[index] = hue
+                if hue >= 90, hue <= 250, saturation > 0.25, value > 0.18 {
+                    candidate[index] = true
+                    // Стол обычно в нижней части кадра — ей больше веса
+                    histogram[min(35, Int(hue / 10))] += 0.4 + Double(gy) / Double(height)
+                }
+                // Белый/кремовый шар или жёлтый биток
+                let white = r + g + b > 540 && saturation < 0.22
+                let yellow = hue >= 35 && hue <= 65 && saturation > 0.45 && value > 0.6
+                bright[index] = white || yellow
             }
         }
+        var peakBin = 0, peakScore = -1.0
+        for bin in 0..<36 {
+            let score = histogram[bin] + 0.5 * (histogram[(bin + 35) % 36] + histogram[(bin + 1) % 36])
+            if score > peakScore { peakScore = score; peakBin = bin }
+        }
+        let peak = Float(peakBin * 10 + 5)
+        var mask = [Bool](repeating: false, count: count)
+        for index in 0..<count where candidate[index] && abs(hues[index] - peak) <= 22 { mask[index] = true }
+        green = Self.largestComponent(mask, width: width, height: height)
+    }
+
+    static func hsv(_ r: Int, _ g: Int, _ b: Int) -> (Float, Float, Float) {
+        let maxV = max(r, g, b), minV = min(r, g, b)
+        let delta = Float(maxV - minV)
+        let value = Float(maxV) / 255
+        let saturation = maxV == 0 ? 0 : delta / Float(maxV)
+        guard delta > 0 else { return (0, saturation, value) }
+        var hue: Float
+        if maxV == r { hue = 60 * Float(g - b) / delta } else if maxV == g { hue = 60 * Float(b - r) / delta + 120 } else { hue = 60 * Float(r - g) / delta + 240 }
+        if hue < 0 { hue += 360 }
+        return (hue, saturation, value)
+    }
+
+    /// Самое большое связное пятно маски.
+    static func largestComponent(_ mask: [Bool], width: Int, height: Int) -> [Bool] {
+        var label = [Int32](repeating: 0, count: mask.count)
+        var bestLabel: Int32 = 0, bestSize = 0, current: Int32 = 0
+        var stack: [Int] = []
+        for start in 0..<mask.count where mask[start] && label[start] == 0 {
+            current += 1
+            label[start] = current
+            stack.append(start)
+            var size = 0
+            while let index = stack.popLast() {
+                size += 1
+                let x = index % width, y = index / width
+                if x > 0, mask[index - 1], label[index - 1] == 0 { label[index - 1] = current; stack.append(index - 1) }
+                if x < width - 1, mask[index + 1], label[index + 1] == 0 { label[index + 1] = current; stack.append(index + 1) }
+                if y > 0, mask[index - width], label[index - width] == 0 { label[index - width] = current; stack.append(index - width) }
+                if y < height - 1, mask[index + width], label[index + width] == 0 { label[index + width] = current; stack.append(index + width) }
+            }
+            if size > bestSize { bestSize = size; bestLabel = current }
+        }
+        return label.map { $0 == bestLabel && bestLabel != 0 }
     }
 
     func quad() -> (TableQuad, Double)? {
@@ -113,7 +173,7 @@ struct FrameGrid {
                 sx += x; sy += y; n += 1
             }
         }
-        guard n >= 2 else { return nil }
+        guard n >= minBlob else { return nil }
         return CGPoint(x: Double(sx) / Double(n) / Double(width), y: Double(sy) / Double(n) / Double(height))
     }
 }
@@ -134,7 +194,7 @@ final class TableCameraModel: NSObject, ObservableObject, AVCaptureVideoDataOutp
         case noTable, stepBack, closer, tilt, ready
         var text: String {
             switch self {
-            case .noTable: "Наведите камеру на стол — нужно видеть зелёное сукно"
+            case .noTable: "Наведите камеру на стол — нужно видеть сукно целиком"
             case .stepBack: "Отойдите назад: стол не помещается в кадр целиком"
             case .closer: "Подойдите ближе: стол слишком маленький"
             case .tilt: "Поднимите телефон выше и наклоните к столу"
@@ -291,7 +351,8 @@ final class TableCameraModel: NSObject, ObservableObject, AVCaptureVideoDataOutp
         analyze(grid)
     }
 
-    private func analyze(_ grid: FrameGrid) {
+    private func analyze(_ frame: FrameGrid) {
+        var grid = frame
         guard let (raw, fraction) = grid.quad() else {
             DispatchQueue.main.async { self.quad = nil; self.hint = .noTable }
             return
@@ -317,6 +378,9 @@ final class TableCameraModel: NSObject, ObservableObject, AVCaptureVideoDataOutp
         // Шары на точках
         let topEdge: CGFloat = hypot(quad.tr.x - quad.tl.x, quad.tr.y - quad.tl.y)
         let ballRadius: Double = max(0.012, Double(topEdge) / 160 * 3.4)
+        // Шар ≈ 3 единицы схемы в диаметре; наклейка-точка в разы меньше — её за шар не считаем
+        let ballCells = Double(topEdge) * Double(grid.width) / 160 * 1.6
+        grid.minBlob = max(2, Int(0.3 * Double.pi * ballCells * ballCells))
         let statuses: [MarkStatus] = exercise.markPoints.map { point in
             let projected = quad.project(point)
             if grid.brightBlob(near: projected, radius: ballRadius * 1.3) != nil { return .ok }
