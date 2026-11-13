@@ -36,6 +36,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -85,26 +86,34 @@ import kotlin.math.hypot
 // region Анализ кадра
 
 /** Четырёхугольник стола в долях кадра; project — точка стола (0…160 × 0…80) → точка кадра. */
-data class TableQuad(val tl: Offset, val tr: Offset, val br: Offset, val bl: Offset) {
+/** Четырёхугольник стола в кадре. Если задана [zone] — это не весь стол, а зона упражнения (стол не влез в кадр). */
+data class TableQuad(val tl: Offset, val tr: Offset, val br: Offset, val bl: Offset, val zone: CameraZone? = null) {
+    private val area: CameraZone get() = zone ?: CameraZone(0.0, 0.0, 160.0, 80.0)
+
     fun project(p: TablePoint): Offset {
-        val u = (p.x / 160).toFloat(); val v = (p.y / 80).toFloat()
+        val r = area
+        return projectUnit((p.x - r.minX) / r.width, (p.y - r.minY) / r.height)
+    }
+
+    private fun projectUnit(uu: Double, vv: Double): Offset {
+        val u = uu.toFloat(); val v = vv.toFloat()
         val top = Offset(tl.x + (tr.x - tl.x) * u, tl.y + (tr.y - tl.y) * u)
         val bottom = Offset(bl.x + (br.x - bl.x) * u, bl.y + (br.y - bl.y) * u)
         return Offset(top.x + (bottom.x - top.x) * v, top.y + (bottom.y - top.y) * v)
     }
 
     fun unproject(q: Offset): TablePoint {
-        var u = 0.5; var v = 0.5
+        var u = 0.5; var v = 0.5; val h = 0.01
+        val r = area
         repeat(8) {
-            val p = project(TablePoint(u * 160, v * 80))
-            val du = project(TablePoint(minOf(160.0, u * 160 + 1), v * 80)); val dv = project(TablePoint(u * 160, minOf(80.0, v * 80 + 1)))
-            val a = (du.x - p.x) * 160.0; val b = (dv.x - p.x) * 80.0; val c = (du.y - p.y) * 160.0; val d = (dv.y - p.y) * 80.0
+            val p = projectUnit(u, v); val du = projectUnit(u + h, v); val dv = projectUnit(u, v + h)
+            val a = (du.x - p.x) / h; val b = (dv.x - p.x) / h; val c = (du.y - p.y) / h; val d = (dv.y - p.y) / h
             val det = a * d - b * c
-            if (abs(det) < 1e-9) return TablePoint(u * 160, v * 80)
+            if (abs(det) < 1e-9) return TablePoint(r.minX + u * r.width, r.minY + v * r.height)
             val ex = q.x - p.x; val ey = q.y - p.y
             u += (d * ex - b * ey) / det; v += (-c * ex + a * ey) / det
         }
-        return TablePoint(u * 160, v * 80)
+        return TablePoint(r.minX + u * r.width, r.minY + v * r.height)
     }
 }
 
@@ -259,24 +268,30 @@ class TrainerState(val exercise: Exercise) {
         val found = grid.quad()
         if (found == null) { quad = null; ready = false; hint = "Наведите камеру на стол — нужно видеть сукно целиком"; return }
         val (raw, fraction) = found
-        val q = smoothed?.let { p -> fun m(a: Offset, b: Offset) = Offset(a.x * 0.7f + b.x * 0.3f, a.y * 0.7f + b.y * 0.3f)
+        var q = smoothed?.let { p -> fun m(a: Offset, b: Offset) = Offset(a.x * 0.7f + b.x * 0.3f, a.y * 0.7f + b.y * 0.3f)
             TableQuad(m(p.tl, raw.tl), m(p.tr, raw.tr), m(p.br, raw.br), m(p.bl, raw.bl)) } ?: raw
         smoothed = q
         val edge = 0.02f
         val touches = listOf(q.tl, q.tr, q.br, q.bl).any { it.x < edge || it.x > 1 - edge || it.y < edge || it.y > 1 - edge }
         // Камера на штативе у лузы: сукно — полоса во всю ширину кадра, стол целиком не виден
-        if (performMode && touches) { analyzePocketView(grid); return }
+        if (performMode && touches && fraction < 0.2) { analyzePocketView(grid); return }
         pocket = null
+        // Стол целиком не влез: работаем по зоне упражнения — края кадра совпадают с границами зоны
+        val zone = exercise.cameraZone
+        zoneMode = touches && zone != null
+        if (zoneMode) q = q.copy(zone = zone)
         hint = when {
+            zoneMode -> "Стол не влез — работаю по зоне упражнения ✓ Края кадра — по границам зоны"
             touches -> "Отойдите назад: стол не помещается в кадр целиком"
             fraction < 0.12 -> "Подойдите ближе: стол слишком маленький"
             else -> "Стол в кадре ✓ Держите телефон ровно"
         }
-        ready = !touches && fraction >= 0.12
+        ready = zoneMode || (!touches && fraction >= 0.12)
         quad = q
-        val radius = maxOf(0.012f, (q.tr - q.tl).getDistance() / 160 * 3.4f)
+        val across = (q.zone?.width ?: 160.0).toFloat()
+        val radius = maxOf(0.012f, (q.tr - q.tl).getDistance() / across * 3.4f)
         // Шар ≈ 3 единицы схемы в диаметре; наклейка-точка в разы меньше — её за шар не считаем
-        val ballCells = (q.tr - q.tl).getDistance() * grid.width / 160 * 1.6f
+        val ballCells = (q.tr - q.tl).getDistance() * grid.width / across * 1.6f
         grid.minBlob = maxOf(2, (0.3 * Math.PI * ballCells * ballCells).toInt())
         exercise.markPoints.forEachIndexed { i, point ->
             val projected = q.project(point)
@@ -295,6 +310,9 @@ class TrainerState(val exercise: Exercise) {
         }
         if (tracking) track(grid, q, radius)
     }
+
+    /** Стол не влез в кадр — работаем по зоне упражнения. */
+    var zoneMode by mutableStateOf(false)
 
     /** Режим «Выполнение»: камера может стоять у лузы, и весь стол в кадр не попадает. */
     @Volatile var performMode = false
@@ -509,6 +527,13 @@ fun CameraTrainerScreen(app: AppState, exerciseId: String, demo: String? = null)
                     SetupPhase.FRAMING -> {
                         Text(state.hint, color = if (state.ready) Color.Green else Color.Yellow, fontWeight = FontWeight.Bold)
                         Text("Встаньте у короткого борта так, чтобы весь стол был в кадре.", color = Color.White, fontSize = 13.sp)
+                        if (exercise.cameraZone != null && (state.zoneMode || state.hint.startsWith("Отойдите"))) {
+                            // Стол не влез: показываем, какую зону обязательно снять
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Box(Modifier.width(120.dp).clip(RoundedCornerShape(6.dp))) { TableScheme(exercise, labels = false, showZone = true) }
+                                Text(exercise.cameraZoneText, color = Color.Cyan, fontSize = 11.sp)
+                            }
+                        }
                         PrimaryButton("Дальше: точки для шаров", enabled = state.ready) { phase = SetupPhase.MARKS }
                     }
                     SetupPhase.MARKS -> {

@@ -99,6 +99,35 @@ struct Exercise: Codable, Identifiable, Hashable, Sendable {
         return (point, "Штатив: \(corner ? "за угловой лузой, " : "")\(side), в 30–50 см от стола, камера чуть выше борта и смотрит на вас вдоль линии удара — так видно, как шар идёт в лузу.")
     }
 
+    /// Зона стола, которую обязательно должна видеть камера: шары, луза, мнимый шар и запас вокруг.
+    /// nil — нужна почти вся площадь стола (тогда стол должен быть в кадре целиком).
+    var cameraZone: CGRect? {
+        var points = markPoints
+        for index in cueBalls.indices { if let target = targetPoint(for: index) { points.append(target) } }
+        if let aim { points.append(aim.ghost); points.append(aim.pocket) }
+        guard let first = points.first else { return nil }
+        var minX = first.x, maxX = first.x, minY = first.y, maxY = first.y
+        for point in points { minX = min(minX, point.x); maxX = max(maxX, point.x); minY = min(minY, point.y); maxY = max(maxY, point.y) }
+        let pad = 12.0
+        minX = max(0, minX - pad); maxX = min(160, maxX + pad); minY = max(0, minY - pad); maxY = min(80, maxY + pad)
+        // Не меньше 50×36, чтобы в кадре было за что «зацепиться»
+        if maxX - minX < 50 { let c = (minX + maxX) / 2; minX = max(0, min(110, c - 25)); maxX = minX + 50 }
+        if maxY - minY < 36 { let c = (minY + maxY) / 2; minY = max(0, min(44, c - 18)); maxY = minY + 36 }
+        // Округляем до отметок на бортах (каждые 10)
+        minX = (minX / 10).rounded(.down) * 10; maxX = min(160, (maxX / 10).rounded(.up) * 10)
+        minY = (minY / 10).rounded(.down) * 10; maxY = min(80, (maxY / 10).rounded(.up) * 10)
+        let rect = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+        return rect.width * rect.height > 160 * 80 * 0.8 ? nil : rect
+    }
+
+    /// Словами, по отметкам на бортах.
+    var cameraZoneText: String {
+        guard let zone = cameraZone else { return "Камера должна видеть весь стол." }
+        let long = zone.width >= 160 ? "весь длинный борт" : "длинный борт от отметки \(Int(zone.minX)) до \(Int(zone.maxX))"
+        let short = zone.height >= 80 ? "весь короткий борт" : "короткий борт от \(Int(zone.minY)) до \(Int(zone.maxY))"
+        return "Если стол не помещается в кадр, достаточно зоны упражнения: \(long), \(short). Края кадра — по границам зоны."
+    }
+
     static func rackPoints(apex: TablePoint) -> [TablePoint] {
         let d = 4.6   // шаг шаров в пирамиде в единицах сетки схемы
         var points: [TablePoint] = []
@@ -404,6 +433,8 @@ struct TableSchemeView: View {
     var showTripod = false
     /// «Чужой»/«свояк»: показать мнимый шар и линии прицела (Pro и тренер).
     var showAim = false
+    /// Показать зону, которую должна покрыть камера.
+    var showZone = false
 
     /// Поле стола (внутри бортов) для размера холста — общая формула для рисования и нажатий.
     static func field(in size: CGSize, labels: Bool) -> CGRect {
@@ -582,6 +613,14 @@ struct TableSchemeView: View {
                     context.draw(Text("мнимый шар").font(.system(size: fontSize, weight: .bold)).foregroundStyle(.white), at: labelPoint)
                 }
             }
+            if showZone, let zone = exercise.cameraZone {
+                let a = map(TablePoint(x: zone.minX, y: zone.minY)), b = map(TablePoint(x: zone.maxX, y: zone.maxY))
+                let rect = CGRect(x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y)
+                context.fill(Path(roundedRect: rect, cornerRadius: 3), with: .color(.cyan.opacity(0.12)))
+                context.stroke(Path(roundedRect: rect, cornerRadius: 3), with: .color(.cyan), style: StrokeStyle(lineWidth: 1.6, dash: [5, 3]))
+                context.draw(Text("зона камеры").font(.system(size: max(6, size.width / 60), weight: .bold)).foregroundStyle(.cyan),
+                             at: CGPoint(x: rect.midX, y: rect.minY + max(6, size.width / 60)))
+            }
             if showTripod {
                 let t = exercise.tripod.point
                 let c = CGPoint(x: min(size.width - 8, max(8, field.minX + t.x / 160 * field.width)),
@@ -749,7 +788,7 @@ struct ExerciseDetailView: View {
             VStack(alignment: .leading, spacing: Space.l) {
                 Text("Упражнение №\(exercise.number)").font(.caption).foregroundStyle(palette.textSecondary)
                 Text(exercise.title).font(.title2.weight(.semibold)).fontDesign(palette.headingDesign)
-                TableSchemeView(exercise: exercise, showTripod: true)
+                TableSchemeView(exercise: exercise, showTripod: true, showZone: true)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.m, style: .continuous))
                 if let hit = exercise.hitPoint {
                     VStack(spacing: Space.s) {
@@ -771,6 +810,8 @@ struct ExerciseDetailView: View {
                     Label("\(exercise.attempts) ударов · метрика «\(exercise.metric.title)»", systemImage: "target")
                         .font(.caption).foregroundStyle(palette.textSecondary)
                     Label(exercise.tripod.hint, systemImage: "camera.on.rectangle")
+                        .font(.caption).foregroundStyle(palette.textSecondary)
+                    Label(exercise.cameraZoneText, systemImage: "viewfinder.rectangular")
                         .font(.caption).foregroundStyle(palette.textSecondary)
                 }
                 .padding(Space.m)

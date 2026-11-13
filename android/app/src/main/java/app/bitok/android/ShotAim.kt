@@ -496,3 +496,40 @@ fun HitPointPicker(x: Double, y: Double, yellow: Boolean, onChange: (Double, Dou
 }
 
 // endregion
+
+
+// region Зона камеры
+
+/** Прямоугольник на столе в сантиметрах схемы (x 0…160, y 0…80). */
+data class CameraZone(val minX: Double, val minY: Double, val width: Double, val height: Double)
+
+/** Зона стола, которую обязательно должна видеть камера: шары, луза, мнимый шар и запас. null — нужен весь стол. */
+val Exercise.cameraZone: CameraZone?
+    get() {
+        val points = markPoints.toMutableList()
+        cueBalls.indices.forEach { i -> targetPoint(i)?.let { points += it } }
+        aim?.let { points += it.ghost; points += it.pocket }
+        if (points.isEmpty()) return null
+        val pad = 12.0
+        var minX = maxOf(0.0, points.minOf { it.x } - pad); var maxX = minOf(160.0, points.maxOf { it.x } + pad)
+        var minY = maxOf(0.0, points.minOf { it.y } - pad); var maxY = minOf(80.0, points.maxOf { it.y } + pad)
+        // Не меньше 50×36, чтобы в кадре было за что «зацепиться»
+        if (maxX - minX < 50) { val c = (minX + maxX) / 2; minX = (c - 25).coerceIn(0.0, 110.0); maxX = minX + 50 }
+        if (maxY - minY < 36) { val c = (minY + maxY) / 2; minY = (c - 18).coerceIn(0.0, 44.0); maxY = minY + 36 }
+        // Округляем до отметок на бортах (каждые 10)
+        minX = Math.floor(minX / 10) * 10; maxX = minOf(160.0, Math.ceil(maxX / 10) * 10)
+        minY = Math.floor(minY / 10) * 10; maxY = minOf(80.0, Math.ceil(maxY / 10) * 10)
+        val zone = CameraZone(minX, minY, maxX - minX, maxY - minY)
+        return if (zone.width * zone.height > 160 * 80 * 0.8) null else zone
+    }
+
+/** Словами, по отметкам на бортах. */
+val Exercise.cameraZoneText: String
+    get() {
+        val z = cameraZone ?: return "Камера должна видеть весь стол."
+        val long = if (z.width >= 160) "весь длинный борт" else "длинный борт от отметки ${z.minX.toInt()} до ${(z.minX + z.width).toInt()}"
+        val short = if (z.height >= 80) "весь короткий борт" else "короткий борт от ${z.minY.toInt()} до ${(z.minY + z.height).toInt()}"
+        return "Если стол не помещается в кадр, достаточно зоны упражнения: $long, $short. Края кадра — по границам зоны."
+    }
+
+// endregion

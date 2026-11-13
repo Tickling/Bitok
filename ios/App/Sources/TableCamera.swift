@@ -15,12 +15,21 @@ import DesignSystem
 // MARK: - Анализ кадра
 
 /// Четырёхугольник стола в нормализованных координатах кадра (0…1): углы по часовой, начиная с «дальнего левого».
+/// Если задана `zone`, четырёхугольник — это не весь стол, а только зона упражнения (стол целиком не влез в кадр).
 struct TableQuad: Equatable {
     var tl: CGPoint, tr: CGPoint, br: CGPoint, bl: CGPoint
+    /// Зона стола (в сантиметрах схемы), которую покрывает кадр; nil — весь стол.
+    var zone: CGRect? = nil
+
+    private var area160: CGRect { zone ?? CGRect(x: 0, y: 0, width: 160, height: 80) }
 
     /// Точка стола (x 0…160 вдоль длинной стороны, y 0…80) → точка кадра (билинейно).
     func project(_ p: TablePoint) -> CGPoint {
-        let u = p.x / 160, v = p.y / 80
+        let rect = area160
+        return projectUnit(u: (p.x - rect.minX) / rect.width, v: (p.y - rect.minY) / rect.height)
+    }
+
+    private func projectUnit(u: Double, v: Double) -> CGPoint {
         let top = CGPoint(x: tl.x + (tr.x - tl.x) * u, y: tl.y + (tr.y - tl.y) * u)
         let bottom = CGPoint(x: bl.x + (br.x - bl.x) * u, y: bl.y + (br.y - bl.y) * u)
         return CGPoint(x: top.x + (bottom.x - top.x) * v, y: top.y + (bottom.y - top.y) * v)
@@ -29,18 +38,20 @@ struct TableQuad: Equatable {
     /// Обратное преобразование (несколько итераций Ньютона).
     func unproject(_ q: CGPoint) -> TablePoint {
         var u = 0.5, v = 0.5
+        let h = 0.01
         for _ in 0..<8 {
-            let p = project(TablePoint(x: u * 160, y: v * 80))
-            let du = project(TablePoint(x: min(160, u * 160 + 1), y: v * 80))
-            let dv = project(TablePoint(x: u * 160, y: min(80, v * 80 + 1)))
-            let a = (du.x - p.x) * 160, b = (dv.x - p.x) * 80, c = (du.y - p.y) * 160, d = (dv.y - p.y) * 80
+            let p = projectUnit(u: u, v: v)
+            let du = projectUnit(u: u + h, v: v)
+            let dv = projectUnit(u: u, v: v + h)
+            let a = (du.x - p.x) / h, b = (dv.x - p.x) / h, c = (du.y - p.y) / h, d = (dv.y - p.y) / h
             let det = a * d - b * c
             guard abs(det) > 1e-9 else { break }
             let ex = q.x - p.x, ey = q.y - p.y
             u += (d * ex - b * ey) / det
             v += (-c * ex + a * ey) / det
         }
-        return TablePoint(x: u * 160, y: v * 80)
+        let rect = area160
+        return TablePoint(x: rect.minX + u * rect.width, y: rect.minY + v * rect.height)
     }
 
     var area: CGFloat {
@@ -231,12 +242,13 @@ struct ShotEvent: Identifiable, Equatable {
 
 final class TableCameraModel: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     enum Hint: Equatable {
-        case noTable, stepBack, closer, tilt, ready, pocketView
-        /// Можно начинать запись: весь стол в кадре или камера у лузы по линии удара.
-        var isReady: Bool { self == .ready || self == .pocketView }
+        case noTable, stepBack, closer, tilt, ready, pocketView, zone
+        /// Можно продолжать: весь стол в кадре, зона упражнения в кадре или камера у лузы по линии удара.
+        var isReady: Bool { self == .ready || self == .pocketView || self == .zone }
         var text: String {
             switch self {
             case .pocketView: "Камера у лузы по линии удара ✓ Слежу за шаром"
+            case .zone: "Стол не влез — работаю по зоне упражнения ✓ Края кадра — по границам зоны"
             case .noTable: "Наведите камеру на стол — нужно видеть сукно целиком"
             case .stepBack: "Отойдите назад: стол не помещается в кадр целиком"
             case .closer: "Подойдите ближе: стол слишком маленький"
@@ -403,7 +415,7 @@ final class TableCameraModel: NSObject, ObservableObject, AVCaptureVideoDataOutp
             return
         }
         // Сглаживание, чтобы разметка не дрожала
-        let quad: TableQuad
+        var quad: TableQuad
         if let previous = smoothed {
             func mix(_ a: CGPoint, _ b: CGPoint) -> CGPoint { CGPoint(x: a.x * 0.7 + b.x * 0.3, y: a.y * 0.7 + b.y * 0.3) }
             quad = TableQuad(tl: mix(previous.tl, raw.tl), tr: mix(previous.tr, raw.tr), br: mix(previous.br, raw.br), bl: mix(previous.bl, raw.bl))
@@ -418,19 +430,24 @@ final class TableCameraModel: NSObject, ObservableObject, AVCaptureVideoDataOutp
             touches = true
         }
         // Камера на штативе у лузы: сукно — широкая полоса во всю ширину кадра, стол целиком не виден
-        if performMode && touches {
+        if performMode && touches && fraction < 0.2 {
             analyzePocketView(grid)
             return
         }
         pocketTrack = nil
         let hint: Hint
-        if touches { hint = .stepBack } else if fraction < 0.12 { hint = .closer } else if quad.area < 0.12 { hint = .tilt } else { hint = .ready }
+        // Стол целиком не влез: работаем по зоне упражнения — края кадра совпадают с границами зоны
+        if touches, let zone = exercise.cameraZone {
+            quad.zone = zone
+            hint = .zone
+        } else if touches { hint = .stepBack } else if fraction < 0.12 { hint = .closer } else if quad.area < 0.12 { hint = .tilt } else { hint = .ready }
 
         // Шары на точках
         let topEdge: CGFloat = hypot(quad.tr.x - quad.tl.x, quad.tr.y - quad.tl.y)
-        let ballRadius: Double = max(0.012, Double(topEdge) / 160 * 3.4)
+        let across = Double(quad.zone?.width ?? 160)
+        let ballRadius: Double = max(0.012, Double(topEdge) / across * 3.4)
         // Шар ≈ 3 единицы схемы в диаметре; наклейка-точка в разы меньше — её за шар не считаем
-        let ballCells = Double(topEdge) * Double(grid.width) / 160 * 1.6
+        let ballCells = Double(topEdge) * Double(grid.width) / across * 1.6
         grid.minBlob = max(2, Int(0.3 * Double.pi * ballCells * ballCells))
         let statuses: [MarkStatus] = exercise.markPoints.map { point in
             let projected = quad.project(point)
@@ -788,6 +805,15 @@ struct TableCameraTrainer: View {
             Label(camera.hint.text, systemImage: camera.hint.isReady ? "checkmark.circle.fill" : "arrow.up.and.down.and.arrow.left.and.right")
                 .font(.headline).foregroundStyle(camera.hint.isReady ? .green : .yellow)
             Text("Встаньте у короткого борта так, чтобы весь стол русского бильярда был в кадре.").font(.caption).foregroundStyle(.white)
+            if exercise.cameraZone != nil && (camera.hint == .stepBack || camera.hint == .zone) {
+                // Стол не влез: показываем, какую зону обязательно снять
+                HStack(alignment: .top, spacing: 10) {
+                    TableSchemeView(exercise: exercise, labels: false, showZone: true)
+                        .frame(width: 120)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                    Text(exercise.cameraZoneText).font(.caption2).foregroundStyle(.cyan)
+                }
+            }
             Button("Дальше: точки для шаров") { phase = .marks }
                 .buttonStyle(.cueGlassProminent)
                 .disabled(!camera.hint.isReady)

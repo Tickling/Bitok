@@ -154,7 +154,7 @@ fun DemoBackend.seedResults(): List<ExerciseResult> {
 
 /** Стол 160×80 как в методичке: цифры на бортах, пунктир до бортов, стрелка удара, «часы» винта, штатив. */
 @Composable
-fun TableScheme(exercise: Exercise, modifier: Modifier = Modifier, labels: Boolean = true, showTripod: Boolean = false, showAim: Boolean = false) {
+fun TableScheme(exercise: Exercise, modifier: Modifier = Modifier, labels: Boolean = true, showTripod: Boolean = false, showAim: Boolean = false, showZone: Boolean = false) {
     Canvas(modifier.fillMaxWidth().aspectRatio(if (labels) 1.95f else 2.1f).background(if (labels) Color.White else Color.Transparent)) {
         val margin = if (labels) size.width * 0.05f else 0f
         val tableW = size.width - margin * 2; val tableH = size.height - margin * 2
@@ -251,6 +251,13 @@ fun TableScheme(exercise: Exercise, modifier: Modifier = Modifier, labels: Boole
                     android.graphics.Paint().apply { color = android.graphics.Color.WHITE; textSize = maxOf(16f, size.width / (if (labels) 55 else 40)); isFakeBoldText = true; textAlign = android.graphics.Paint.Align.CENTER })
             }
         }
+        if (showZone) exercise.cameraZone?.let { z ->
+            val a = map(TablePoint(z.minX, z.minY)); val b = map(TablePoint(z.minX + z.width, z.minY + z.height))
+            drawRect(Color.Cyan.copy(alpha = 0.12f), a, Size(b.x - a.x, b.y - a.y))
+            drawRect(Color.Cyan, a, Size(b.x - a.x, b.y - a.y), style = Stroke(3f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 6f))))
+            drawContext.canvas.nativeCanvas.drawText("зона камеры", (a.x + b.x) / 2, a.y + maxOf(16f, size.width / 55),
+                android.graphics.Paint().apply { color = android.graphics.Color.CYAN; textSize = maxOf(14f, size.width / 55); isFakeBoldText = true; textAlign = android.graphics.Paint.Align.CENTER })
+        }
         if (showTripod) {
             val t = exercise.tripod.first
             val c = Offset((fx + t.x / 160 * fw).toFloat().coerceIn(12f, size.width - 12f), (fy + t.y / 80 * fh).toFloat().coerceIn(12f, size.height - 12f))
@@ -310,7 +317,7 @@ fun ExerciseDetailScreen(app: AppState, exerciseId: String, studentId: String) {
     val results = b.results(studentId, exerciseId)
     Screen("№${exercise.number}", app) {
         Text(exercise.title, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = p.text)
-        Box(Modifier.clip(RoundedCornerShape(12.dp))) { TableScheme(exercise, showTripod = true) }
+        Box(Modifier.clip(RoundedCornerShape(12.dp))) { TableScheme(exercise, showTripod = true, showZone = true) }
         if (exercise.hasHit) GlassCard {
             Title("🎯 Куда бить по битку")
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -325,6 +332,7 @@ fun ExerciseDetailScreen(app: AppState, exerciseId: String, studentId: String) {
             Secondary("Точки для шаров: " + exercise.markPoints.take(6).joinToString { "${it.x.toInt()}:${it.y.toInt()}" } + if (exercise.markPoints.size > 6) "…" else "")
             Secondary("${exercise.attempts} ударов · метрика «${exercise.metric.title}»")
             Secondary("📷 " + exercise.tripod.second)
+            Secondary("🔲 " + exercise.cameraZoneText)
         }
         if (exercise.shot != null) AimCard(app, exercise)
         LessonCard(app, exercise)
