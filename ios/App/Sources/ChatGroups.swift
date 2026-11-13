@@ -247,7 +247,7 @@ struct GroupChatView: View {
                         }
                     }
                     let candidates = (backend.friends(of: me).map(\.id) + backend.coaches.map(\.id)).filter { !(group?.members.contains($0) ?? true) }
-                    if !candidates.isEmpty && group?.members.contains(me) == true {
+                    if !candidates.isEmpty && group?.members.contains(me) == true && backend.hasSubscription(me) {
                         Section("Добавить") {
                             ForEach(candidates, id: \.self) { id in
                                 Button { backend.addToGroup(groupId, member: id, by: me) } label: {

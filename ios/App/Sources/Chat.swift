@@ -21,6 +21,7 @@ struct ChatRootView: View {
     @State private var showNotices = false
     @State private var openedGroup: GroupRef?
     @State private var creatingGroup = false
+    @State private var groupPaywall = false
 
     private var backend: DemoBackend { container.backend }
     private var me: UserID { container.currentUserId }
@@ -49,8 +50,13 @@ struct ChatRootView: View {
             .toolbar {
                 if container.role == .student {
                     ToolbarItem(placement: .topBarLeading) {
-                        Button { creatingGroup = true } label: { Image(systemName: "person.3.sequence") }
-                            .accessibilityLabel("Новая группа")
+                        // Группы — в «Биток Про»: без подписки ведём на оформление.
+                        Button {
+                            if backend.hasSubscription(me) { creatingGroup = true } else { groupPaywall = true }
+                        } label: {
+                            Image(systemName: backend.hasSubscription(me) ? "person.3.sequence" : "lock.circle")
+                        }
+                        .accessibilityLabel("Новая группа (Биток Про)")
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -86,6 +92,7 @@ struct ChatRootView: View {
                 }
             }
             .navigationDestination(item: $openedGroup) { ref in GroupChatView(container: container, groupId: ref.id) }
+            .sheet(isPresented: $groupPaywall) { PaywallView(container: container) { creatingGroup = true } }
             .sheet(isPresented: $creatingGroup) {
                 CreateGroupView(container: container) { id in openedGroup = GroupRef(id: id) }
             }

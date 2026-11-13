@@ -14,6 +14,8 @@ struct ProfileRootView: View {
     @Bindable var container: AppContainer
     @AppStorage("profile.frame") private var frameCode = FrameChoice.gold.rawValue
     @AppStorage("profile.title") private var titleCode = TitleChoice.champion.rawValue
+    @AppStorage("profile.cardTheme") private var cardThemeCode = CardTheme.classic.rawValue
+    @AppStorage("profile.status") private var statusEmoji = ""
 
     @State private var autoPage: String?
     @State private var viewingMyPhoto = false
@@ -57,14 +59,27 @@ struct ProfileRootView: View {
         let progress = backend.progress(for: me)
         let rating = progress.overallRating ?? 0
         let person = backend.person(me)
-        let frame = FrameChoice(rawValue: frameCode) ?? .gold
+        let isPro = backend.hasSubscription(me)
+        var frame = FrameChoice(rawValue: frameCode) ?? .gold
+        if frame.isPro && !isPro { frame = .gold }
+        let theme = isPro ? (CardTheme(rawValue: cardThemeCode) ?? .classic) : .classic
         return VStack(alignment: .leading, spacing: Space.m) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(rating)").font(.system(size: 48, weight: .heavy).monospacedDigit())
                     Text((progress.current.level?.title ?? "Новичок").uppercased())
                         .font(.caption.weight(.semibold)).opacity(0.85)
-                    Text(person?.name ?? "Игрок").font(.title3.weight(.bold)).padding(.top, Space.s)
+                    HStack(spacing: 6) {
+                        Text(person?.name ?? "Игрок").font(.title3.weight(.bold))
+                        if isPro {
+                            Text("PRO").font(.caption2.weight(.heavy)).padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(LinearGradient(colors: [Color(red: 1, green: 0.84, blue: 0.35), Color(red: 0.85, green: 0.6, blue: 0.1)],
+                                                           startPoint: .leading, endPoint: .trailing), in: Capsule())
+                                .foregroundStyle(.black)
+                        }
+                        if isPro, !statusEmoji.isEmpty { Text(statusEmoji) }
+                    }
+                    .padding(.top, Space.s)
                     if let title = TitleChoice(rawValue: titleCode), title != .none {
                         Text("\(title.emoji) \(title.title)").font(.caption).opacity(0.9)
                     }
@@ -87,12 +102,25 @@ struct ProfileRootView: View {
         }
         .foregroundStyle(.white)
         .padding(Space.l)
-        .background(
-            LinearGradient(colors: [palette.accent, palette.accent.opacity(0.75), palette.accentSecondary],
-                           startPoint: .topLeading, endPoint: .bottomTrailing),
-            in: RoundedRectangle(cornerRadius: 24, style: .continuous)
-        )
-        .shadow(color: palette.accent.opacity(0.35), radius: 16, y: 8)
+        .background {
+            ZStack {
+                if theme == .classic {
+                    LinearGradient(colors: [palette.accent, palette.accent.opacity(0.75), palette.accentSecondary],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+                } else {
+                    LinearGradient(colors: theme.colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+                    theme.pattern
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        }
+        .overlay {
+            if theme == .neon {
+                RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Color(red: 0.2, green: 0.9, blue: 1), lineWidth: 2)
+                    .shadow(color: .cyan, radius: 8)
+            }
+        }
+        .shadow(color: (theme == .classic ? palette.accent : theme.colors[0]).opacity(0.35), radius: 16, y: 8)
         .accessibilityElement(children: .combine)
     }
 
@@ -279,7 +307,9 @@ struct ProfileRootView: View {
                         .navigationTitle("Трофеи")
                 }
                 Divider().padding(.leading, 52)
-                menuLink("Рамка и титул", "sparkles") { CustomizationView() }
+                menuLink("Оформление профиля" + (backend.hasSubscription(me) ? " · PRO" : ""), "sparkles") {
+                    CustomizationView(container: container)
+                }
             }
             Divider().padding(.leading, 52)
             menuLink("Настройки", "gearshape") { SettingsView(container: container) }
@@ -466,22 +496,95 @@ struct EditProfileView: View {
 // MARK: - Рамка и титул
 
 enum FrameChoice: String, CaseIterable, Identifiable {
-    case gold, bronze, steel, none
+    case gold, bronze, steel, silver, graphite, aura, legend, none
     var id: Self { self }
     var title: String {
         switch self {
         case .gold: "Золотая"
         case .bronze: "Бронзовая"
         case .steel: "Стальная"
+        case .silver: "Серебряная (вращается)"
+        case .graphite: "Графитовая"
+        case .aura: "Аура в цвет темы"
+        case .legend: "Легенда (с искрами)"
         case .none: "Без рамки"
         }
     }
+    /// Рамки из «Биток Про».
+    var isPro: Bool { [.silver, .graphite, .aura, .legend].contains(self) }
     var style: FrameStyle? {
         switch self {
         case .gold: .gold
         case .bronze: .bronze
         case .steel: .steel
+        case .silver: .silver
+        case .graphite: .graphite
+        case .aura: .aura
+        case .legend: .legend
         case .none: nil
+        }
+    }
+}
+
+/// Фон карточки игрока (кроме «Классики» — только в «Биток Про»).
+enum CardTheme: String, CaseIterable, Identifiable {
+    case classic, felt, neon, gold, marble, night
+    var id: Self { self }
+    var title: String {
+        switch self {
+        case .classic: "Классика"
+        case .felt: "Сукно"
+        case .neon: "Неон"
+        case .gold: "Золото"
+        case .marble: "Мрамор"
+        case .night: "Ночь"
+        }
+    }
+    var colors: [Color] {
+        switch self {
+        case .classic: [Color(red: 0.48, green: 0.11, blue: 0.17), Color(red: 0.69, green: 0.54, blue: 0.27)]
+        case .felt: [Color(red: 0.12, green: 0.48, blue: 0.27), Color(red: 0.04, green: 0.25, blue: 0.14)]
+        case .neon: [Color(red: 0.16, green: 0.04, blue: 0.30), Color(red: 0.55, green: 0.08, blue: 0.55), Color(red: 0.05, green: 0.35, blue: 0.55)]
+        case .gold: [Color(red: 0.55, green: 0.38, blue: 0.04), Color(red: 0.95, green: 0.78, blue: 0.30), Color(red: 0.45, green: 0.30, blue: 0.03)]
+        case .marble: [Color(red: 0.42, green: 0.44, blue: 0.48), Color(red: 0.22, green: 0.23, blue: 0.27)]
+        case .night: [Color(red: 0.04, green: 0.10, blue: 0.25), Color(red: 0.10, green: 0.25, blue: 0.55)]
+        }
+    }
+
+    /// Узор поверх градиента.
+    @ViewBuilder var pattern: some View {
+        switch self {
+        case .felt:
+            Canvas { context, size in
+                for x in stride(from: 0.0, to: size.width, by: 6) {
+                    var p = Path(); p.move(to: CGPoint(x: x, y: 0)); p.addLine(to: CGPoint(x: x + size.height * 0.3, y: size.height))
+                    context.stroke(p, with: .color(.white.opacity(0.04)), lineWidth: 1)
+                }
+            }
+        case .marble:
+            Canvas { context, size in
+                for i in 0..<7 {
+                    var p = Path()
+                    let y = size.height * Double(i) / 6
+                    p.move(to: CGPoint(x: 0, y: y))
+                    p.addCurve(to: CGPoint(x: size.width, y: y + 30), control1: CGPoint(x: size.width * 0.3, y: y - 40),
+                               control2: CGPoint(x: size.width * 0.7, y: y + 60))
+                    context.stroke(p, with: .color(.white.opacity(0.12)), lineWidth: 1.5)
+                }
+            }
+        case .night:
+            Canvas { context, size in
+                var generator = SeededRandom(seed: 7)
+                for _ in 0..<40 {
+                    let x = Double.random(in: 0...size.width, using: &generator), y = Double.random(in: 0...size.height, using: &generator)
+                    let r = Double.random(in: 0.6...1.6, using: &generator)
+                    context.fill(Path(ellipseIn: CGRect(x: x, y: y, width: r, height: r)), with: .color(.white.opacity(0.7)))
+                }
+            }
+        case .gold:
+            LinearGradient(colors: [.clear, .white.opacity(0.25), .clear], startPoint: .topLeading, endPoint: .bottomTrailing)
+        default:
+            EmptyView()
         }
     }
 }
@@ -508,17 +611,92 @@ enum TitleChoice: String, CaseIterable, Identifiable {
 }
 
 struct CustomizationView: View {
+    @Environment(\.palette) private var palette
+    let container: AppContainer
     @AppStorage("profile.frame") private var frameCode = FrameChoice.gold.rawValue
     @AppStorage("profile.title") private var titleCode = TitleChoice.champion.rawValue
+    @AppStorage("profile.cardTheme") private var cardThemeCode = CardTheme.classic.rawValue
+    @AppStorage("profile.status") private var statusEmoji = ""
+    @State private var showPaywall = false
+
+    private var isPro: Bool { container.backend.hasSubscription(container.currentUserId) }
+    private static let statuses = ["", "🔥", "🎯", "🏆", "😎", "🎱", "⚡️", "👑", "🍀", "💪"]
 
     var body: some View {
         Form {
-            Section("Рамка") {
-                Picker("Рамка", selection: $frameCode) {
-                    ForEach(FrameChoice.allCases) { Text($0.title).tag($0.rawValue) }
+            if !isPro {
+                Section {
+                    Button { showPaywall = true } label: {
+                        Label("Фоны карточки, редкие рамки, значок PRO и статус — в «Биток Про»", systemImage: "lock.fill")
+                    }
                 }
-                .pickerStyle(.inline)
-                .labelsHidden()
+            }
+            Section {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Space.s), count: 3), spacing: Space.s) {
+                    ForEach(CardTheme.allCases) { theme in
+                        let locked = theme != .classic && !isPro
+                        Button {
+                            if locked { showPaywall = true } else { cardThemeCode = theme.rawValue }
+                        } label: {
+                            ZStack {
+                                LinearGradient(colors: theme.colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+                                theme.pattern
+                                VStack {
+                                    if locked { Image(systemName: "lock.fill") }
+                                    Text(theme.title).font(.caption.weight(.semibold))
+                                }
+                                .foregroundStyle(.white)
+                            }
+                            .frame(height: 64)
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(cardThemeCode == theme.rawValue ? palette.accent : .clear, lineWidth: 3))
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                }
+            } header: {
+                Text("Фон карточки игрока")
+            }
+            Section("Рамка") {
+                ForEach(FrameChoice.allCases) { choice in
+                    let locked = choice.isPro && !isPro
+                    Button {
+                        if locked { showPaywall = true } else { frameCode = choice.rawValue }
+                    } label: {
+                        HStack {
+                            ProfileFrameView(style: choice.style) {
+                                Avatar(initials: container.backend.person(container.currentUserId)?.initials ?? "?", size: 34,
+                                       userId: container.currentUserId)
+                            }
+                            .frame(width: 46, height: 46)
+                            Text(choice.title).foregroundStyle(palette.textPrimary)
+                            if choice.isPro { Text("PRO").font(.caption2.weight(.heavy)).foregroundStyle(palette.accentSecondary) }
+                            Spacer()
+                            if locked { Image(systemName: "lock.fill").foregroundStyle(palette.textSecondary) }
+                            else if frameCode == choice.rawValue { Image(systemName: "checkmark").foregroundStyle(palette.accent) }
+                        }
+                    }
+                    .buttonStyle(.borderless)
+                }
+            }
+            Section {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack {
+                        ForEach(Self.statuses, id: \.self) { emoji in
+                            Button {
+                                if isPro { statusEmoji = emoji } else { showPaywall = true }
+                            } label: {
+                                Text(emoji.isEmpty ? "—" : emoji).font(.title2)
+                                    .frame(width: 44, height: 44)
+                                    .background(statusEmoji == emoji ? palette.accent.opacity(0.2) : .clear, in: Circle())
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    }
+                }
+            } header: {
+                Text("Статус рядом с именем · PRO")
             }
             Section {
                 Picker("Титул", selection: $titleCode) {
@@ -529,12 +707,13 @@ struct CustomizationView: View {
             } header: {
                 Text("Титул")
             } footer: {
-                Text("Рамки и титулы открываются медалями и достижениями. «Серебряная», «Графитовая» и «Легенда» появятся после новых турниров.")
+                Text("Титулы открываются медалями и достижениями.")
             }
         }
         .scrollContentBackground(.hidden)
         .background(ThemedBackground())
-        .navigationTitle("Рамка и титул")
+        .navigationTitle("Оформление профиля")
+        .sheet(isPresented: $showPaywall) { PaywallView(container: container) }
     }
 }
 

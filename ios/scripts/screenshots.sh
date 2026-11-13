@@ -40,3 +40,11 @@ shot coach-students   -uiAccount coach -uiTab people
 shot coach-profile    -uiAccount coach -uiTab profile
 shot coach-venues     -uiAccount coach -uiTab profile -uiPage venues
 shot coach-settings   -uiAccount coach -uiTab profile -uiPage settings
+# Биток Про (демо-экраны камеры без настоящей камеры)
+shot pro-exercise     -uiAccount dmitry -uiTab profile -uiPage proExercise
+shot pro-paywall      -uiAccount student -uiTab content -uiPage proPaywall
+shot pro-framing      -uiAccount dmitry -uiPage proFraming
+shot pro-marks        -uiAccount dmitry -uiPage proMarks
+shot pro-balls        -uiAccount dmitry -uiPage proBalls
+shot pro-perform      -uiAccount dmitry -uiPage proPerform
+shot pro-result       -uiAccount dmitry -uiPage proResult

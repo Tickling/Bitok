@@ -110,6 +110,11 @@ struct HelpView: View {
                     .foregroundStyle(palette.textSecondary)
             }
             if isPro && role == .student {
+                Section("Биток Про: как это выглядит") {
+                    ProCarousel()
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+                }
                 Section("Биток Про: камера-помощник") {
                     ProGuideContent()
                 }

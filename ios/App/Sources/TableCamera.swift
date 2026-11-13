@@ -188,6 +188,25 @@ final class TableCameraModel: NSObject, ObservableObject, AVCaptureVideoDataOutp
 
     func stop() { queue.async { self.session.stopRunning() } }
 
+    /// Демо без камеры (симулятор, скриншоты «Помощи»): стол в перспективе, часть шаров на местах.
+    func startDemo(perform: Bool) {
+        isAuthorized = true
+        let demoQuad = TableQuad(tl: CGPoint(x: 0.16, y: 0.30), tr: CGPoint(x: 0.84, y: 0.30),
+                                 br: CGPoint(x: 0.97, y: 0.62), bl: CGPoint(x: 0.03, y: 0.62))
+        quad = demoQuad
+        hint = .ready
+        marks = exercise.markPoints.enumerated().map { index, _ in
+            index == 1 ? .off("Сдвиньте шар на 3 см к правому борту") : index == 3 ? .missing : .ok
+        }
+        if perform {
+            recording = true
+            shots = [ShotEvent(time: 4, made: true, advice: Self.praise[0]),
+                     ShotEvent(time: 11, made: false, advice: Self.advice(start: TablePoint(x: 70, y: 40), target: TablePoint(x: 80, y: 0),
+                                                                         end: TablePoint(x: 66, y: 4))),
+                     ShotEvent(time: 18, made: true, advice: Self.praise[1])]
+        }
+    }
+
     private func configure() {
         queue.async {
             guard self.session.inputs.isEmpty,
@@ -417,6 +436,8 @@ struct TableCameraTrainer: View {
     @Environment(\.dismiss) private var dismiss
     let container: AppContainer
     let exercise: Exercise
+    /// Демо-кадр вместо камеры: framing, marks, balls, perform.
+    var demo: String? = nil
     @StateObject private var camera: TableCameraModel
     @State private var mode: Mode = .setup
     @State private var phase: Phase = .framing
@@ -425,9 +446,10 @@ struct TableCameraTrainer: View {
     @State private var result: TrainingResult?
     @State private var celebrated = false
 
-    init(container: AppContainer, exercise: Exercise) {
+    init(container: AppContainer, exercise: Exercise, demo: String? = nil) {
         self.container = container
         self.exercise = exercise
+        self.demo = demo
         _camera = StateObject(wrappedValue: TableCameraModel(exercise: exercise))
     }
 
@@ -435,7 +457,10 @@ struct TableCameraTrainer: View {
         GeometryReader { geometry in
             ZStack {
                 Color.black.ignoresSafeArea()
-                if camera.isAuthorized {
+                if demo != nil {
+                    demoTable(size: geometry.size).ignoresSafeArea()
+                    overlay(size: geometry.size).ignoresSafeArea().allowsHitTesting(false)
+                } else if camera.isAuthorized {
                     CameraPreview(session: camera.session).ignoresSafeArea()
                     overlay(size: geometry.size).ignoresSafeArea().allowsHitTesting(false)
                 } else {
@@ -450,7 +475,17 @@ struct TableCameraTrainer: View {
             }
         }
         .onAppear {
-            camera.start()
+            if let demo {
+                camera.startDemo(perform: demo == "perform")
+                switch demo {
+                case "marks": phase = .marks
+                case "balls": phase = .balls
+                case "perform": mode = .perform
+                default: phase = .framing
+                }
+            } else {
+                camera.start()
+            }
             withAnimation(.easeInOut(duration: 0.8).repeatForever()) { pulse = true }
         }
         .onDisappear { camera.stop() }
@@ -466,6 +501,34 @@ struct TableCameraTrainer: View {
         }
         .fullScreenCover(item: $result) { item in
             TrainingResultView(container: container, exercise: exercise, result: item) { dismiss() }
+        }
+    }
+
+    /// Нарисованный стол для демо: комната, сукно в перспективе, шары на точках (один сдвинут, одного нет).
+    private func demoTable(size: CGSize) -> some View {
+        Canvas { context, _ in
+            context.fill(Path(CGRect(origin: .zero, size: size)),
+                         with: .linearGradient(Gradient(colors: [Color(white: 0.18), Color(white: 0.08)]), startPoint: .zero,
+                                               endPoint: CGPoint(x: 0, y: size.height)))
+            guard let quad = camera.quad else { return }
+            let corners: [CGPoint] = [quad.tl, quad.tr, quad.br, quad.bl].map { toScreen($0, size: size) }
+            var rails = Path()
+            rails.addLines([CGPoint(x: corners[0].x - 14, y: corners[0].y - 12), CGPoint(x: corners[1].x + 14, y: corners[1].y - 12),
+                            CGPoint(x: corners[2].x + 20, y: corners[2].y + 16), CGPoint(x: corners[3].x - 20, y: corners[3].y + 16)])
+            rails.closeSubpath()
+            context.fill(rails, with: .color(Color(red: 0.42, green: 0.25, blue: 0.08)))
+            var felt = Path()
+            felt.addLines(corners)
+            felt.closeSubpath()
+            context.fill(felt, with: .color(Color(red: 0.16, green: 0.52, blue: 0.22)))
+            for (index, point) in exercise.markPoints.enumerated() {
+                guard index != 3 else { continue }
+                var p = quad.project(point)
+                if index == 1 { p = quad.project(TablePoint(x: point.x - 3, y: point.y + 1)) }
+                let c = toScreen(p, size: size)
+                let r: CGFloat = 9
+                context.fill(Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2)), with: .color(Color(white: 0.97)))
+            }
         }
     }
 
@@ -807,6 +870,8 @@ struct PaywallView: View {
                         feature("video", "Режим на штативе: считает удары, звёзды за упражнение")
                         feature("exclamationmark.bubble", "Показывает момент ошибки и как исправить")
                         feature("paperplane", "Видео и кусочек с ошибкой — тренеру в чат")
+                        feature("person.3.sequence", "Групповые чаты с друзьями и тренером")
+                        feature("sparkles", "Оформление профиля: фоны карточки, редкие рамки, значок PRO и статус")
                     }
                     .padding(Space.l)
                     .glassCard()

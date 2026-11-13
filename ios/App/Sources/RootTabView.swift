@@ -34,6 +34,10 @@ struct RootTabView: View {
                 .tag(AppTab.profile)
         }
         .onAppear { container.backend.checkBirthdays(for: container.currentUserId) }
+        // Скриншоты «Про» для «Помощи» (CI): демо-экраны камеры без настоящей камеры.
+        .fullScreenCover(isPresented: Binding(get: { container.uiPage?.hasPrefix("pro") == true }, set: { if !$0 { container.uiPage = nil } })) {
+            ProDemoScreen(container: container, page: container.uiPage ?? "")
+        }
         // Неоткрытый подарок — сразу красивая распаковка.
         .fullScreenCover(item: Binding(
             get: { container.backend.unopenedGift(for: container.currentUserId) },
