@@ -82,6 +82,14 @@ header.top { position: fixed; top: 0; left: 0; right: 0; z-index: 20; padding-to
 .game-frame { position: relative; border-radius: 26px; padding: 4.5%; background: linear-gradient(145deg, #6A2532, #3A121A); box-shadow: 0 40px 80px -30px #000, inset 0 1px 0 #ffffff22; max-width: 100%; }
 #table { display: block; width: 100%; aspect-ratio: 2 / 1; border-radius: 8px; touch-action: none; cursor: crosshair; background: var(--felt); }
 .game-hud { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; margin-top: 14px; color: var(--muted); font-size: 0.92rem; align-items: center; }
+.spin { display: flex; align-items: center; gap: 12px; }
+.spinball { position: relative; width: 64px; height: 64px; border-radius: 50%; background: radial-gradient(circle at 33% 28%, #fff, #EEE7D7 55%, #BDB29C); cursor: pointer; touch-action: none; flex: none; box-shadow: 0 8px 18px -8px #000; }
+.spinball::before, .spinball::after { content: ""; position: absolute; background: #C0392B55; pointer-events: none; }
+.spinball::before { left: 50%; top: 6%; bottom: 6%; width: 1px; }
+.spinball::after { top: 50%; left: 6%; right: 6%; height: 1px; }
+.spinball i { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: #E53935; left: 50%; top: 50%; box-shadow: 0 0 0 4px #E5393533; pointer-events: none; transition: left .15s, top .15s; }
+.spin small { display: block; color: var(--muted); }
+.spin b { font-size: .95rem; }
 .power { width: 140px; height: 8px; border-radius: 99px; background: #ffffff1a; overflow: hidden; }
 .power i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, var(--good), var(--gold), var(--bad)); }
 .toast { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%) scale(.9); padding: 16px 22px; border-radius: 18px; background: #0D0F10E6; backdrop-filter: blur(6px); text-align: center; opacity: 0; pointer-events: none; transition: opacity .35s, transform .35s; min-width: 240px; }
@@ -288,7 +296,7 @@ footer { padding: 28px max(16px, env(safe-area-inset-right, 0px)) 40px max(16px,
       <div class="copy rise">
         <span class="eyebrow">Русский бильярд</span>
         <h1>Забьёте с&nbsp;первого удара?</h1>
-        <p class="sub">Без подсказок: сами выберите, куда целиться и насколько оттянуть кий. Один удар.</p>
+        <p class="sub">Как за столом: целитесь по линии кия, выбираете точку на битке и силу. Мнимый шар — в голове.</p>
       </div>
       <div class="game rise">
         <div class="game-frame">
@@ -304,8 +312,11 @@ footer { padding: 28px max(16px, env(safe-area-inset-right, 0px)) 40px max(16px,
           </div>
         </div>
         <div class="game-hud">
-          <span id="score">Удар 1 · чужой шар в любую лузу</span>
-          <span>Чем дальше оттянете — тем сильнее удар</span>
+          <div class="spin">
+            <div class="spinball" id="spinball" role="slider" tabindex="0" aria-label="Точка удара по битку: стрелки — сдвинуть" aria-valuetext="центр"><i id="spindot"></i></div>
+            <div><small>Куда бить по битку</small><b id="spinlabel">центр — уход под 90°</b></div>
+          </div>
+          <div style="display:grid;gap:2px;text-align:right"><span id="score">Удар 1 · чужой шар в любую лузу</span><span>Дальше оттянете кий — сильнее удар</span></div>
         </div>
       </div>
     </div>
@@ -604,12 +615,14 @@ scenes[0].classList.add("active", "seen");
 const canvas = document.getElementById("table");
 const ctx = canvas.getContext("2d");
 const W = 160, H = 80, R = 2.3;
-const POCKETS = [[0,0,6],[80,-1.5,5],[160,0,6],[0,80,6],[80,81.5,5],[160,80,6]];
+const POCKETS = [[0,0,7],[80,-1.5,6],[160,0,7],[0,80,7],[80,81.5,6],[160,80,7]];
 const SETUPS = [
-  { cue: [40, 50], obj: [110, 25] },
-  { cue: [55, 40], obj: [120, 60] },
-  { cue: [30, 30], obj: [74, 14] },
+  { cue: [60, 46], obj: [118, 18] },
+  { cue: [50, 30], obj: [124, 64] },
+  { cue: [40, 52], obj: [72, 12] },
 ];
+// Точка удара по битку: x — вправо, y — вверх (−1…1)
+let spin = { x: 0, y: 0 }, contactDone = false, english = 0;
 let lesson = null, start = null;
 let setupIndex = 0, balls = [], aiming = null, rolling = false, shotDone = false, scale = 1, shots = 0, pocketed = { obj: false, cue: false };
 const hint = document.getElementById("hint"), toast = document.getElementById("toast");
@@ -680,6 +693,14 @@ function draw() {
   const cue = balls[0], obj = balls[1];
   if (aiming && !cue.in) {
     const dir = aiming.dir;
+    // Прицел вдоль кия: до первого шара или борта (мнимого шара нет — касание решаете сами)
+    let t = 400;
+    if (dir.x > 0) t = Math.min(t, (W - R - cue.x) / dir.x); else if (dir.x < 0) t = Math.min(t, (R - cue.x) / dir.x);
+    if (dir.y > 0) t = Math.min(t, (H - R - cue.y) / dir.y); else if (dir.y < 0) t = Math.min(t, (R - cue.y) / dir.y);
+    if (!obj.in) { const hit = ghostOnLine(cue, dir, obj); if (hit) t = Math.min(t, Math.hypot(hit.x - cue.x, hit.y - cue.y)); }
+    ctx.setLineDash([1.4, 1.6]); ctx.strokeStyle = "rgba(255,255,255,.55)"; ctx.lineWidth = .4;
+    ctx.beginPath(); ctx.moveTo(cue.x + dir.x * R, cue.y + dir.y * R); ctx.lineTo(cue.x + dir.x * t, cue.y + dir.y * t); ctx.stroke();
+    ctx.setLineDash([]);
     // кий позади битка
     ctx.strokeStyle = "#D9B27A"; ctx.lineWidth = 1.1; ctx.lineCap = "round";
     const back = 4 + aiming.power * 14;
@@ -721,10 +742,18 @@ function step(dt) {
       if (Math.hypot(b.x - px, b.y - py) < pr) { b.in = true; b.vx = b.vy = 0; pocketed[b.cue ? "cue" : "obj"] = true; }
     }
     if (b.in) continue;
-    if (b.x < R) { b.x = R; b.vx = -b.vx * .8; }
-    if (b.x > W - R) { b.x = W - R; b.vx = -b.vx * .8; }
-    if (b.y < R) { b.y = R; b.vy = -b.vy * .8; }
-    if (b.y > H - R) { b.y = H - R; b.vy = -b.vy * .8; }
+    const before = { x: b.vx, y: b.vy };
+    let bounced = false;
+    if (b.x < R) { b.x = R; b.vx = -b.vx * .8; bounced = true; }
+    if (b.x > W - R) { b.x = W - R; b.vx = -b.vx * .8; bounced = true; }
+    if (b.y < R) { b.y = R; b.vy = -b.vy * .8; bounced = true; }
+    if (b.y > H - R) { b.y = H - R; b.vy = -b.vy * .8; bounced = true; }
+    if (bounced && b.cue && english !== 0) {
+      // Боковой винт: от борта биток уходит в сторону винта относительно своего движения
+      const sp = Math.hypot(before.x, before.y) || 1;
+      b.vx += -before.y / sp * english * .35 * sp; b.vy += before.x / sp * english * .35 * sp;
+      english *= .4;
+    }
   }
   const [a, b] = balls;
   if (!a.in && !b.in) {
@@ -735,6 +764,11 @@ function step(dt) {
       if (rel > 0) {
         const j = rel * .97;
         a.vx -= j * nx; a.vy -= j * ny; b.vx += j * nx; b.vy += j * ny;
+        if (!contactDone && a.cue) {
+          // Накат (верх) катит биток вперёд за шаром, оттяжка (низ) тянет назад
+          a.vx += j * nx * spin.y * .55; a.vy += j * ny * spin.y * .55;
+          contactDone = true;
+        }
       }
       const overlap = 2 * R - dist;
       a.x -= nx * overlap / 2; a.y -= ny * overlap / 2; b.x += nx * overlap / 2; b.y += ny * overlap / 2;
@@ -799,6 +833,7 @@ canvas.addEventListener("pointerup", () => {
   const { dir, power } = aiming;
   aiming = null;
   if (power < .05) { draw(); return; }
+  contactDone = false; english = spin.x;
   const speed = 40 + power * 190;
   balls[0].vx = dir.x * speed; balls[0].vy = dir.y * speed;
   rolling = true; last = performance.now();
@@ -807,6 +842,29 @@ canvas.addEventListener("pointerup", () => {
 canvas.addEventListener("pointercancel", () => { aiming = null; draw(); });
 document.getElementById("again").addEventListener("click", () => { clearTimeout(finish.timer); toast.classList.remove("show"); reset(); });
 document.getElementById("next").addEventListener("click", () => { clearTimeout(finish.timer); toast.classList.remove("show"); setTimeout(reset, 600); });
+// Выбор точки удара на битке
+const spinball = document.getElementById("spinball"), spindot = document.getElementById("spindot"), spinlabel = document.getElementById("spinlabel");
+function describeSpin() {
+  const v = spin.y > .25 ? "верх — накат" : spin.y < -.25 ? "низ — оттяжка" : "центр — уход под 90°";
+  const h = spin.x > .25 ? ", правый винт" : spin.x < -.25 ? ", левый винт" : "";
+  return v + h;
+}
+function setSpin(x, y) {
+  const len = Math.hypot(x, y); if (len > 1) { x /= len; y /= len; }
+  spin = { x: Math.round(x * 4) / 4, y: Math.round(y * 4) / 4 };
+  spindot.style.left = `${50 + spin.x * 36}%`; spindot.style.top = `${50 - spin.y * 36}%`;
+  spinlabel.textContent = describeSpin(); spinball.setAttribute("aria-valuetext", describeSpin());
+}
+function spinFromEvent(event) {
+  const rect = spinball.getBoundingClientRect();
+  setSpin((event.clientX - rect.left - rect.width / 2) / (rect.width * .36), -(event.clientY - rect.top - rect.height / 2) / (rect.height * .36));
+}
+spinball.addEventListener("pointerdown", event => { spinball.setPointerCapture(event.pointerId); spinFromEvent(event); });
+spinball.addEventListener("pointermove", event => { if (event.buttons) spinFromEvent(event); });
+spinball.addEventListener("keydown", event => {
+  const d = { ArrowUp: [0, .25], ArrowDown: [0, -.25], ArrowLeft: [-.25, 0], ArrowRight: [.25, 0] }[event.key];
+  if (d) { event.preventDefault(); setSpin(spin.x + d[0], spin.y + d[1]); }
+});
 new ResizeObserver(resize).observe(canvas);
 reset();
 
