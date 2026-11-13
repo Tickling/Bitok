@@ -27,6 +27,7 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { scroll-behavior: smooth; }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
 body { background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 17px; line-height: 1.47; overflow-x: hidden; -webkit-font-smoothing: antialiased; }
@@ -465,6 +466,9 @@ footer { border-top: 1px solid var(--line); padding-block: 26px 40px; color: var
 </main>
 <footer><div class="wrap"><a class="link" href="index.html">← На главную «Биток»</a> · Цифры в калькуляторе — пример; условия франшизы обсуждаем индивидуально.</div></footer>
 <script>
+// Открываем страницу франшизы с начала, а не с позиции прокрутки главной
+if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+if (!location.hash) { scrollTo(0, 0); addEventListener("load", () => scrollTo(0, 0)); }
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 // Появление блоков: видны сразу, только «доезжают»
 const rvs = [...document.querySelectorAll(".rv")];
